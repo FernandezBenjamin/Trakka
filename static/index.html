@@ -174,6 +174,14 @@
                class="w-36 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         <input type="month" id="item-target-month" data-shopping-only hidden data-i18n-aria-label="items.targetMonthAriaLabel" aria-label="Mois prévu (optionnel)"
                class="rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <select id="item-recurrence" data-i18n-aria-label="items.recurrenceAriaLabel" aria-label="Récurrence"
+                class="rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          <option value="" data-i18n="items.recurrenceNone">Ne pas répéter</option>
+          <option value="DAILY" data-i18n="items.recurrenceDaily">Tous les jours</option>
+          <option value="WEEKLY" data-i18n="items.recurrenceWeekly">Toutes les semaines</option>
+          <option value="MONTHLY" data-i18n="items.recurrenceMonthly">Tous les mois</option>
+          <option value="YEARLY" data-i18n="items.recurrenceYearly">Tous les ans</option>
+        </select>
         <button type="submit" data-i18n="items.add" class="rounded-xl bg-sky-500 px-5 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-95">Ajouter</button>
       </form>
 
@@ -305,6 +313,18 @@
           <label for="edit-item-target-month" data-i18n="modals.editItem.targetMonthLabel" class="mb-1 block text-sm font-medium text-slate-300">Mois prévu (optionnel)</label>
           <input type="month" id="edit-item-target-month"
                  class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+
+        <div>
+          <label for="edit-item-recurrence" data-i18n="modals.editItem.recurrenceLabel" class="mb-1 block text-sm font-medium text-slate-300">Récurrence</label>
+          <select id="edit-item-recurrence"
+                  class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <option value="" data-i18n="items.recurrenceNone">Ne pas répéter</option>
+            <option value="DAILY" data-i18n="items.recurrenceDaily">Tous les jours</option>
+            <option value="WEEKLY" data-i18n="items.recurrenceWeekly">Toutes les semaines</option>
+            <option value="MONTHLY" data-i18n="items.recurrenceMonthly">Tous les mois</option>
+            <option value="YEARLY" data-i18n="items.recurrenceYearly">Tous les ans</option>
+          </select>
         </div>
 
         <button type="submit" data-i18n="modals.editItem.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>

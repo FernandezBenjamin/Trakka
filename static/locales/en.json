@@ -34,6 +34,18 @@
     "pricePlaceholder": "Price € (optional)",
     "priceAriaLabel": "Price in euros",
     "targetMonthAriaLabel": "Planned month (optional)",
+    "recurrenceAriaLabel": "Repeat",
+    "recurrenceNone": "Don't repeat",
+    "recurrenceDaily": "Every day",
+    "recurrenceWeekly": "Every week",
+    "recurrenceMonthly": "Every month",
+    "recurrenceYearly": "Every year",
+    "recurrenceBadgeDaily": "Every day",
+    "recurrenceBadgeWeekly": "Every week",
+    "recurrenceBadgeMonthly": "Every month",
+    "recurrenceBadgeYearly": "Every year",
+    "recurrenceBadgeEveryXDays": "Every {n} days",
+    "recurrenceBadgeAriaLabel": "Recurring task: {frequency}",
     "add": "Add",
     "doneDefault": "Completed (0)"
   },
@@ -77,6 +89,7 @@
       "priceLabel": "Price (€, optional)",
       "autoBadge": "Auto-detected",
       "targetMonthLabel": "Planned month (optional)",
+      "recurrenceLabel": "Repeat",
       "submit": "Save"
     },
     "imagePreview": {

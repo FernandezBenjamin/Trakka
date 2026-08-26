@@ -416,11 +416,55 @@ async function applyOptimisticEdit(pathname, method, body) {
     }
     const existing = (await self.TrakkaDB.getItem(id)) || { id };
     const updated = { ...existing, ...body, id, updated_at: now };
+    applyRecurrenceCompletionOffline(updated, existing.done);
     await self.TrakkaDB.putItem(updated);
     return updated;
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Recurring-item completion, mirrored offline. This is a hand-kept JS port
+// of applyRecurrenceCompletion/nextDueDate in internal/handlers/recurrence.go
+// — there's no way to share code between the two runtimes — so that
+// checking off a recurring item while offline advances it to its next
+// occurrence exactly the way the server would, rather than leaving it
+// stuck "done" until the sync queue flushes and a refetch corrects it. Any
+// change to the Go version's rule handling must be mirrored here too.
+// ---------------------------------------------------------------------------
+
+function applyRecurrenceCompletionOffline(updated, wasDone) {
+  if (wasDone || !updated.done || !updated.recurrence_rule) return;
+
+  const next = nextDueDateOffline(updated.due_date || '', updated.recurrence_rule);
+  if (!next) return; // unrecognized rule — leave it done, same as the Go path
+
+  if (updated.recurrence_end_date && next > updated.recurrence_end_date) return;
+
+  updated.due_date = next;
+  updated.done = false;
+}
+
+function nextDueDateOffline(currentDueDate, rule) {
+  const base = currentDueDate ? new Date(`${currentDueDate}T00:00:00Z`) : new Date();
+  if (Number.isNaN(base.getTime())) return null;
+
+  if (rule === 'DAILY') {
+    base.setUTCDate(base.getUTCDate() + 1);
+  } else if (rule === 'WEEKLY') {
+    base.setUTCDate(base.getUTCDate() + 7);
+  } else if (rule === 'MONTHLY') {
+    base.setUTCMonth(base.getUTCMonth() + 1);
+  } else if (rule === 'YEARLY') {
+    base.setUTCFullYear(base.getUTCFullYear() + 1);
+  } else {
+    const match = /^EVERY_X_DAYS:([1-9][0-9]*)$/.exec(rule);
+    if (!match) return null;
+    base.setUTCDate(base.getUTCDate() + Number(match[1]));
+  }
+
+  return base.toISOString().slice(0, 10);
 }
 
 // A PATCH/PUT/DELETE against a temp-* id targets something that only ever
@@ -464,6 +508,7 @@ async function resolveAgainstPendingCreate(tempId, method, body, headers) {
 
   const existing = (await self.TrakkaDB.getItem(tempId)) || { id: tempId };
   const updated = { ...existing, ...body, id: tempId, updated_at: now };
+  applyRecurrenceCompletionOffline(updated, existing.done);
   await self.TrakkaDB.putItem(updated);
   return new Response(JSON.stringify(updated), { status: 200, headers });
 }

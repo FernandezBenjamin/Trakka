@@ -50,8 +50,31 @@ type Item struct {
 	// used by the "Budget & Prévisions Achats" planning view to group and
 	// total upcoming spending. Nil means the item isn't scheduled.
 	TargetMonth *string `json:"target_month,omitempty"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	// DueDate (YYYY-MM-DD) is the date this item (or, for a recurring item,
+	// its current occurrence) is due. Nil means no due date has been set
+	// yet. For a recurring item it is advanced automatically each time the
+	// item is completed (see internal/handlers.applyRecurrenceCompletion)
+	// rather than edited directly through the UI.
+	DueDate *string `json:"due_date,omitempty"`
+	// IsRecurring is true exactly when RecurrenceRule is set — it is never
+	// set independently, purely a convenience so callers don't have to
+	// check RecurrenceRule for non-nilness themselves.
+	IsRecurring bool `json:"is_recurring"`
+	// RecurrenceRule is one of the fixed cadences ("DAILY", "WEEKLY",
+	// "MONTHLY", "YEARLY") or the custom "EVERY_X_DAYS:<n>" form (see
+	// internal/validate.Recurrence), or nil if the item doesn't repeat.
+	// Completing a recurring item doesn't delete or clone it — it advances
+	// DueDate to the next occurrence and resets Done to false instead (see
+	// internal/handlers.applyRecurrenceCompletion), so the same row is
+	// reused indefinitely rather than accumulating one row per occurrence.
+	RecurrenceRule *string `json:"recurrence_rule,omitempty"`
+	// RecurrenceEndDate (YYYY-MM-DD), if set, is the last date this item
+	// should recur on: once the next computed occurrence would fall after
+	// it, the item stops advancing and simply stays done, like a
+	// non-recurring item. Nil means the recurrence never ends on its own.
+	RecurrenceEndDate *string `json:"recurrence_end_date,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+	UpdatedAt         string  `json:"updated_at"`
 	// PriceStatus is a transient, response-only field set by
 	// internal/handlers.scrapePrice after a create/update/patch — never
 	// persisted, and never populated by a plain GET (it's the zero value

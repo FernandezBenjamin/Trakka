@@ -70,6 +70,18 @@ func Open(path string) (*DB, error) {
 	if _, err := conn.Exec(`CREATE INDEX IF NOT EXISTS idx_items_target_month ON items(target_month)`); err != nil {
 		return nil, fmt.Errorf("creating items.target_month index: %w", err)
 	}
+	if err := addColumnIfMissing(conn, "items", "due_date", "TEXT"); err != nil {
+		return nil, fmt.Errorf("migrating items table: %w", err)
+	}
+	if err := addColumnIfMissing(conn, "items", "is_recurring", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, fmt.Errorf("migrating items table: %w", err)
+	}
+	if err := addColumnIfMissing(conn, "items", "recurrence_rule", "TEXT"); err != nil {
+		return nil, fmt.Errorf("migrating items table: %w", err)
+	}
+	if err := addColumnIfMissing(conn, "items", "recurrence_end_date", "TEXT"); err != nil {
+		return nil, fmt.Errorf("migrating items table: %w", err)
+	}
 
 	if err := addColumnIfMissing(conn, "lists", "house_id", "INTEGER REFERENCES houses(id) ON DELETE CASCADE"); err != nil {
 		return nil, fmt.Errorf("migrating lists table: %w", err)

@@ -20,6 +20,7 @@ const listEls = {
   itemQuantity: document.getElementById('item-quantity'),
   itemPrice: document.getElementById('item-price'),
   itemTargetMonth: document.getElementById('item-target-month'),
+  itemRecurrence: document.getElementById('item-recurrence'),
   itemsActive: document.getElementById('items-active'),
   itemsDone: document.getElementById('items-done'),
   doneSection: document.getElementById('done-section'),
@@ -32,6 +33,7 @@ const listEls = {
   editItemPrice: document.getElementById('edit-item-price'),
   editItemPriceAutoBadge: document.getElementById('edit-item-price-auto-badge'),
   editItemTargetMonth: document.getElementById('edit-item-target-month'),
+  editItemRecurrence: document.getElementById('edit-item-recurrence'),
   imagePreviewModal: document.getElementById('image-preview-modal'),
   imagePreviewImg: document.getElementById('image-preview-img'),
   closeImagePreviewButton: document.getElementById('close-image-preview-button'),
@@ -106,6 +108,49 @@ function updateFinanceSummary(items) {
   listEls.financeTotal.textContent = formatEuro(total);
   listEls.financeSpent.textContent = formatEuro(spent);
   listEls.financeRemaining.textContent = formatEuro(total - spent);
+}
+
+// recurrenceBadgeLabel turns an item.recurrence_rule value (one of the
+// fixed cadences, or the custom "EVERY_X_DAYS:<n>" form — see
+// internal/validate.Recurrence) into the short, translated phrase shown
+// next to the 🔄 pictogram on a recurring item's row, e.g. "Chaque semaine".
+function recurrenceBadgeLabel(rule) {
+  switch (rule) {
+    case 'DAILY':
+      return t('items.recurrenceBadgeDaily');
+    case 'WEEKLY':
+      return t('items.recurrenceBadgeWeekly');
+    case 'MONTHLY':
+      return t('items.recurrenceBadgeMonthly');
+    case 'YEARLY':
+      return t('items.recurrenceBadgeYearly');
+    default: {
+      const match = /^EVERY_X_DAYS:([1-9][0-9]*)$/.exec(rule || '');
+      return match ? t('items.recurrenceBadgeEveryXDays', { n: match[1] }) : null;
+    }
+  }
+}
+
+// A discreet, non-interactive badge (🔄 + frequency) shown on a recurring
+// item's row — see recurrenceBadgeLabel. Completing a recurring item never
+// removes the badge: the server (or, offline, sw.js's own mirror of the
+// same logic) advances due_date and un-checks the item instead of clearing
+// recurrence_rule, so the row simply reappears among the active items with
+// the badge still in place.
+function buildRecurrenceBadge(item) {
+  const label = recurrenceBadgeLabel(item.recurrence_rule);
+  if (!label) return null;
+  const badge = document.createElement('span');
+  badge.className = 'flex shrink-0 items-center gap-1 rounded-full bg-slate-700/40 px-2 py-0.5 text-xs font-medium text-slate-300';
+  badge.setAttribute('aria-label', t('items.recurrenceBadgeAriaLabel', { frequency: label }));
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🔄';
+  const text = document.createElement('span');
+  text.textContent = label;
+  badge.appendChild(icon);
+  badge.appendChild(text);
+  return badge;
 }
 
 function emptyItemsRow(message) {
@@ -245,6 +290,11 @@ function buildItemRow(item) {
     monthBadge.className = 'shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-300';
     monthBadge.textContent = monthLabel(item.target_month, 'short');
     li.appendChild(monthBadge);
+  }
+
+  if (item.recurrence_rule) {
+    const recurrenceBadge = buildRecurrenceBadge(item);
+    if (recurrenceBadge) li.appendChild(recurrenceBadge);
   }
 
   if (item.url && isSafeHttpUrl(item.url)) {
@@ -504,10 +554,15 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     targetMonth = listEls.itemTargetMonth.value;
   }
 
+  // Recurrence applies regardless of list type (a todo chore repeats just
+  // as naturally as a shopping item), unlike price/target_month above.
+  const recurrenceRule = listEls.itemRecurrence.value;
+
   const payload = { list_id: state.currentListId, title, quantity };
   if (url) payload.url = url;
   if (price !== null) payload.price = price;
   if (targetMonth) payload.target_month = targetMonth;
+  if (recurrenceRule) payload.recurrence_rule = recurrenceRule;
 
   // Locally-scoped id, distinct from the server's own `temp-item-*` ids
   // (assigned by sw.js when a request is queued offline) — this one only
@@ -521,6 +576,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     quantity,
     price,
     target_month: targetMonth || null,
+    recurrence_rule: recurrenceRule || null,
     done: false,
     position: 0,
   };
@@ -561,6 +617,7 @@ function openEditItemModal(item) {
   listEls.editItemPrice.value = item.price != null ? item.price : '';
   listEls.editItemPriceAutoBadge.hidden = !item.price_auto;
   listEls.editItemTargetMonth.value = item.target_month || '';
+  listEls.editItemRecurrence.value = item.recurrence_rule || '';
   listEls.editItemModal.hidden = false;
   document.body.classList.add('overflow-hidden');
   listEls.editItemTitle.focus();
@@ -603,7 +660,11 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   // for price, `""` for target_month) rather than omitting the key (leave
   // unchanged) — see the PATCH handler's field-presence handling in
   // internal/handlers/items.go.
-  const payload = { title, url };
+  // Recurrence, unlike price/target_month, applies to both list types, so
+  // it's always included in the payload rather than gated on
+  // state.currentList.type — an empty value clears it back to "not
+  // recurring", same "absent = untouched, empty = clear" PATCH convention.
+  const payload = { title, url, recurrence_rule: listEls.editItemRecurrence.value };
   if (state.currentList && state.currentList.type === 'shopping') {
     const raw = listEls.editItemPrice.value.trim();
     if (raw === '') {
@@ -620,11 +681,18 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   }
 
   const item = editingItem;
-  const previous = { title: item.title, url: item.url, price: item.price, target_month: item.target_month };
+  const previous = {
+    title: item.title,
+    url: item.url,
+    price: item.price,
+    target_month: item.target_month,
+    recurrence_rule: item.recurrence_rule,
+  };
   item.title = title;
   item.url = url || null;
   if ('price' in payload) item.price = payload.price;
   if ('target_month' in payload) item.target_month = payload.target_month || null;
+  item.recurrence_rule = payload.recurrence_rule || null;
   renderItems();
   closeEditItemModal();
 

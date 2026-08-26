@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"trakka/internal/db"
+	"trakka/internal/models"
 	"trakka/internal/validate"
 )
 
@@ -45,13 +46,16 @@ func (app *Application) handleItemsIndex(w http.ResponseWriter, r *http.Request)
 
 func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		ListID      int64    `json:"list_id"`
-		Title       string   `json:"title"`
-		URL         string   `json:"url"`
-		Quantity    int      `json:"quantity"`
-		Price       *float64 `json:"price"`
-		Position    int      `json:"position"`
-		TargetMonth string   `json:"target_month"`
+		ListID            int64    `json:"list_id"`
+		Title             string   `json:"title"`
+		URL               string   `json:"url"`
+		Quantity          int      `json:"quantity"`
+		Price             *float64 `json:"price"`
+		Position          int      `json:"position"`
+		TargetMonth       string   `json:"target_month"`
+		DueDate           string   `json:"due_date"`
+		RecurrenceRule    string   `json:"recurrence_rule"`
+		RecurrenceEndDate string   `json:"recurrence_end_date"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -83,6 +87,21 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	cleanDueDate, err := validate.Date(in.DueDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cleanRecurrenceRule, err := validate.Recurrence(in.RecurrenceRule)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cleanRecurrenceEndDate, err := validate.Date(in.RecurrenceEndDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	list, err := app.DB.GetList(r.Context(), in.ListID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -96,7 +115,8 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	item, err := app.DB.CreateItem(r.Context(), in.ListID, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, in.Position, nullableString(cleanMonth))
+	item, err := app.DB.CreateItem(r.Context(), in.ListID, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, in.Position,
+		nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate))
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -145,13 +165,16 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	previousURL := stringValue(existing.URL)
 
 	var in struct {
-		Title       string   `json:"title"`
-		URL         string   `json:"url"`
-		Quantity    int      `json:"quantity"`
-		Price       *float64 `json:"price"`
-		Done        bool     `json:"done"`
-		Position    int      `json:"position"`
-		TargetMonth string   `json:"target_month"`
+		Title             string   `json:"title"`
+		URL               string   `json:"url"`
+		Quantity          int      `json:"quantity"`
+		Price             *float64 `json:"price"`
+		Done              bool     `json:"done"`
+		Position          int      `json:"position"`
+		TargetMonth       string   `json:"target_month"`
+		DueDate           string   `json:"due_date"`
+		RecurrenceRule    string   `json:"recurrence_rule"`
+		RecurrenceEndDate string   `json:"recurrence_end_date"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -179,6 +202,21 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	cleanDueDate, err := validate.Date(in.DueDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cleanRecurrenceRule, err := validate.Recurrence(in.RecurrenceRule)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cleanRecurrenceEndDate, err := validate.Date(in.RecurrenceEndDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// A scraped image is tied to the url it was found on: if the url just
 	// changed to something new, the existing image no longer describes it
@@ -189,7 +227,21 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		imageURL = nil
 	}
 
-	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, in.Done, in.Position, nullableString(cleanMonth))
+	// A recurring item being checked off (false → true) doesn't stay done —
+	// see applyRecurrenceCompletion — so the done/due_date actually
+	// persisted below may differ from what was requested. This is computed
+	// against a scratch models.Item rather than existing/in directly so the
+	// same helper can be shared with handleItemsPatch.
+	advanced := &models.Item{
+		Done:              in.Done,
+		DueDate:           nullableString(cleanDueDate),
+		RecurrenceRule:    nullableString(cleanRecurrenceRule),
+		RecurrenceEndDate: nullableString(cleanRecurrenceEndDate),
+	}
+	applyRecurrenceCompletion(advanced, existing.Done)
+
+	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, advanced.Done, in.Position,
+		nullableString(cleanMonth), advanced.DueDate, advanced.RecurrenceRule, advanced.RecurrenceEndDate)
 	if errors.Is(err, db.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "item not found")
 		return
@@ -210,13 +262,16 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	var in struct {
-		Title       *string         `json:"title"`
-		URL         *string         `json:"url"`
-		Quantity    *int            `json:"quantity"`
-		Price       json.RawMessage `json:"price"`
-		Done        *bool           `json:"done"`
-		Position    *int            `json:"position"`
-		TargetMonth *string         `json:"target_month"`
+		Title             *string         `json:"title"`
+		URL               *string         `json:"url"`
+		Quantity          *int            `json:"quantity"`
+		Price             json.RawMessage `json:"price"`
+		Done              *bool           `json:"done"`
+		Position          *int            `json:"position"`
+		TargetMonth       *string         `json:"target_month"`
+		DueDate           *string         `json:"due_date"`
+		RecurrenceRule    *string         `json:"recurrence_rule"`
+		RecurrenceEndDate *string         `json:"recurrence_end_date"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -234,6 +289,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	previousURL := stringValue(item.URL)
+	previousDone := item.Done
 
 	if in.Title != nil {
 		title := strings.TrimSpace(*in.Title)
@@ -307,8 +363,44 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		}
 		item.TargetMonth = nullableString(cleanMonth)
 	}
+	if in.DueDate != nil {
+		cleanDueDate, err := validate.Date(*in.DueDate)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item.DueDate = nullableString(cleanDueDate)
+	}
+	if in.RecurrenceRule != nil {
+		cleanRecurrenceRule, err := validate.Recurrence(*in.RecurrenceRule)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item.RecurrenceRule = nullableString(cleanRecurrenceRule)
+		if item.RecurrenceRule == nil {
+			// Turning recurrence off entirely: due_date/recurrence_end_date
+			// only mean anything while the item is recurring.
+			item.DueDate = nil
+			item.RecurrenceEndDate = nil
+		}
+	}
+	if in.RecurrenceEndDate != nil {
+		cleanRecurrenceEndDate, err := validate.Date(*in.RecurrenceEndDate)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item.RecurrenceEndDate = nullableString(cleanRecurrenceEndDate)
+	}
 
-	updated, err := app.DB.UpdateItem(r.Context(), id, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL, item.Done, item.Position, item.TargetMonth)
+	// See applyRecurrenceCompletion: a recurring item being checked off
+	// (false → true) here advances due_date and flips Done back to false
+	// instead of actually persisting as done.
+	applyRecurrenceCompletion(item, previousDone)
+
+	updated, err := app.DB.UpdateItem(r.Context(), id, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL, item.Done, item.Position,
+		item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

@@ -17,11 +17,16 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	it := &models.Item{}
 	var done int
 	var priceAuto int
+	var isRecurring int
 	var price sql.NullFloat64
 	var imageURL sql.NullString
 	var targetMonth sql.NullString
+	var dueDate sql.NullString
+	var recurrenceRule sql.NullString
+	var recurrenceEndDate sql.NullString
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
-		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth); err != nil {
+		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
+		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate); err != nil {
 		return nil, err
 	}
 	it.Done = done != 0
@@ -37,6 +42,19 @@ func scanItem(row rowScanner) (*models.Item, error) {
 		s := targetMonth.String
 		it.TargetMonth = &s
 	}
+	if dueDate.Valid && dueDate.String != "" {
+		s := dueDate.String
+		it.DueDate = &s
+	}
+	it.IsRecurring = isRecurring != 0
+	if recurrenceRule.Valid && recurrenceRule.String != "" {
+		s := recurrenceRule.String
+		it.RecurrenceRule = &s
+	}
+	if recurrenceEndDate.Valid && recurrenceEndDate.String != "" {
+		s := recurrenceEndDate.String
+		it.RecurrenceEndDate = &s
+	}
 	return it, nil
 }
 
@@ -45,7 +63,8 @@ func scanItem(row rowScanner) (*models.Item, error) {
 // callers that need existence checked should call GetList first.
 func (d *DB) ListItemsByList(ctx context.Context, listID int64) ([]*models.Item, error) {
 	rows, err := d.conn.QueryContext(ctx,
-		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month
+		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
+		 due_date, is_recurring, recurrence_rule, recurrence_end_date
 		 FROM items WHERE list_id = ? ORDER BY position ASC, id ASC`, listID)
 	if err != nil {
 		return nil, fmt.Errorf("querying items for list %d: %w", listID, err)
@@ -72,10 +91,16 @@ func (d *DB) ListItemsByList(ctx context.Context, listID int64) ([]*models.Item,
 // scraper (see scrapePrice in internal/handlers, which runs only after the
 // item already exists). targetMonth is the planned purchase month
 // (YYYY-MM, validated by internal/validate.Month) or nil if not scheduled.
-func (d *DB) CreateItem(ctx context.Context, listID int64, title string, url *string, quantity int, price *float64, priceAuto bool, position int, targetMonth *string) (*models.Item, error) {
+// dueDate (YYYY-MM-DD) and recurrenceEndDate (YYYY-MM-DD) are validated by
+// internal/validate.Date; recurrenceRule is validated by
+// internal/validate.Recurrence. is_recurring is never a separate argument —
+// it's stored as simply whether recurrenceRule is non-nil, so the two can
+// never disagree.
+func (d *DB) CreateItem(ctx context.Context, listID int64, title string, url *string, quantity int, price *float64, priceAuto bool, position int, targetMonth, dueDate, recurrenceRule, recurrenceEndDate *string) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`INSERT INTO items (list_id, title, url, quantity, price, price_auto, position, target_month) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		listID, title, url, quantity, price, boolToInt(priceAuto), position, targetMonth)
+		`INSERT INTO items (list_id, title, url, quantity, price, price_auto, position, target_month, due_date, is_recurring, recurrence_rule, recurrence_end_date)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		listID, title, url, quantity, price, boolToInt(priceAuto), position, targetMonth, dueDate, boolToInt(recurrenceRule != nil), recurrenceRule, recurrenceEndDate)
 	if err != nil {
 		return nil, fmt.Errorf("inserting item: %w", err)
 	}
@@ -90,7 +115,8 @@ func (d *DB) CreateItem(ctx context.Context, listID int64, title string, url *st
 // exists.
 func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 	row := d.conn.QueryRowContext(ctx,
-		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month
+		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
+		 due_date, is_recurring, recurrence_rule, recurrence_end_date
 		 FROM items WHERE id = ?`, id)
 	item, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -112,12 +138,19 @@ func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 // invalidates it the same way a manual price invalidates price_auto (see
 // internal/handlers/items.go, which computes this before calling in).
 // targetMonth is the planned purchase month (YYYY-MM) or nil to leave the
-// item unscheduled. Returns ErrNotFound if no such item exists.
-func (d *DB) UpdateItem(ctx context.Context, id int64, title string, url *string, quantity int, price *float64, priceAuto bool, imageURL *string, done bool, position int, targetMonth *string) (*models.Item, error) {
+// item unscheduled. dueDate/recurrenceRule/recurrenceEndDate follow the
+// same validation/is_recurring-derivation rules as CreateItem — callers
+// (internal/handlers) are expected to have already run a recurring item's
+// completion through applyRecurrenceCompletion before calling this, so
+// done/dueDate here already reflect any auto-advance. Returns ErrNotFound
+// if no such item exists.
+func (d *DB) UpdateItem(ctx context.Context, id int64, title string, url *string, quantity int, price *float64, priceAuto bool, imageURL *string, done bool, position int, targetMonth, dueDate, recurrenceRule, recurrenceEndDate *string) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
 		`UPDATE items SET title = ?, url = ?, quantity = ?, price = ?, price_auto = ?, image_url = ?, done = ?, position = ?, target_month = ?,
+		 due_date = ?, is_recurring = ?, recurrence_rule = ?, recurrence_end_date = ?,
 		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
-		title, url, quantity, price, boolToInt(priceAuto), imageURL, boolToInt(done), position, targetMonth, id)
+		title, url, quantity, price, boolToInt(priceAuto), imageURL, boolToInt(done), position, targetMonth,
+		dueDate, boolToInt(recurrenceRule != nil), recurrenceRule, recurrenceEndDate, id)
 	if err != nil {
 		return nil, fmt.Errorf("updating item %d: %w", id, err)
 	}
