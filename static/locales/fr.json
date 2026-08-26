@@ -1,0 +1,94 @@
+{
+  "common": {
+    "deleteList": "Supprimer {name}",
+    "removeMember": "Retirer {email}"
+  },
+  "header": {
+    "backToDashboard": "Retour au tableau de bord",
+    "logout": "Se déconnecter",
+    "langSwitcher": "Changer de langue",
+    "langFr": "Français",
+    "langEn": "English",
+    "online": "En ligne",
+    "offline": "Hors-ligne",
+    "pending": "{count} en attente"
+  },
+  "dashboard": {
+    "house": "Maison",
+    "members": "Membres",
+    "title": "Tableau de bord",
+    "newList": "Nouvelle liste",
+    "shoppingHeading": "Achats & Sourcing",
+    "todoHeading": "Espaces Tâches",
+    "createHouseOption": "+ Créer une Maison",
+    "tabLists": "Listes"
+  },
+  "items": {
+    "back": "Retour au tableau de bord",
+    "financeTotal": "Total estimé",
+    "financeSpent": "Déjà dépensé",
+    "financeRemaining": "Reste à dépenser",
+    "titlePlaceholder": "Article ou tâche",
+    "urlPlaceholder": "URL (optionnel)",
+    "quantityAriaLabel": "Quantité",
+    "pricePlaceholder": "Prix € (optionnel)",
+    "priceAriaLabel": "Prix en euros",
+    "targetMonthAriaLabel": "Mois prévu (optionnel)",
+    "add": "Ajouter",
+    "doneDefault": "Terminés (0)"
+  },
+  "planning": {
+    "tabTitle": "Budget & Prévisions",
+    "title": "Budget & Prévisions Achats",
+    "horizon3": "3 prochains mois",
+    "horizon6": "6 prochains mois",
+    "horizon12": "12 prochains mois",
+    "totalLabel": "Total prévu sur la période",
+    "emptyMonth": "Aucun achat prévu ce mois-ci.",
+    "unscheduled": "— Non planifié —",
+    "moveAriaLabel": "Déplacer {title} vers un autre mois"
+  },
+  "modals": {
+    "close": "Fermer",
+    "newList": {
+      "title": "Nouvelle liste",
+      "nameLabel": "Nom",
+      "namePlaceholder": "Ex. Courses de la semaine",
+      "typeLabel": "Type",
+      "typeShopping": "Courses",
+      "typeTodo": "Tâches",
+      "submit": "Créer la liste"
+    },
+    "newHouse": {
+      "title": "Nouvelle Maison",
+      "nameLabel": "Nom",
+      "namePlaceholder": "Ex. Maison des Parents",
+      "submit": "Créer la Maison"
+    },
+    "members": {
+      "title": "Membres de la Maison",
+      "invitePlaceholder": "Email de la personne à inviter",
+      "inviteSubmit": "Inviter"
+    },
+    "editItem": {
+      "title": "Modifier l'article",
+      "nameLabel": "Nom",
+      "urlLabel": "URL (optionnel)",
+      "priceLabel": "Prix (€, optionnel)",
+      "autoBadge": "Détecté automatiquement",
+      "targetMonthLabel": "Mois prévu (optionnel)",
+      "submit": "Enregistrer"
+    },
+    "imagePreview": {
+      "ariaLabel": "Aperçu de l'image de l'article",
+      "close": "Fermer l'aperçu"
+    }
+  },
+  "undo": {
+    "cancel": "Annuler",
+    "listDeleted": "Liste « {name} » supprimée",
+    "itemDeleted": "« {title} » supprimé",
+    "itemMarkedDone": "« {title} » marqué comme terminé",
+    "itemMarkedUndone": "« {title} » marqué comme à faire"
+  }
+}

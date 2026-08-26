@@ -1,0 +1,6 @@
+/trakka
+trakka-brand
+/data/
+*.db
+*.db-wal
+*.db-shm

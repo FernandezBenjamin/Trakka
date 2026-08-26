@@ -1,0 +1,152 @@
+package auth
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/mail"
+	"strings"
+	"time"
+
+	"trakka/internal/db"
+	"trakka/internal/models"
+)
+
+// dummyHash is a fixed bcrypt hash checked when a login's email doesn't
+// match any account, so Authenticate takes roughly the same time whether
+// or not the email exists — a defense against user-enumeration via timing.
+var dummyHash = mustHash("not-a-real-password-timing-fixture")
+
+func mustHash(plain string) string {
+	hash, err := HashPassword(plain)
+	if err != nil {
+		panic(err)
+	}
+	return hash
+}
+
+// Service implements registration, local authentication, and session
+// management on top of internal/db. OIDC is nil when no provider is
+// configured.
+type Service struct {
+	DB           *db.DB
+	OIDC         *OIDCClient
+	SessionTTL   time.Duration
+	CookieSecure bool
+}
+
+// NewService constructs a Service. oidc may be nil if OIDC is not
+// configured.
+func NewService(database *db.DB, oidc *OIDCClient, sessionTTL time.Duration, cookieSecure bool) *Service {
+	return &Service{DB: database, OIDC: oidc, SessionTTL: sessionTTL, CookieSecure: cookieSecure}
+}
+
+// Register creates a new local account. Returns db.ErrDuplicateEmail if the
+// email is already registered.
+func (s *Service) Register(ctx context.Context, email, password, displayName string) (*models.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, errors.New("invalid email address")
+	}
+	if err := ValidatePasswordStrength(password); err != nil {
+		return nil, err
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	displayName = strings.TrimSpace(displayName)
+	return s.DB.CreateUser(ctx, email, &hash, nil, nil, displayName)
+}
+
+// Authenticate verifies an email/password pair. Returns ErrInvalidCredentials
+// if the email is unknown, the account has no password (OIDC-only), or the
+// password doesn't match.
+func (s *Service) Authenticate(ctx context.Context, email, password string) (*models.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	user, err := s.DB.GetUserByEmail(ctx, email)
+	if errors.Is(err, db.ErrNotFound) {
+		VerifyPassword(dummyHash, password) // timing/enumeration mitigation
+		return nil, ErrInvalidCredentials
+	}
+	if err != nil {
+		return nil, err
+	}
+	if user.PasswordHash == nil {
+		VerifyPassword(dummyHash, password) // OIDC-only account; same timing profile
+		return nil, ErrInvalidCredentials
+	}
+	if !VerifyPassword(*user.PasswordHash, password) {
+		return nil, ErrInvalidCredentials
+	}
+	return &user.User, nil
+}
+
+// CreateSession issues a new session for userID and returns the raw token
+// to place in a cookie (the database only ever stores its hash).
+func (s *Service) CreateSession(ctx context.Context, userID int64) (rawToken string, expiresAt time.Time, err error) {
+	rawToken, err = RandomToken(32)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	expiresAt = time.Now().Add(s.SessionTTL)
+	if err := s.DB.CreateSession(ctx, HashToken(rawToken), userID, expiresAt); err != nil {
+		return "", time.Time{}, err
+	}
+	return rawToken, expiresAt, nil
+}
+
+// ValidateSession resolves a raw session token to its user. Returns
+// db.ErrNotFound if the token is unknown or expired.
+func (s *Service) ValidateSession(ctx context.Context, rawToken string) (*models.User, error) {
+	session, err := s.DB.GetSessionByHash(ctx, HashToken(rawToken))
+	if err != nil {
+		return nil, err
+	}
+	return s.DB.GetUser(ctx, session.UserID)
+}
+
+// RevokeSession deletes a session (logout). Returns db.ErrNotFound if the
+// token is unknown.
+func (s *Service) RevokeSession(ctx context.Context, rawToken string) error {
+	return s.DB.DeleteSessionByHash(ctx, HashToken(rawToken))
+}
+
+// SetSessionCookie writes the session cookie. HttpOnly + SameSite=Strict:
+// this cookie is only ever needed on same-origin requests once a session
+// exists, and Strict blocks it from ever being sent cross-site, closing
+// off CSRF against the JSON API without needing a separate token.
+func (s *Service) SetSessionCookie(w http.ResponseWriter, rawToken string, expiresAt time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    rawToken,
+		Path:     "/",
+		Expires:  expiresAt,
+		HttpOnly: true,
+		Secure:   s.CookieSecure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// ClearSessionCookie expires the session cookie immediately (logout).
+func (s *Service) ClearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   s.CookieSecure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// UserFromRequest reads the session cookie from r and validates it. Returns
+// an error if there's no cookie or the session is invalid/expired.
+func (s *Service) UserFromRequest(r *http.Request) (*models.User, error) {
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil {
+		return nil, err
+	}
+	return s.ValidateSession(r.Context(), cookie.Value)
+}

@@ -1,0 +1,213 @@
+name: CI
+
+# ---------------------------------------------------------------------------
+# Triggers
+# ---------------------------------------------------------------------------
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    # Note: which branch/ref this run builds from is already chosen via the
+    # "Use workflow from" branch selector when triggering manually (or via
+    # `gh workflow run --ref <branch>` / the API `ref` field) — that's native
+    # GitHub Actions behavior for workflow_dispatch, so no extra "branch"
+    # input is needed here.
+    inputs:
+      image_tag:
+        description: "Custom Docker image tag (e.g. nightly, test-feature)"
+        required: false
+        default: "nightly"
+        type: string
+      push_to_ghcr:
+        description: "Push the built image to GHCR (ghcr.io)?"
+        required: false
+        default: true
+        type: boolean
+
+# Cancel superseded runs on the same branch/PR to save CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  GO_VERSION_FILE: go.mod
+
+jobs:
+  # -------------------------------------------------------------------------
+  # 1) Go quality & tests
+  # -------------------------------------------------------------------------
+  quality:
+    name: Quality & tests (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Read the version straight from go.mod so this workflow can never
+          # drift from the pinned Go version documented in CLAUDE.md.
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - name: gofmt (fail on unformatted files)
+        run: |
+          fmt_out="$(gofmt -l .)"
+          if [ -n "$fmt_out" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$fmt_out"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -v ./...
+
+  # -------------------------------------------------------------------------
+  # 2) DevSecOps: static analysis (code) + dependency vulnerability scan
+  # -------------------------------------------------------------------------
+  security-scan:
+    name: Security scan (Gosec + Trivy deps)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # required to upload SARIF to the Security tab
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec (Go source SAST)
+        run: gosec -fmt=sarif -out=gosec-results.sarif ./...
+
+      - name: Upload gosec SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+
+      - name: Trivy filesystem scan (dependency CVEs in go.sum)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # -------------------------------------------------------------------------
+  # 3) Build (multi-arch) -> scan the image -> push to GHCR
+  # -------------------------------------------------------------------------
+  build-and-push:
+    name: Build, scan & push Docker image
+    needs: [quality, security-scan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # needed to push to ghcr.io with GITHUB_TOKEN
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute lowercase image name
+        id: image
+        # GHCR requires a fully lowercase repository path; github.repository
+        # ("FernandezBenjamin/Trakka") is not guaranteed to be lowercase.
+        run: |
+          echo "name=${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+
+      - name: Should this run push to GHCR?
+        id: policy
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            push=false
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            push=${{ github.event.inputs.push_to_ghcr }}
+          else
+            push=true
+          fi
+          echo "push=$push" >> "$GITHUB_OUTPUT"
+
+      - name: Docker metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
+            type=semver,pattern={{raw}}
+            type=raw,value=${{ github.event.inputs.image_tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Set up QEMU (for linux/arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.policy.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Multi-platform images built with buildx cannot be `--load`ed into the
+      # local Docker daemon, so we first build a single-arch (linux/amd64)
+      # image locally purely to scan it with Trivy *before* anything is
+      # pushed. The final multi-arch build below reuses the same GHA cache,
+      # so this doesn't meaningfully slow the pipeline down.
+      - name: Build local image for scanning (linux/amd64 only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: trakka:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy image scan (CVEs, before any push)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: trakka:scan
+          scan-type: image
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Build & push multi-arch image
+        if: steps.policy.outputs.push == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

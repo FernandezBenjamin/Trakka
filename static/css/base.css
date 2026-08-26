@@ -1,0 +1,12 @@
+/* The browser's built-in `[hidden] { display: none }` rule is UA-origin,
+   which the CSS cascade always ranks below any author-origin rule at equal
+   importance — including Tailwind's `.flex`/`.grid`/`.block` utilities —
+   regardless of specificity or source order. Any element that combines the
+   `hidden` attribute with one of those display utilities (e.g. a modal
+   toggled via `el.hidden = true/false` that also needs `flex` while shown)
+   would otherwise stay visible even when `hidden` is set. This restores
+   `hidden` as the final word without touching every such element's classes
+   or JS toggle logic individually. */
+[hidden] {
+  display: none !important;
+}

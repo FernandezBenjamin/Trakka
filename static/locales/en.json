@@ -1,0 +1,94 @@
+{
+  "common": {
+    "deleteList": "Delete {name}",
+    "removeMember": "Remove {email}"
+  },
+  "header": {
+    "backToDashboard": "Back to dashboard",
+    "logout": "Log out",
+    "langSwitcher": "Change language",
+    "langFr": "Français",
+    "langEn": "English",
+    "online": "Online",
+    "offline": "Offline",
+    "pending": "{count} pending"
+  },
+  "dashboard": {
+    "house": "House",
+    "members": "Members",
+    "title": "Dashboard",
+    "newList": "New list",
+    "shoppingHeading": "Shopping & Sourcing",
+    "todoHeading": "Task Spaces",
+    "createHouseOption": "+ Create a House",
+    "tabLists": "Lists"
+  },
+  "items": {
+    "back": "Back to dashboard",
+    "financeTotal": "Estimated total",
+    "financeSpent": "Already spent",
+    "financeRemaining": "Remaining to spend",
+    "titlePlaceholder": "Item or task",
+    "urlPlaceholder": "URL (optional)",
+    "quantityAriaLabel": "Quantity",
+    "pricePlaceholder": "Price € (optional)",
+    "priceAriaLabel": "Price in euros",
+    "targetMonthAriaLabel": "Planned month (optional)",
+    "add": "Add",
+    "doneDefault": "Completed (0)"
+  },
+  "planning": {
+    "tabTitle": "Budget & Forecast",
+    "title": "Shopping Budget & Forecast",
+    "horizon3": "Next 3 months",
+    "horizon6": "Next 6 months",
+    "horizon12": "Next 12 months",
+    "totalLabel": "Total planned for the period",
+    "emptyMonth": "No purchases planned this month.",
+    "unscheduled": "— Unscheduled —",
+    "moveAriaLabel": "Move {title} to a different month"
+  },
+  "modals": {
+    "close": "Close",
+    "newList": {
+      "title": "New list",
+      "nameLabel": "Name",
+      "namePlaceholder": "E.g. Weekly groceries",
+      "typeLabel": "Type",
+      "typeShopping": "Shopping",
+      "typeTodo": "Tasks",
+      "submit": "Create list"
+    },
+    "newHouse": {
+      "title": "New House",
+      "nameLabel": "Name",
+      "namePlaceholder": "E.g. Parents' House",
+      "submit": "Create House"
+    },
+    "members": {
+      "title": "House Members",
+      "invitePlaceholder": "Email of the person to invite",
+      "inviteSubmit": "Invite"
+    },
+    "editItem": {
+      "title": "Edit item",
+      "nameLabel": "Name",
+      "urlLabel": "URL (optional)",
+      "priceLabel": "Price (€, optional)",
+      "autoBadge": "Auto-detected",
+      "targetMonthLabel": "Planned month (optional)",
+      "submit": "Save"
+    },
+    "imagePreview": {
+      "ariaLabel": "Item image preview",
+      "close": "Close preview"
+    }
+  },
+  "undo": {
+    "cancel": "Undo",
+    "listDeleted": "List \"{name}\" deleted",
+    "itemDeleted": "\"{title}\" deleted",
+    "itemMarkedDone": "\"{title}\" marked as done",
+    "itemMarkedUndone": "\"{title}\" marked as not done"
+  }
+}

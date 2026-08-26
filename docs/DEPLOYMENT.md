@@ -1,0 +1,111 @@
+# Deployment
+
+Trakka ships as a single static Go binary in a minimal Alpine image, with a [compose.yml](../compose.yml) that works unchanged under Docker and Podman rootless.
+
+## Configuration (environment variables)
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8080` | HTTP listen port |
+| `DB_PATH` | `/data/trakka.db` | SQLite database file path |
+| `STATIC_DIR` | `/app/static` | Directory served as static assets at `/` |
+| `TEMPLATES_DIR` | `/app/templates` | Directory containing `login.html` |
+| `BASE_URL` | *(empty)* | Externally-visible origin (e.g. `https://trakka.example.com`), used to build the OIDC `redirect_uri`. **Required if OIDC is configured**; the server refuses to start otherwise. |
+| `OIDC_ISSUER` | *(empty)* | OIDC provider issuer URL (e.g. `https://auth.example.com`). Set together with the two vars below, or leave all three empty to disable OIDC. |
+| `OIDC_CLIENT_ID` | *(empty)* | OIDC client id registered with the provider. |
+| `OIDC_CLIENT_SECRET` | *(empty)* | OIDC client secret. Treat as sensitive — pass it as a secret/secret-file in production, not a plain compose env value, the same way you would any other credential. |
+| `SESSION_COOKIE_SECURE` | `true` | Whether the session cookie gets the `Secure` attribute. Only set to `false` for plain-HTTP `localhost` testing (see [docs/PWA.md](PWA.md) — the same HTTPS-or-localhost requirement service workers have). |
+| `SESSION_TTL_HOURS` | `720` (30 days) | How long a session stays valid after login. |
+
+There is no config file — every setting is an environment variable, set in [compose.yml](../compose.yml) or passed to `docker run` / `podman run`. OIDC is only enabled when `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` are **all** set; setting one or two of the three fails startup with a clear error rather than silently half-enabling it. See [docs/API.md](API.md#authentication) for the resulting `/auth/...` endpoints.
+
+## Docker
+
+```bash
+docker compose up -d --build
+```
+
+This builds the image from the [Dockerfile](../Dockerfile), starts `trakka` on `localhost:8080`, and persists data in the `trakka_data` named volume.
+
+`compose.yml` exposes Trakka over plain HTTP, which is fine for `localhost` testing but **not enough for the PWA/offline features on a real phone**: browsers only allow service worker registration in a secure context (`https://`, or exactly `http://localhost`). To install Trakka and get offline support on an actual iOS/Android device, put a TLS-terminating reverse proxy (Caddy, Traefik, nginx + Let's Encrypt, etc.) in front of port `8080` — see [docs/PWA.md](PWA.md).
+
+Equivalent manual `docker run`:
+
+```bash
+docker build -t trakka:latest .
+docker run -d --name trakka \
+  -p 8080:8080 \
+  -v trakka_data:/data \
+  trakka:latest
+```
+
+## Podman (rootless)
+
+The same `compose.yml` works with `podman-compose`:
+
+```bash
+podman-compose up -d
+```
+
+Or without compose:
+
+```bash
+podman build -t trakka:latest .
+podman run -d --name trakka \
+  -p 8080:8080 \
+  -v trakka_data:/data \
+  trakka:latest
+```
+
+No `--userns=keep-id` or extra rootless flags are needed for normal operation: the container process runs as a **fixed numeric UID:GID (`10001:10001`)**, set in the Dockerfile (`adduser -u 10001 ... && USER 10001:10001`) rather than a symbolic `USER trakka`. A numeric UID is what makes ownership of the `/data` volume behave predictably under Podman's user-namespace remapping — the UID inside the container maps to a UID in your subuid range on the host, and stays consistent across `docker run` and `podman run` alike.
+
+## Image build
+
+Multi-stage [Dockerfile](../Dockerfile):
+
+1. **Build stage** — `golang:1.27.0-alpine`, compiles `./cmd/server` with `CGO_ENABLED=0` to a fully static binary (`modernc.org/sqlite` is pure Go, so this works with no `libsqlite3`).
+2. **Runtime stage** — `alpine:latest`, copies in only the binary and `static/`, creates the non-root `trakka` user/group at UID/GID `10001`, and owns `/data` and `/app` by that user.
+
+The Go version in the build stage and the `go` directive in [go.mod](../go.mod) are intentionally kept in lockstep (both `1.27.0`) — see [CLAUDE.md](../CLAUDE.md) if you need to bump the SQLite driver or Go version.
+
+## Healthcheck
+
+The image's `HEALTHCHECK` runs `trakka -healthcheck`, which performs an in-process HTTP GET against its own `/healthz` and exits `0`/`1` accordingly — no `curl` or `wget` is installed in the runtime image. `compose.yml` declares the same check under `services.trakka.healthcheck` so `docker compose ps` / `podman-compose ps` reflect container health.
+
+## Optional CalDAV sync (Radicale)
+
+A lightweight [Radicale](https://radicale.org/) service is defined in `compose.yml` but gated behind the `calendar` [Compose profile](https://docs.docker.com/compose/profiles/), so it is **not** started by `docker compose up` alone:
+
+```bash
+docker compose --profile calendar up -d
+# or
+podman-compose --profile calendar up -d
+```
+
+It listens on `5232` and persists its data/config in the `radicale_data` and `radicale_config` named volumes, on the same `trakka_net` bridge network as `trakka`. This is intended as an optional companion for calendar-based sync of task lists — Trakka's own API does not talk to Radicale directly; wiring that integration up (e.g. exporting to-do lists as `.ics`/CalDAV) is a separate, not-yet-implemented piece of work.
+
+## Networking
+
+Both services sit on a single explicit bridge network, `trakka_net`, defined in `compose.yml`. This keeps them addressable by service name (`trakka`, `radicale`) for any future inter-service calls, without exposing anything beyond the ports explicitly published (`8080` for Trakka, `5232` for Radicale).
+
+## Persistence
+
+| Volume | Mounted at | Contains |
+|---|---|---|
+| `trakka_data` | `/data` (in `trakka`) | `trakka.db` (+ WAL/SHM sidecar files) |
+| `radicale_data` | `/data` (in `radicale`) | CalDAV collections |
+| `radicale_config` | `/config` (in `radicale`) | Radicale configuration |
+
+All three are named Docker/Podman volumes (not bind mounts), which sidesteps host-side UID/permission mismatches that bind mounts commonly hit under rootless Podman.
+
+## Security posture
+
+- Non-root, fixed UID/GID in both services.
+- `security_opt: no-new-privileges:true` on both services in `compose.yml`.
+- No privileged capabilities, no host networking.
+- Every HTTP response (API and static) carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a strict `Content-Security-Policy` (`default-src 'self'`, no `unsafe-inline`), and `Referrer-Policy: no-referrer` — see [docs/API.md](API.md) and `internal/handlers/middleware.go`.
+- All SQL is parameterized (no string-built queries); any user-supplied URL is validated to be an absolute `http://`/`https://` URL before it's ever stored or rendered.
+
+## PWA / offline support
+
+See [docs/PWA.md](PWA.md) for how `static/sw.js`, `static/js/db.js`, and `static/manifest.json` make Trakka installable and usable offline on iOS, iPadOS, and Android — including the HTTPS requirement above, and how offline-created data gets reconciled once the network returns.

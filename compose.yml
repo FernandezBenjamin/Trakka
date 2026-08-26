@@ -1,0 +1,65 @@
+# Compatible with `docker compose` and `podman-compose` (rootless).
+#
+# Start Trakka only:
+#   docker compose up -d
+#   podman-compose up -d
+#
+# Also start the optional CalDAV sync server:
+#   docker compose --profile calendar up -d
+#   podman-compose --profile calendar up -d
+
+services:
+  trakka:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trakka:latest
+    container_name: trakka
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DB_PATH: /data/trakka.db
+      STATIC_DIR: /app/static
+      TZ: Europe/Paris
+    ports:
+      - "8080:8080"
+    volumes:
+      - trakka_data:/data
+    networks:
+      - trakka_net
+    healthcheck:
+      test: ["CMD", "/app/trakka", "-healthcheck"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    # Rootless-friendly: no privileged capabilities are required.
+    security_opt:
+      - no-new-privileges:true
+
+  # Optional lightweight CalDAV server, for calendar-based sync of task
+  # lists. Not started by default; enable with --profile calendar.
+  radicale:
+    image: docker.io/tomsquest/docker-radicale:latest
+    container_name: radicale
+    restart: unless-stopped
+    profiles:
+      - calendar
+    ports:
+      - "5232:5232"
+    volumes:
+      - radicale_data:/data
+      - radicale_config:/config
+    networks:
+      - trakka_net
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  trakka_net:
+    driver: bridge
+
+volumes:
+  trakka_data:
+  radicale_data:
+  radicale_config:
