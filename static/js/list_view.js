@@ -83,11 +83,41 @@ function typeLabel(type) {
   return type === 'todo' ? 'tâches' : 'courses';
 }
 
+// Fills listEls.itemTargetMonth with a fixed set of rolling-month options,
+// once: "Non planifié" (the default), then 12 months starting with the
+// current one, worded as "Ce mois-ci (<mois>)" / "Mois prochain (<mois>)"
+// for the first two and a plain "<mois> <année>" label after that.
+// monthsFromNow/monthLabel are defined in planning.js, loaded after this
+// file — calling this eagerly at parse time would hit them before they
+// exist, so it's called lazily instead, from applyListTypeVisibility below
+// (first invoked from renderItems, well after every script has loaded),
+// the same deferred-call pattern buildItemRow already uses for monthLabel.
+function ensureTargetMonthOptions() {
+  const select = listEls.itemTargetMonth;
+  if (select.options.length > 0) return;
+
+  const unscheduled = document.createElement('option');
+  unscheduled.value = '';
+  unscheduled.textContent = t('items.targetMonthUnscheduled');
+  select.appendChild(unscheduled);
+
+  monthsFromNow(12).forEach((month, index) => {
+    const option = document.createElement('option');
+    option.value = month;
+    const label = monthLabel(month, 'short');
+    if (index === 0) option.textContent = t('items.targetMonthCurrent', { month: label });
+    else if (index === 1) option.textContent = t('items.targetMonthNext', { month: label });
+    else option.textContent = label;
+    select.appendChild(option);
+  });
+}
+
 // Shows/hides every element flagged data-shopping-only (the price input on
 // the create-item form, the price field in the edit modal, and the
 // financial summary bar) — price only makes sense on `shopping` lists.
 function applyListTypeVisibility(type) {
   const isShopping = type === 'shopping';
+  ensureTargetMonthOptions();
   for (const el of document.querySelectorAll('[data-shopping-only]')) {
     el.hidden = !isShopping;
   }

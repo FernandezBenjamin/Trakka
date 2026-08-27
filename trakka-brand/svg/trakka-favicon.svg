@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32" role="img" aria-label="Trakka">
+  <title>Trakka</title>
+  <defs>
+    <linearGradient id="i" gradientUnits="userSpaceOnUse" x1="14" y1="22" x2="86" y2="78">
+      <stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="e" gradientUnits="userSpaceOnUse" x1="59" y1="48" x2="75" y2="64">
+      <stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#i)" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 31H76"/>
+    <path d="M50 31V69L67 56"/>
+  </g>
+  <circle cx="67" cy="56" r="7.5" fill="url(#e)"/>
+</svg>

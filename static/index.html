@@ -172,8 +172,8 @@
                class="w-20 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         <input type="number" id="item-price" data-shopping-only hidden step="0.01" min="0" data-i18n-placeholder="items.pricePlaceholder" placeholder="Prix € (optionnel)" data-i18n-aria-label="items.priceAriaLabel" aria-label="Prix en euros"
                class="w-36 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <input type="month" id="item-target-month" data-shopping-only hidden data-i18n-aria-label="items.targetMonthAriaLabel" aria-label="Mois prévu (optionnel)"
-               class="rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <select id="item-target-month" data-shopping-only hidden data-i18n-aria-label="items.targetMonthAriaLabel" aria-label="Mois prévu (optionnel)"
+                class="min-w-[11rem] rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
         <select id="item-recurrence" data-i18n-aria-label="items.recurrenceAriaLabel" aria-label="Récurrence"
                 class="rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
           <option value="" data-i18n="items.recurrenceNone">Ne pas répéter</option>
@@ -311,7 +311,7 @@
 
         <div id="edit-item-target-month-field" data-shopping-only hidden>
           <label for="edit-item-target-month" data-i18n="modals.editItem.targetMonthLabel" class="mb-1 block text-sm font-medium text-slate-300">Mois prévu (optionnel)</label>
-          <input type="month" id="edit-item-target-month"
+          <input type="month" id="edit-item-target-month" placeholder="AAAA-MM"
                  class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         </div>
 
