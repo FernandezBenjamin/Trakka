@@ -101,6 +101,13 @@
     return getOne(STORE_HOUSES, id);
   }
 
+  // Offline-fallback convenience for app.js/list_view.js: the mirror has no
+  // index on lists.house_id (see the comment on deleteHouse above for why a
+  // full scan is fine here), so this filters in memory rather than adding one.
+  function getListsByHouse(houseId) {
+    return getLists().then((lists) => lists.filter((list) => list.house_id === houseId));
+  }
+
   function putHouse(house) {
     return putOne(STORE_HOUSES, house);
   }
@@ -135,6 +142,17 @@
 
   function getList(id) {
     return getOne(STORE_LISTS, id);
+  }
+
+  // Composite read used by app.js/list_view.js's offline fallbacks — mirrors
+  // the shape a successful `GET /api/v1/lists/{id}` returns (list fields
+  // plus an `items` array), so callers can treat a cache hit and a live
+  // response identically. Resolves to null if the list itself isn't mirrored.
+  function getListWithItems(id) {
+    return getList(id).then((list) => {
+      if (!list) return null;
+      return getItemsByList(id).then((items) => ({ ...list, items }));
+    });
   }
 
   function putList(list) {
@@ -202,6 +220,8 @@
     getList,
     putList,
     deleteList,
+    getListsByHouse,
+    getListWithItems,
     getItem,
     getItemsByList,
     putItems,

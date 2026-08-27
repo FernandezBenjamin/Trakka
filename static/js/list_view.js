@@ -363,6 +363,19 @@ function renderItems() {
   listEls.doneSection.hidden = done.length === 0;
 }
 
+// Reads a single list (with its items) from the IndexedDB mirror, shaped
+// like a successful `GET /api/v1/lists/{id}` — db.js's getListWithItems
+// already does the composition. Resolves to null (never throws) whenever
+// the module is unavailable, the read fails, or the list isn't mirrored.
+async function cachedListDetail(id) {
+  if (!window.TrakkaDB) return null;
+  try {
+    return await window.TrakkaDB.getListWithItems(id);
+  } catch {
+    return null;
+  }
+}
+
 // Re-fetches the current list from the API and re-renders — used only to
 // reconcile with the server after the offline sync queue flushes (see
 // app.js's 'trakka-sync-complete' handler). Regular mutations below apply
@@ -373,22 +386,39 @@ async function refreshCurrentList() {
     state.currentList = await apiRequest(`/lists/${state.currentListId}`);
     renderItems();
   } catch (err) {
-    showError(err.message);
+    // Offline, or a transient server error: fall back to the local mirror
+    // rather than leaving the item list stuck on stale data with no
+    // explanation — see the Offline-First requirement in
+    // CLAUDE.md/docs/PWA.md.
+    const cached = await cachedListDetail(state.currentListId);
+    if (cached) {
+      state.currentList = cached;
+      renderItems();
+    } else {
+      showError(err.message);
+    }
   }
 }
 
 async function selectList(id) {
   hideError();
+  let list;
   try {
-    const list = await apiRequest(`/lists/${id}`);
-    state.currentListId = id;
-    state.currentList = list;
-    els.listsSection.hidden = true;
-    listEls.itemsSection.hidden = false;
-    renderItems();
+    list = await apiRequest(`/lists/${id}`);
   } catch (err) {
-    showError(err.message);
+    // Offline, or a transient server error: open the list from the local
+    // mirror instead of failing to open it at all.
+    list = await cachedListDetail(id);
+    if (!list) {
+      showError(err.message);
+      return;
+    }
   }
+  state.currentListId = id;
+  state.currentList = list;
+  els.listsSection.hidden = true;
+  listEls.itemsSection.hidden = false;
+  renderItems();
 }
 
 function showDashboard() {

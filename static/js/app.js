@@ -201,6 +201,20 @@ function populateHouseSelect(houses) {
   els.houseSelect.appendChild(createOption);
 }
 
+// Reads the IndexedDB houses mirror, defaulting to [] whenever the module
+// isn't available or the read itself fails (e.g. private-browsing profiles
+// without IndexedDB) — the shared fallback used whenever a network call
+// can't reach the server, so the dashboard degrades to "last known" data
+// instead of going blank.
+async function cachedHouses() {
+  if (!window.TrakkaDB) return [];
+  try {
+    return await window.TrakkaDB.getHouses();
+  } catch {
+    return [];
+  }
+}
+
 // Loads the house list, restores the last-selected house from localStorage
 // when it still exists, and otherwise falls back to the first house. Does
 // NOT load the dashboard itself — callers do that afterward once
@@ -210,8 +224,14 @@ async function loadHouses() {
   try {
     houses = await apiRequest('/houses');
   } catch (err) {
-    showError(err.message);
-    houses = [];
+    // Offline, or a transient server error (non-2xx): fall back to
+    // whatever the IndexedDB mirror last saw rather than wiping the
+    // dashboard to empty — see the Offline-First requirement in
+    // CLAUDE.md/docs/PWA.md. Only surface the error banner if the cache
+    // has nothing either, since the header's network badge already
+    // communicates "offline" on its own in the common case.
+    houses = await cachedHouses();
+    if (houses.length === 0) showError(err.message);
   }
 
   state.houses = houses;
@@ -493,6 +513,41 @@ function renderGrid(container, lists, badgeFn, emptyMessage) {
   }
 }
 
+// Reads every list belonging to `houseId` from the IndexedDB mirror, each
+// merged with its own cached items (db.js's getListWithItems) so the result
+// is shaped exactly like a batch of successful `GET /api/v1/lists/{id}`
+// responses. Used both for the instant paint on load and as loadDashboard's
+// fallback when the network is unreachable.
+async function cachedDashboardLists(houseId) {
+  if (!window.TrakkaDB) return [];
+  try {
+    const lists = await window.TrakkaDB.getListsByHouse(houseId);
+    const detailed = await Promise.all(lists.map((list) => window.TrakkaDB.getListWithItems(list.id)));
+    return detailed.filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// Renders the dashboard purely from the local IndexedDB mirror, with no
+// network request involved — this is what keeps lists/items on screen while
+// offline instead of the grid going blank. Lists mid-undo-grace-period (see
+// removeList) are filtered out here too, same as the network path below.
+async function renderDashboardFromCache() {
+  if (state.currentHouseId === null) {
+    renderGrid(els.shoppingLists, [], urlBadges, 'Créez une Maison pour commencer.');
+    renderGrid(els.todoLists, [], progressBadge, 'Créez une Maison pour commencer.');
+    return;
+  }
+
+  const detailed = (await cachedDashboardLists(state.currentHouseId)).filter(
+    (list) => !pendingDeletedListIds.has(list.id)
+  );
+
+  renderGrid(els.shoppingLists, detailed.filter((l) => l.type === 'shopping'), urlBadges, 'Aucune liste de courses pour le moment.');
+  renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, 'Aucun espace tâches pour le moment.');
+}
+
 async function loadDashboard() {
   if (state.currentHouseId === null) {
     renderGrid(els.shoppingLists, [], urlBadges, 'Créez une Maison pour commencer.');
@@ -504,6 +559,12 @@ async function loadDashboard() {
   try {
     lists = await apiRequest(`/lists?house_id=${state.currentHouseId}`);
   } catch (err) {
+    // Offline, or a transient server error: keep the dashboard populated
+    // from the local mirror rather than leaving it blank — see the
+    // Offline-First requirement in CLAUDE.md/docs/PWA.md. The banner still
+    // surfaces the underlying error since it doesn't hide the grid, only
+    // supplements the header's discreet network badge.
+    await renderDashboardFromCache();
     showError(err.message);
     return;
   }
@@ -514,10 +575,16 @@ async function loadDashboard() {
   lists = lists.filter((list) => !pendingDeletedListIds.has(list.id));
 
   // Fetch each list's detail (items included) in parallel to compute
-  // badges. Best effort per list: one failing shouldn't hide the rest.
+  // badges. Best effort per list: one failing shouldn't hide the rest —
+  // and falls back to that single list's cached detail before giving up
+  // and showing it with no items, so a partial network failure doesn't
+  // erase items that are still sitting in the local mirror.
   const detailed = await Promise.all(
     lists.map((list) =>
-      apiRequest(`/lists/${list.id}`).catch(() => ({ ...list, items: [] }))
+      apiRequest(`/lists/${list.id}`).catch(async () => {
+        const cached = window.TrakkaDB ? await window.TrakkaDB.getListWithItems(list.id).catch(() => null) : null;
+        return cached || { ...list, items: [] };
+      })
     )
   );
 
@@ -685,10 +752,47 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) updateNetworkStatus();
 });
 
+// Paints the dashboard from whatever's already in IndexedDB before any
+// network request is made — an empty mirror (brand new browser profile)
+// just renders the normal empty state, so this is always safe to call.
+// This is the "instant paint" half of the stale-while-revalidate load: the
+// network refresh in init() below repaints over this once it resolves.
+async function hydrateFromCache() {
+  const houses = await cachedHouses();
+  state.houses = houses;
+  populateHouseSelect(houses);
+
+  const stored = Number(localStorage.getItem(HOUSE_STORAGE_KEY));
+  const storedIsValid = houses.some((house) => house.id === stored);
+  state.currentHouseId = storedIsValid ? stored : (houses[0]?.id ?? null);
+  els.houseSelect.value = state.currentHouseId !== null ? String(state.currentHouseId) : CREATE_HOUSE_OPTION_VALUE;
+  updateManageMembersButton();
+
+  await renderDashboardFromCache();
+}
+
 async function init() {
-  // A 401 here redirects to /auth/login via apiRequest's 401 handling and
-  // never resolves, so nothing below runs for an unauthenticated visitor.
-  state.currentUser = await apiRequest('/me');
+  // Offline-first hydration: paint immediately from the local mirror so a
+  // reload while offline (or on a slow connection) never shows a blank
+  // dashboard while the requests below are still in flight.
+  await hydrateFromCache();
+
+  try {
+    // A real 401 here redirects to /auth/login via apiRequest's 401
+    // handling and never resolves, so nothing below runs for an
+    // unauthenticated visitor. This only catches "couldn't reach the
+    // server at all" (offline, or the service worker's offline fallback,
+    // which doesn't special-case /me and answers 503) — expected while
+    // offline, so it just keeps whatever hydrateFromCache already painted
+    // instead of aborting startup.
+    state.currentUser = await apiRequest('/me');
+  } catch (err) {
+    console.warn('Session non vérifiée (probablement hors ligne) :', err);
+  }
+
+  // Stale-while-revalidate: now refresh from the network. Both calls fall
+  // back to the cache again on their own if this fails, so it's safe to
+  // run unconditionally regardless of whether the /me check above worked.
   await loadHouses();
   await loadDashboard();
 }
