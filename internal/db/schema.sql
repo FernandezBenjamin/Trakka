@@ -32,9 +32,10 @@ CREATE TABLE IF NOT EXISTS items (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
--- items.due_date/is_recurring/recurrence_rule/recurrence_end_date are not
--- part of this CREATE TABLE either — same reasoning as price/target_month
--- above, applied via the addColumnIfMissing() guard in internal/db/db.go.
+-- items.due_date/is_recurring/recurrence_rule/recurrence_end_date/is_urgent
+-- are not part of this CREATE TABLE either — same reasoning as
+-- price/target_month above, applied via the addColumnIfMissing() guard in
+-- internal/db/db.go.
 CREATE INDEX IF NOT EXISTS idx_items_list_id ON items(list_id);
 CREATE INDEX IF NOT EXISTS idx_lists_type ON lists(type);
 

@@ -604,6 +604,10 @@ function refreshVisibleView() {
     // planning.js, resolved lazily here the same way showDashboard is
     // below — see that comment for why cross-file calls like this are safe.
     refreshPlanningIfActive();
+  } else if (isUrgentTabActive()) {
+    // isUrgentTabActive/refreshUrgentIfActive are defined in urgent.js,
+    // resolved lazily the same way.
+    refreshUrgentIfActive();
   } else {
     loadDashboard();
   }

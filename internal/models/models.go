@@ -73,8 +73,15 @@ type Item struct {
 	// it, the item stops advancing and simply stays done, like a
 	// non-recurring item. Nil means the recurrence never ends on its own.
 	RecurrenceEndDate *string `json:"recurrence_end_date,omitempty"`
-	CreatedAt         string  `json:"created_at"`
-	UpdatedAt         string  `json:"updated_at"`
+	// IsUrgent flags an item that needs attention right away (e.g. "out of
+	// toilet paper"). It's a plain user-set toggle, independent of
+	// TargetMonth/RecurrenceRule — unlike IsRecurring it has no derived
+	// relationship to another field. The frontend sorts an unfinished urgent
+	// item to the top of its list and surfaces it in the cross-list
+	// "Achats & Tâches Urgentes" dashboard widget (static/js/urgent.js).
+	IsUrgent  bool   `json:"is_urgent"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 	// PriceStatus is a transient, response-only field set by
 	// internal/handlers.scrapePrice after a create/update/patch — never
 	// persisted, and never populated by a plain GET (it's the zero value

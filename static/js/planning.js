@@ -11,14 +11,23 @@
 const planningEls = {
   tabDashboard: document.getElementById('tab-dashboard'),
   tabPlanning: document.getElementById('tab-planning'),
+  tabUrgent: document.getElementById('tab-urgent'),
   dashboardView: document.getElementById('dashboard-view'),
   planningView: document.getElementById('planning-view'),
+  urgentView: document.getElementById('urgent-view'),
   horizonButtons: document.querySelectorAll('#planning-view [data-horizon]'),
   total: document.getElementById('planning-total'),
   months: document.getElementById('planning-months'),
 };
 
-let planningTabActive = false;
+// The three dashboard tabs (Lists / Budget & Forecast / Urgent) are mutually
+// exclusive, so the switcher lives here rather than being split across each
+// tab's own file — setActiveTab is the single place that shows one view and
+// hides the other two. urgent.js calls back into loadUrgentView the same
+// deferred-call way buildItemRow calls monthLabel (defined below) — all
+// script tags finish loading and defining their top-level functions before
+// any click can actually fire.
+let activeTab = 'dashboard'; // 'dashboard' | 'planning' | 'urgent'
 let planningHorizon = 3;
 // Every scheduled item currently known for state.currentHouseId, as
 // { item, listName } — re-grouped by month locally on every horizon change
@@ -27,7 +36,11 @@ let planningHorizon = 3;
 let planningEntries = [];
 
 function isPlanningTabActive() {
-  return planningTabActive;
+  return activeTab === 'planning';
+}
+
+function isUrgentTabActive() {
+  return activeTab === 'urgent';
 }
 
 // monthsFromNow(3) with today in August 2026 returns
@@ -69,16 +82,23 @@ function setTabButtonState(button, active) {
 }
 
 function setActiveTab(tab) {
-  planningTabActive = tab === 'planning';
-  planningEls.dashboardView.hidden = planningTabActive;
-  planningEls.planningView.hidden = !planningTabActive;
-  setTabButtonState(planningEls.tabDashboard, !planningTabActive);
-  setTabButtonState(planningEls.tabPlanning, planningTabActive);
-  if (planningTabActive) loadPlanningView();
+  activeTab = tab;
+  planningEls.dashboardView.hidden = tab !== 'dashboard';
+  planningEls.planningView.hidden = tab !== 'planning';
+  planningEls.urgentView.hidden = tab !== 'urgent';
+  setTabButtonState(planningEls.tabDashboard, tab === 'dashboard');
+  setTabButtonState(planningEls.tabPlanning, tab === 'planning');
+  setTabButtonState(planningEls.tabUrgent, tab === 'urgent');
+  if (tab === 'planning') loadPlanningView();
+  // loadUrgentView is defined in urgent.js, loaded after this file — safe
+  // to call here since this only ever runs from a click, well after every
+  // script has finished loading and defined its top-level functions.
+  if (tab === 'urgent') loadUrgentView();
 }
 
 planningEls.tabDashboard.addEventListener('click', () => setActiveTab('dashboard'));
 planningEls.tabPlanning.addEventListener('click', () => setActiveTab('planning'));
+planningEls.tabUrgent.addEventListener('click', () => setActiveTab('urgent'));
 
 function setHorizonButtonState(button, active) {
   button.classList.toggle('border-sky-500', active);
@@ -134,7 +154,7 @@ async function loadPlanningView() {
 // scheduled items (offline sync completing, a language switch, a house
 // switch) — a no-op unless this tab is the one currently visible.
 function refreshPlanningIfActive() {
-  if (planningTabActive) loadPlanningView();
+  if (isPlanningTabActive()) loadPlanningView();
 }
 
 function renderPlanning() {

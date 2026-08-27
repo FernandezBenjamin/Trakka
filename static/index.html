@@ -88,6 +88,10 @@
                 class="min-h-[44px] rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800">
           Budget &amp; Prévisions
         </button>
+        <button type="button" id="tab-urgent" role="tab" aria-selected="false" data-i18n="urgent.tabTitle"
+                class="min-h-[44px] rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800">
+          Urgent
+        </button>
       </div>
 
       <div id="dashboard-view">
@@ -137,6 +141,15 @@
 
         <div id="planning-months" class="space-y-4"></div>
       </div>
+
+      <div id="urgent-view" hidden>
+        <div class="mb-6">
+          <h1 class="text-xl font-semibold" data-i18n="urgent.title">Achats &amp; Tâches Urgentes</h1>
+          <p class="mt-1 text-sm text-slate-400" data-i18n="urgent.subtitle">Tout ce qui presse, toutes listes confondues.</p>
+        </div>
+
+        <ul id="urgent-items" class="space-y-2"></ul>
+      </div>
     </section>
 
     <section id="items-section" hidden>
@@ -182,6 +195,12 @@
           <option value="MONTHLY" data-i18n="items.recurrenceMonthly">Tous les mois</option>
           <option value="YEARLY" data-i18n="items.recurrenceYearly">Tous les ans</option>
         </select>
+        <label class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800">
+          <input type="checkbox" id="item-urgent" data-i18n-aria-label="items.urgentAriaLabel" aria-label="Marquer comme urgent"
+                 class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-rose-500 focus:ring-rose-500/40">
+          <span aria-hidden="true">🚨</span>
+          <span data-i18n="items.urgentLabel">Marquer comme urgent</span>
+        </label>
         <button type="submit" data-i18n="items.add" class="rounded-xl bg-sky-500 px-5 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-95">Ajouter</button>
       </form>
 
@@ -327,6 +346,16 @@
           </select>
         </div>
 
+        <div>
+          <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800">
+            <input type="checkbox" id="edit-item-urgent"
+                   class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-rose-500 focus:ring-rose-500/40">
+            <span aria-hidden="true">🚨</span>
+            <span data-i18n="modals.editItem.urgentLabel">Marquer comme urgent</span>
+          </label>
+          <p class="mt-1 text-xs text-slate-500" data-i18n="modals.editItem.urgentHint">Ex : Papier toilette épuisé</p>
+        </div>
+
         <button type="submit" data-i18n="modals.editItem.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
       </form>
     </div>
@@ -350,5 +379,6 @@
   <script src="/js/app.js"></script>
   <script src="/js/list_view.js"></script>
   <script src="/js/planning.js"></script>
+  <script src="/js/urgent.js"></script>
 </body>
 </html>

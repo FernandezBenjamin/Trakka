@@ -50,6 +50,11 @@
     "recurrenceBadgeYearly": "Chaque année",
     "recurrenceBadgeEveryXDays": "Tous les {n} jours",
     "recurrenceBadgeAriaLabel": "Tâche récurrente : {frequency}",
+    "urgentLabel": "Marquer comme urgent",
+    "urgentHint": "Ex : Papier toilette épuisé",
+    "urgentAriaLabel": "Marquer comme urgent",
+    "urgentBadgeLabel": "Urgent",
+    "urgentBadgeAriaLabel": "Article urgent",
     "add": "Ajouter",
     "doneDefault": "Terminés (0)"
   },
@@ -63,6 +68,14 @@
     "emptyMonth": "Aucun achat prévu ce mois-ci.",
     "unscheduled": "— Non planifié —",
     "moveAriaLabel": "Déplacer {title} vers un autre mois"
+  },
+  "urgent": {
+    "tabTitle": "Urgent",
+    "title": "Achats & Tâches Urgentes",
+    "subtitle": "Tout ce qui presse, toutes listes confondues.",
+    "empty": "Rien d'urgent pour le moment.",
+    "markDoneAriaLabel": "Marquer « {title} » comme terminé",
+    "openListLabel": "Ouvrir « {list} »"
   },
   "modals": {
     "close": "Fermer",
@@ -94,6 +107,8 @@
       "autoBadge": "Détecté automatiquement",
       "targetMonthLabel": "Mois prévu (optionnel)",
       "recurrenceLabel": "Récurrence",
+      "urgentLabel": "Marquer comme urgent",
+      "urgentHint": "Ex : Papier toilette épuisé",
       "submit": "Enregistrer"
     },
     "imagePreview": {

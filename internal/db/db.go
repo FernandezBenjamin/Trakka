@@ -82,6 +82,9 @@ func Open(path string) (*DB, error) {
 	if err := addColumnIfMissing(conn, "items", "recurrence_end_date", "TEXT"); err != nil {
 		return nil, fmt.Errorf("migrating items table: %w", err)
 	}
+	if err := addColumnIfMissing(conn, "items", "is_urgent", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, fmt.Errorf("migrating items table: %w", err)
+	}
 
 	if err := addColumnIfMissing(conn, "lists", "house_id", "INTEGER REFERENCES houses(id) ON DELETE CASCADE"); err != nil {
 		return nil, fmt.Errorf("migrating lists table: %w", err)

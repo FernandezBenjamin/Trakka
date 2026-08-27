@@ -56,6 +56,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		DueDate           string   `json:"due_date"`
 		RecurrenceRule    string   `json:"recurrence_rule"`
 		RecurrenceEndDate string   `json:"recurrence_end_date"`
+		IsUrgent          bool     `json:"is_urgent"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -116,7 +117,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 	}
 
 	item, err := app.DB.CreateItem(r.Context(), in.ListID, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, in.Position,
-		nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate))
+		nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate), in.IsUrgent)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -175,6 +176,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		DueDate           string   `json:"due_date"`
 		RecurrenceRule    string   `json:"recurrence_rule"`
 		RecurrenceEndDate string   `json:"recurrence_end_date"`
+		IsUrgent          bool     `json:"is_urgent"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -241,7 +243,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	applyRecurrenceCompletion(advanced, existing.Done)
 
 	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, advanced.Done, in.Position,
-		nullableString(cleanMonth), advanced.DueDate, advanced.RecurrenceRule, advanced.RecurrenceEndDate)
+		nullableString(cleanMonth), advanced.DueDate, advanced.RecurrenceRule, advanced.RecurrenceEndDate, in.IsUrgent)
 	if errors.Is(err, db.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "item not found")
 		return
@@ -272,6 +274,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		DueDate           *string         `json:"due_date"`
 		RecurrenceRule    *string         `json:"recurrence_rule"`
 		RecurrenceEndDate *string         `json:"recurrence_end_date"`
+		IsUrgent          *bool           `json:"is_urgent"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -393,6 +396,9 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		}
 		item.RecurrenceEndDate = nullableString(cleanRecurrenceEndDate)
 	}
+	if in.IsUrgent != nil {
+		item.IsUrgent = *in.IsUrgent
+	}
 
 	// See applyRecurrenceCompletion: a recurring item being checked off
 	// (false → true) here advances due_date and flips Done back to false
@@ -400,7 +406,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	applyRecurrenceCompletion(item, previousDone)
 
 	updated, err := app.DB.UpdateItem(r.Context(), id, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL, item.Done, item.Position,
-		item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate)
+		item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, item.IsUrgent)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

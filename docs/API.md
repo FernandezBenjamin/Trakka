@@ -197,7 +197,7 @@ Returns the list **with its items embedded**, ordered by `position` then `id`.
     "id": 1, "house_id": 1, "name": "Courses", "type": "shopping",
     "created_at": "...", "updated_at": "...",
     "items": [
-      { "id": 1, "list_id": 1, "title": "Lait", "url": "https://...", "quantity": 2, "price": 1.85, "price_auto": false, "image_url": "https://...", "done": false, "position": 0, "target_month": "2026-11", "due_date": null, "is_recurring": false, "recurrence_rule": null, "recurrence_end_date": null, "created_at": "...", "updated_at": "..." }
+      { "id": 1, "list_id": 1, "title": "Lait", "url": "https://...", "quantity": 2, "price": 1.85, "price_auto": false, "image_url": "https://...", "done": false, "position": 0, "target_month": "2026-11", "due_date": null, "is_recurring": false, "recurrence_rule": null, "recurrence_end_date": null, "is_urgent": false, "created_at": "...", "updated_at": "..." }
     ]
   }
   ```
@@ -240,6 +240,7 @@ curl -X POST http://localhost:8080/api/v1/items \
 | `due_date` | string | no | `YYYY-MM-DD`; `400` if given but not a real calendar date in that format. For a recurring item this is managed automatically (see `recurrence_rule` below) and generally isn't set directly at creation |
 | `recurrence_rule` | string | no | one of `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`, or the custom `EVERY_X_DAYS:<n>` form (e.g. `"EVERY_X_DAYS:3"`); `400` if given but unrecognized. There is no separate `is_recurring` request field — `is_recurring` in the response is simply whether this is set |
 | `recurrence_end_date` | string | no | `YYYY-MM-DD`; the last date a recurring item should recur on. `400` if given but not a real calendar date |
+| `is_urgent` | boolean | no | flags the item as needing attention right away (e.g. "out of toilet paper"); defaults to `false`. Independent of every other field — no validation beyond being a boolean |
 
 `201` with the created item. If `url` is given, the server kicks off a **best-effort** lookup against that URL (see `internal/scraper` in [CLAUDE.md](../CLAUDE.md)) for whichever of `price`/`image_url` the item is still missing (an explicit `price` in the request skips price detection but the image is still looked up), and waits up to ~2.5s for it before responding: if it finishes in time, the `201` response already carries `price` (with `price_auto: true`) and `image_url`, and reports `price_status: "found"`; if the site is slow to respond, the lookup keeps running in the background and the response instead carries `price_status: "pending"` — poll `GET /api/v1/items/{id}` (or re-fetch the list) a few seconds later to pick it up. `price_status: "none"` means there was no `url` to scrape or no price was found in time — this is unaffected by whether an image was found. `image_url`, when present, is always an absolute `http://`/`https://` URL. `price_status` is response-only — it's never persisted and never appears on a plain `GET`.
 
@@ -255,13 +256,21 @@ curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"recurrence_rule": "WEEK
 curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"done": true}'
 ```
 
+### Urgent items
+
+`is_urgent` (`POST`, `PUT`, or `PATCH`) flags an item as needing attention right away — it carries no other behavior server-side beyond being stored and returned as-is. The frontend uses it to sort an unfinished urgent item to the top of its list and to surface it, across every list in the current house, in the dashboard's "Achats & Tâches Urgentes" tab (`static/js/urgent.js`).
+
+```bash
+curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"is_urgent": true}'
+```
+
 ### `GET /api/v1/items/{id}`
 
 `200` with the item, `404` if not found, `403` if the caller isn't a member of the item's list's house.
 
 ### `PUT /api/v1/items/{id}`
 
-Full replace — every field below is required except `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date` fall back to their zero/default value if omitted (note: unlike `PATCH`, omitting a field here **resets** it, since this is a full replace — an omitted `price` clears any previously recorded price, an omitted `target_month` unschedules the item, and an omitted `recurrence_rule` turns off recurrence). `list_id` cannot be changed via this endpoint.
+Full replace — every field below is required except `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`, `is_urgent` fall back to their zero/default value if omitted (note: unlike `PATCH`, omitting a field here **resets** it, since this is a full replace — an omitted `price` clears any previously recorded price, an omitted `target_month` unschedules the item, an omitted `recurrence_rule` turns off recurrence, and an omitted `is_urgent` clears the urgent flag). `list_id` cannot be changed via this endpoint.
 
 ```bash
 curl -X PUT http://localhost:8080/api/v1/items/1 \
@@ -278,7 +287,7 @@ Partial update — only send the fields you want to change. This is the endpoint
 curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"done": true}'
 ```
 
-All fields (`title`, `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`) are optional. `title`, if given, cannot be empty; `quantity`, if given, must be positive; `price`, if given, must be a non-negative number or `null` (unlike the other fields, `price` distinguishes "omitted" — leave unchanged — from an explicit `null` — clear the recorded price). Sending `price` (either a number or `null`) always resets `price_auto` to `false`, since a `price` supplied in the request is by definition a manual value. `target_month`, if given, must be `YYYY-MM` or an empty string (clears it back to unscheduled) — omitting it entirely leaves the item's schedule untouched. `due_date`/`recurrence_end_date`, if given, must be `YYYY-MM-DD` or an empty string (clears them). `recurrence_rule`, if given, must be one of the recognized forms or an empty string — clearing it this way also clears `due_date` and `recurrence_end_date`, since neither means anything once the item stops recurring. There is no `image_url` field to set directly — it's scraper-only. If `url` changes to something new, `image_url` is cleared (same reasoning as `PUT` above) and the bounded lookup described under `POST` kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response; an unrelated `PATCH` (e.g. `{"done": true}`) never re-triggers it, since `url` isn't changing. If `done` is being set to `true` on a recurring item, see "Recurring items" above — the response's `done`/`due_date` may not match what was sent. `404` if not found, `403` if the caller isn't a member of the item's list's house.
+All fields (`title`, `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`) are optional. `title`, if given, cannot be empty; `quantity`, if given, must be positive; `price`, if given, must be a non-negative number or `null` (unlike the other fields, `price` distinguishes "omitted" — leave unchanged — from an explicit `null` — clear the recorded price). Sending `price` (either a number or `null`) always resets `price_auto` to `false`, since a `price` supplied in the request is by definition a manual value. `target_month`, if given, must be `YYYY-MM` or an empty string (clears it back to unscheduled) — omitting it entirely leaves the item's schedule untouched. `due_date`/`recurrence_end_date`, if given, must be `YYYY-MM-DD` or an empty string (clears them). `recurrence_rule`, if given, must be one of the recognized forms or an empty string — clearing it this way also clears `due_date` and `recurrence_end_date`, since neither means anything once the item stops recurring. There is no `image_url` field to set directly — it's scraper-only. If `url` changes to something new, `image_url` is cleared (same reasoning as `PUT` above) and the bounded lookup described under `POST` kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response; an unrelated `PATCH` (e.g. `{"done": true}`) never re-triggers it, since `url` isn't changing. If `done` is being set to `true` on a recurring item, see "Recurring items" above — the response's `done`/`due_date` may not match what was sent. `404` if not found, `403` if the caller isn't a member of the item's list's house.
 
 ```bash
 # clear a previously recorded price without touching anything else

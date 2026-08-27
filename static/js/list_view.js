@@ -21,6 +21,7 @@ const listEls = {
   itemPrice: document.getElementById('item-price'),
   itemTargetMonth: document.getElementById('item-target-month'),
   itemRecurrence: document.getElementById('item-recurrence'),
+  itemUrgent: document.getElementById('item-urgent'),
   itemsActive: document.getElementById('items-active'),
   itemsDone: document.getElementById('items-done'),
   doneSection: document.getElementById('done-section'),
@@ -34,6 +35,7 @@ const listEls = {
   editItemPriceAutoBadge: document.getElementById('edit-item-price-auto-badge'),
   editItemTargetMonth: document.getElementById('edit-item-target-month'),
   editItemRecurrence: document.getElementById('edit-item-recurrence'),
+  editItemUrgent: document.getElementById('edit-item-urgent'),
   imagePreviewModal: document.getElementById('image-preview-modal'),
   imagePreviewImg: document.getElementById('image-preview-img'),
   closeImagePreviewButton: document.getElementById('close-image-preview-button'),
@@ -183,6 +185,23 @@ function buildRecurrenceBadge(item) {
   return badge;
 }
 
+// A discreet, non-interactive badge (🚨 + "Urgent") shown on an item flagged
+// is_urgent, regardless of done state — mirrors buildRecurrenceBadge's shape
+// but in the rose palette used everywhere else for "needs attention".
+function buildUrgentBadge() {
+  const badge = document.createElement('span');
+  badge.className = 'flex shrink-0 items-center gap-1 rounded-full bg-rose-500/15 px-2 py-0.5 text-xs font-semibold text-rose-300';
+  badge.setAttribute('aria-label', t('items.urgentBadgeAriaLabel'));
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🚨';
+  const text = document.createElement('span');
+  text.textContent = t('items.urgentBadgeLabel');
+  badge.appendChild(icon);
+  badge.appendChild(text);
+  return badge;
+}
+
 function emptyItemsRow(message) {
   const li = document.createElement('li');
   li.className = 'rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-500';
@@ -249,7 +268,14 @@ document.addEventListener('keydown', (event) => {
 
 function buildItemRow(item) {
   const li = document.createElement('li');
-  li.className = 'flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-800/30 p-3';
+  // An unfinished urgent item gets a distinctive rose border so it stands
+  // out at a glance in the (already sorted-to-top, see renderItems) active
+  // list — a completed urgent item just reverts to the normal styling since
+  // it no longer needs attention.
+  li.className =
+    item.is_urgent && !item.done
+      ? 'flex items-center gap-3 rounded-xl border-2 border-rose-500/60 bg-rose-500/5 p-3'
+      : 'flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-800/30 p-3';
 
   const checkboxLabel = document.createElement('label');
   checkboxLabel.className = 'flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center';
@@ -327,6 +353,10 @@ function buildItemRow(item) {
     if (recurrenceBadge) li.appendChild(recurrenceBadge);
   }
 
+  if (item.is_urgent) {
+    li.appendChild(buildUrgentBadge());
+  }
+
   if (item.url && isSafeHttpUrl(item.url)) {
     const link = document.createElement('a');
     link.href = item.url;
@@ -373,7 +403,10 @@ function renderItems() {
   // with nothing else to reconstruct — but are filtered out of every view
   // (including the finance summary) as if already gone.
   const items = (list.items || []).filter((item) => !item.pendingDelete);
-  const active = items.filter((item) => !item.done);
+  // Array.prototype.sort is stable, so this only ever moves unfinished
+  // urgent items ahead of everything else — items within each group keep
+  // their existing relative order (position/id) instead of being reshuffled.
+  const active = items.filter((item) => !item.done).sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
   const done = items.filter((item) => item.done);
 
   if (list.type === 'shopping') updateFinanceSummary(items);
@@ -614,15 +647,18 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     targetMonth = listEls.itemTargetMonth.value;
   }
 
-  // Recurrence applies regardless of list type (a todo chore repeats just
-  // as naturally as a shopping item), unlike price/target_month above.
+  // Recurrence and urgency both apply regardless of list type (a todo
+  // chore repeats, or presses, just as naturally as a shopping item),
+  // unlike price/target_month above.
   const recurrenceRule = listEls.itemRecurrence.value;
+  const isUrgent = listEls.itemUrgent.checked;
 
   const payload = { list_id: state.currentListId, title, quantity };
   if (url) payload.url = url;
   if (price !== null) payload.price = price;
   if (targetMonth) payload.target_month = targetMonth;
   if (recurrenceRule) payload.recurrence_rule = recurrenceRule;
+  if (isUrgent) payload.is_urgent = true;
 
   // Locally-scoped id, distinct from the server's own `temp-item-*` ids
   // (assigned by sw.js when a request is queued offline) — this one only
@@ -637,6 +673,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     price,
     target_month: targetMonth || null,
     recurrence_rule: recurrenceRule || null,
+    is_urgent: isUrgent,
     done: false,
     position: 0,
   };
@@ -678,6 +715,7 @@ function openEditItemModal(item) {
   listEls.editItemPriceAutoBadge.hidden = !item.price_auto;
   listEls.editItemTargetMonth.value = item.target_month || '';
   listEls.editItemRecurrence.value = item.recurrence_rule || '';
+  listEls.editItemUrgent.checked = Boolean(item.is_urgent);
   listEls.editItemModal.hidden = false;
   document.body.classList.add('overflow-hidden');
   listEls.editItemTitle.focus();
@@ -720,11 +758,17 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   // for price, `""` for target_month) rather than omitting the key (leave
   // unchanged) — see the PATCH handler's field-presence handling in
   // internal/handlers/items.go.
-  // Recurrence, unlike price/target_month, applies to both list types, so
-  // it's always included in the payload rather than gated on
-  // state.currentList.type — an empty value clears it back to "not
-  // recurring", same "absent = untouched, empty = clear" PATCH convention.
-  const payload = { title, url, recurrence_rule: listEls.editItemRecurrence.value };
+  // Recurrence and is_urgent, unlike price/target_month, apply to both
+  // list types, so they're always included in the payload rather than
+  // gated on state.currentList.type — an empty recurrence_rule clears it
+  // back to "not recurring", same "absent = untouched, empty = clear" PATCH
+  // convention; is_urgent is a plain boolean with no such ambiguity.
+  const payload = {
+    title,
+    url,
+    recurrence_rule: listEls.editItemRecurrence.value,
+    is_urgent: listEls.editItemUrgent.checked,
+  };
   if (state.currentList && state.currentList.type === 'shopping') {
     const raw = listEls.editItemPrice.value.trim();
     if (raw === '') {
@@ -747,12 +791,14 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     price: item.price,
     target_month: item.target_month,
     recurrence_rule: item.recurrence_rule,
+    is_urgent: item.is_urgent,
   };
   item.title = title;
   item.url = url || null;
   if ('price' in payload) item.price = payload.price;
   if ('target_month' in payload) item.target_month = payload.target_month || null;
   item.recurrence_rule = payload.recurrence_rule || null;
+  item.is_urgent = payload.is_urgent;
   renderItems();
   closeEditItemModal();
 
