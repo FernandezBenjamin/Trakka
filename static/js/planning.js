@@ -75,10 +75,14 @@ function setTabButtonState(button, active) {
   button.setAttribute('aria-selected', String(active));
   button.classList.toggle('border-sky-500', active);
   button.classList.toggle('bg-sky-500/10', active);
-  button.classList.toggle('text-sky-300', active);
-  button.classList.toggle('border-slate-700', !active);
-  button.classList.toggle('bg-slate-900', !active);
-  button.classList.toggle('text-slate-300', !active);
+  button.classList.toggle('text-sky-600', active);
+  button.classList.toggle('dark:text-sky-300', active);
+  button.classList.toggle('border-slate-200', !active);
+  button.classList.toggle('dark:border-slate-700', !active);
+  button.classList.toggle('bg-white', !active);
+  button.classList.toggle('dark:bg-slate-900', !active);
+  button.classList.toggle('text-slate-600', !active);
+  button.classList.toggle('dark:text-slate-300', !active);
 }
 
 function setActiveTab(tab) {
@@ -103,10 +107,14 @@ planningEls.tabUrgent.addEventListener('click', () => setActiveTab('urgent'));
 function setHorizonButtonState(button, active) {
   button.classList.toggle('border-sky-500', active);
   button.classList.toggle('bg-sky-500/10', active);
-  button.classList.toggle('text-sky-300', active);
-  button.classList.toggle('border-slate-700', !active);
-  button.classList.toggle('bg-slate-900', !active);
-  button.classList.toggle('text-slate-300', !active);
+  button.classList.toggle('text-sky-600', active);
+  button.classList.toggle('dark:text-sky-300', active);
+  button.classList.toggle('border-slate-200', !active);
+  button.classList.toggle('dark:border-slate-700', !active);
+  button.classList.toggle('bg-white', !active);
+  button.classList.toggle('dark:bg-slate-900', !active);
+  button.classList.toggle('text-slate-600', !active);
+  button.classList.toggle('dark:text-slate-300', !active);
 }
 
 for (const button of planningEls.horizonButtons) {
@@ -181,18 +189,18 @@ function renderPlanning() {
 
 function buildMonthCard(month, entries) {
   const card = document.createElement('div');
-  card.className = 'rounded-2xl border border-slate-800 bg-slate-800/30 p-4';
+  card.className = 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-4';
 
   const header = document.createElement('div');
   header.className = 'mb-3 flex items-center justify-between gap-3';
   const heading = document.createElement('h3');
-  heading.className = 'text-base font-semibold text-slate-100';
+  heading.className = 'text-base font-semibold text-slate-900 dark:text-slate-100';
   heading.textContent = monthLabel(month, 'long');
   header.appendChild(heading);
 
   if (entries.length > 0) {
     const subtotal = document.createElement('span');
-    subtotal.className = 'text-sm font-semibold text-emerald-400';
+    subtotal.className = 'text-sm font-semibold text-emerald-600 dark:text-emerald-400';
     const monthTotal = entries.reduce((sum, entry) => sum + (typeof entry.item.price === 'number' ? entry.item.price : 0), 0);
     subtotal.textContent = formatEuro(monthTotal);
     header.appendChild(subtotal);
@@ -218,22 +226,22 @@ function buildMonthCard(month, entries) {
 function buildPlanningItemRow(entry, currentMonth) {
   const { item, listName } = entry;
   const li = document.createElement('li');
-  li.className = 'flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2';
+  li.className = 'flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 px-3 py-2';
 
   const info = document.createElement('div');
   info.className = 'min-w-0 flex-1';
   const title = document.createElement('p');
-  title.className = 'truncate text-sm font-medium text-slate-100';
+  title.className = 'truncate text-sm font-medium text-slate-900 dark:text-slate-100';
   title.textContent = item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
   const listLabel = document.createElement('p');
-  listLabel.className = 'truncate text-xs text-slate-400';
+  listLabel.className = 'truncate text-xs text-slate-500 dark:text-slate-400';
   listLabel.textContent = listName;
   info.append(title, listLabel);
   li.appendChild(info);
 
   if (item.price != null) {
     const price = document.createElement('span');
-    price.className = 'shrink-0 text-sm font-medium text-slate-300';
+    price.className = 'shrink-0 text-sm font-medium text-slate-600 dark:text-slate-300';
     price.textContent = formatEuro(item.price);
     li.appendChild(price);
   }
@@ -246,7 +254,7 @@ function buildPlanningItemRow(entry, currentMonth) {
   const select = document.createElement('select');
   select.setAttribute('aria-label', t('planning.moveAriaLabel', { title: item.title }));
   select.className =
-    'shrink-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30';
+    'shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30';
 
   const unscheduledOption = document.createElement('option');
   unscheduledOption.value = '';

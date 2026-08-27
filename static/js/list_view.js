@@ -173,7 +173,7 @@ function buildRecurrenceBadge(item) {
   const label = recurrenceBadgeLabel(item.recurrence_rule);
   if (!label) return null;
   const badge = document.createElement('span');
-  badge.className = 'flex shrink-0 items-center gap-1 rounded-full bg-slate-700/40 px-2 py-0.5 text-xs font-medium text-slate-300';
+  badge.className = 'flex shrink-0 items-center gap-1 rounded-full bg-slate-200/50 dark:bg-slate-700/40 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300';
   badge.setAttribute('aria-label', t('items.recurrenceBadgeAriaLabel', { frequency: label }));
   const icon = document.createElement('span');
   icon.setAttribute('aria-hidden', 'true');
@@ -190,7 +190,7 @@ function buildRecurrenceBadge(item) {
 // but in the rose palette used everywhere else for "needs attention".
 function buildUrgentBadge() {
   const badge = document.createElement('span');
-  badge.className = 'flex shrink-0 items-center gap-1 rounded-full bg-rose-500/15 px-2 py-0.5 text-xs font-semibold text-rose-300';
+  badge.className = 'flex shrink-0 items-center gap-1 rounded-full bg-rose-500/15 px-2 py-0.5 text-xs font-semibold text-rose-600 dark:text-rose-300';
   badge.setAttribute('aria-label', t('items.urgentBadgeAriaLabel'));
   const icon = document.createElement('span');
   icon.setAttribute('aria-hidden', 'true');
@@ -204,7 +204,7 @@ function buildUrgentBadge() {
 
 function emptyItemsRow(message) {
   const li = document.createElement('li');
-  li.className = 'rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-500';
+  li.className = 'rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-sm text-slate-500';
   li.textContent = message;
   return li;
 }
@@ -225,7 +225,7 @@ function buildItemThumbnail(item) {
   button.title = 'Agrandir l’image';
   button.setAttribute('aria-label', `Agrandir l'image de ${item.title}`);
   button.className =
-    'block h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-900 transition duration-150 hover:z-10 hover:scale-150 hover:shadow-lg focus-visible:z-10 focus-visible:scale-150';
+    'block h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition duration-150 hover:z-10 hover:scale-150 hover:shadow-lg focus-visible:z-10 focus-visible:scale-150';
 
   const img = document.createElement('img');
   img.src = item.image_url;
@@ -275,14 +275,14 @@ function buildItemRow(item) {
   li.className =
     item.is_urgent && !item.done
       ? 'flex items-center gap-3 rounded-xl border-2 border-rose-500/60 bg-rose-500/5 p-3'
-      : 'flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-800/30 p-3';
+      : 'flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3';
 
   const checkboxLabel = document.createElement('label');
   checkboxLabel.className = 'flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center';
   const checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.checked = item.done;
-  checkbox.className = 'h-5 w-5 rounded-full border-slate-600 bg-slate-900 text-sky-500 focus:ring-sky-500/40';
+  checkbox.className = 'h-5 w-5 rounded-full border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40';
   checkbox.setAttribute('aria-label', `Marquer « ${item.title} » comme terminé`);
   checkbox.addEventListener('change', () => toggleDone(item));
   checkboxLabel.appendChild(checkbox);
@@ -299,7 +299,7 @@ function buildItemRow(item) {
   }
 
   const title = document.createElement('span');
-  title.className = item.done ? 'flex-1 text-base text-slate-500 line-through opacity-60' : 'flex-1 text-base text-slate-100';
+  title.className = item.done ? 'flex-1 text-base text-slate-500 line-through opacity-60' : 'flex-1 text-base text-slate-900 dark:text-slate-100';
   title.textContent = item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
 
   li.appendChild(title);
@@ -309,7 +309,7 @@ function buildItemRow(item) {
     priceWrap.className = 'flex shrink-0 items-center gap-1';
 
     const price = document.createElement('span');
-    price.className = 'text-sm font-medium text-slate-300';
+    price.className = 'text-sm font-medium text-slate-600 dark:text-slate-300';
     price.textContent = formatEuro(item.price);
     priceWrap.appendChild(price);
 
@@ -322,7 +322,7 @@ function buildItemRow(item) {
       autoBadge.type = 'button';
       autoBadge.title = 'Prix détecté automatiquement — cliquer pour modifier';
       autoBadge.setAttribute('aria-label', `Prix détecté automatiquement pour ${item.title}, cliquer pour modifier`);
-      autoBadge.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20';
+      autoBadge.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/20';
       autoBadge.innerHTML = AUTO_PRICE_ICON_SVG;
       autoBadge.addEventListener('click', () => openEditItemModal(item));
       priceWrap.appendChild(autoBadge);
@@ -331,9 +331,9 @@ function buildItemRow(item) {
     li.appendChild(priceWrap);
   } else if (item.url) {
     if (isOfflineQueuedItem(item)) {
-      li.appendChild(buildPendingPriceBadge('Prix en attente de synchro', 'bg-amber-500/10 text-amber-300'));
+      li.appendChild(buildPendingPriceBadge('Prix en attente de synchro', 'bg-amber-500/10 text-amber-700 dark:text-amber-300'));
     } else if (item.priceScrapePending) {
-      li.appendChild(buildPendingPriceBadge('Détection du prix…', 'animate-pulse bg-sky-500/10 text-sky-300'));
+      li.appendChild(buildPendingPriceBadge('Détection du prix…', 'animate-pulse bg-sky-500/10 text-sky-600 dark:text-sky-300'));
     }
   }
 
@@ -343,7 +343,7 @@ function buildItemRow(item) {
   // their top-level functions before any rendering actually runs.
   if (item.target_month) {
     const monthBadge = document.createElement('span');
-    monthBadge.className = 'shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-300';
+    monthBadge.className = 'shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300';
     monthBadge.textContent = monthLabel(item.target_month, 'short');
     li.appendChild(monthBadge);
   }
@@ -362,7 +362,7 @@ function buildItemRow(item) {
     link.href = item.url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.className = 'rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-300 hover:bg-sky-500/20';
+    link.className = 'rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-600 dark:text-sky-300 hover:bg-sky-500/20';
     link.textContent = 'lien ↗';
     li.appendChild(link);
   }
@@ -370,7 +370,7 @@ function buildItemRow(item) {
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   editBtn.setAttribute('aria-label', `Modifier ${item.title}`);
-  editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-sky-500/10 hover:text-sky-400';
+  editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400';
   editBtn.innerHTML = PENCIL_ICON_SVG;
   editBtn.addEventListener('click', () => openEditItemModal(item));
   li.appendChild(editBtn);
@@ -378,7 +378,7 @@ function buildItemRow(item) {
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.setAttribute('aria-label', `Supprimer ${item.title}`);
-  deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-400';
+  deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
   deleteBtn.innerHTML = TRASH_ICON_SVG;
   deleteBtn.addEventListener('click', () => removeItem(item));
   li.appendChild(deleteBtn);

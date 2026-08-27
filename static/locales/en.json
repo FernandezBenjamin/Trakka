@@ -12,7 +12,11 @@
     "online": "Online",
     "offline": "Offline",
     "pending": "{count} pending",
-    "adminSettings": "System Settings"
+    "adminSettings": "System Settings",
+    "themeSwitcher": "Change theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeAuto": "System"
   },
   "dashboard": {
     "house": "House",

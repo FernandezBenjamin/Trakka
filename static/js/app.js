@@ -318,14 +318,14 @@ function currentHouseRole() {
 
 function buildMemberRow(member, isOwnerView) {
   const li = document.createElement('li');
-  li.className = 'flex items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2';
+  li.className = 'flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 px-3 py-2';
 
   const info = document.createElement('div');
   const name = document.createElement('p');
-  name.className = 'text-sm font-medium text-slate-100';
+  name.className = 'text-sm font-medium text-slate-900 dark:text-slate-100';
   name.textContent = member.display_name || member.email;
   const email = document.createElement('p');
-  email.className = 'text-xs text-slate-400';
+  email.className = 'text-xs text-slate-500 dark:text-slate-400';
   email.textContent = member.role === 'owner' ? `${member.email} · propriétaire` : member.email;
   info.append(name, email);
   li.appendChild(info);
@@ -334,7 +334,7 @@ function buildMemberRow(member, isOwnerView) {
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.setAttribute('aria-label', t('common.removeMember', { email: member.email }));
-    removeBtn.className = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-400';
+    removeBtn.className = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
     removeBtn.innerHTML = TRASH_ICON_SVG;
     removeBtn.addEventListener('click', () => removeMember(member.user_id));
     li.appendChild(removeBtn);
@@ -418,9 +418,9 @@ function typeLabel(type) {
 
 function badge(text, palette) {
   const colors = {
-    sky: 'bg-sky-500/10 text-sky-300',
-    slate: 'bg-slate-700/50 text-slate-300',
-    emerald: 'bg-emerald-500/10 text-emerald-300',
+    sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-300',
+    slate: 'bg-slate-200/60 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300',
+    emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
   };
   const span = document.createElement('span');
   span.className = `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors[palette] || colors.slate}`;
@@ -461,14 +461,14 @@ function progressBadge(items) {
 
 function emptyState(message) {
   const li = document.createElement('li');
-  li.className = 'col-span-full rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-500';
+  li.className = 'col-span-full rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-sm text-slate-500';
   li.textContent = message;
   return li;
 }
 
 function buildListCard(list, badgesFragment) {
   const li = document.createElement('li');
-  li.className = 'rounded-2xl border border-slate-800 bg-slate-800/40 shadow-sm transition hover:border-slate-700 hover:bg-slate-800/70';
+  li.className = 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-800/40 shadow-sm transition hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800/70';
 
   const row = document.createElement('div');
   row.className = 'flex items-start justify-between gap-2 p-4';
@@ -479,11 +479,11 @@ function buildListCard(list, badgesFragment) {
   openBtn.addEventListener('click', () => selectList(list.id));
 
   const title = document.createElement('h3');
-  title.className = 'text-base font-semibold text-slate-100';
+  title.className = 'text-base font-semibold text-slate-900 dark:text-slate-100';
   title.textContent = list.name;
 
   const count = document.createElement('p');
-  count.className = 'mt-1 text-sm text-slate-400';
+  count.className = 'mt-1 text-sm text-slate-500 dark:text-slate-400';
   const n = (list.items || []).length;
   count.textContent = `${n} élément${n === 1 ? '' : 's'}`;
 
@@ -496,7 +496,7 @@ function buildListCard(list, badgesFragment) {
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.setAttribute('aria-label', t('common.deleteList', { name: list.name }));
-  deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-400';
+  deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
   deleteBtn.innerHTML = TRASH_ICON_SVG;
   deleteBtn.addEventListener('click', () => removeList(list));
 
@@ -675,10 +675,14 @@ function setListTypeSelection(value) {
     input.checked = active;
     label.classList.toggle('border-sky-500', active);
     label.classList.toggle('bg-sky-500/10', active);
-    label.classList.toggle('text-sky-300', active);
-    label.classList.toggle('border-slate-700', !active);
-    label.classList.toggle('bg-slate-900', !active);
-    label.classList.toggle('text-slate-300', !active);
+    label.classList.toggle('text-sky-600', active);
+    label.classList.toggle('dark:text-sky-300', active);
+    label.classList.toggle('border-slate-200', !active);
+    label.classList.toggle('dark:border-slate-700', !active);
+    label.classList.toggle('bg-white', !active);
+    label.classList.toggle('dark:bg-slate-900', !active);
+    label.classList.toggle('text-slate-600', !active);
+    label.classList.toggle('dark:text-slate-300', !active);
   }
 }
 

@@ -38,16 +38,16 @@
     const toast = document.createElement('div');
     toast.setAttribute('role', 'status');
     toast.className =
-      'pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-xl border border-slate-700 bg-slate-800 py-3 pl-4 pr-3 shadow-xl';
+      'pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 py-3 pl-4 pr-3 shadow-xl';
 
     const text = document.createElement('span');
-    text.className = 'text-sm text-slate-100';
+    text.className = 'text-sm text-slate-900 dark:text-slate-100';
     text.textContent = message;
 
     const undoBtn = document.createElement('button');
     undoBtn.type = 'button';
     undoBtn.className =
-      'shrink-0 rounded-lg bg-sky-500/10 px-3 py-1.5 text-sm font-semibold text-sky-300 hover:bg-sky-500/20';
+      'shrink-0 rounded-lg bg-sky-500/10 px-3 py-1.5 text-sm font-semibold text-sky-600 dark:text-sky-300 hover:bg-sky-500/20';
     undoBtn.textContent = undoLabel;
 
     // Purely visual countdown: a bar that shrinks from full width to zero

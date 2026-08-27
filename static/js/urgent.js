@@ -60,7 +60,7 @@ function renderUrgent() {
   urgentEls.items.replaceChildren();
   if (urgentEntries.length === 0) {
     const li = document.createElement('li');
-    li.className = 'rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-500';
+    li.className = 'rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-sm text-slate-500';
     li.textContent = t('urgent.empty');
     urgentEls.items.appendChild(li);
     return;
@@ -78,7 +78,7 @@ function buildUrgentItemRow(entry) {
   const checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.checked = false;
-  checkbox.className = 'h-5 w-5 rounded-full border-slate-600 bg-slate-900 text-sky-500 focus:ring-sky-500/40';
+  checkbox.className = 'h-5 w-5 rounded-full border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40';
   checkbox.setAttribute('aria-label', t('urgent.markDoneAriaLabel', { title: item.title }));
   checkbox.addEventListener('change', () => markUrgentItemDone(entry));
   checkboxLabel.appendChild(checkbox);
@@ -89,10 +89,10 @@ function buildUrgentItemRow(entry) {
   info.className = 'min-w-0 flex-1 text-left';
   info.setAttribute('aria-label', t('urgent.openListLabel', { list: listName }));
   const title = document.createElement('p');
-  title.className = 'truncate text-base text-slate-100';
+  title.className = 'truncate text-base text-slate-900 dark:text-slate-100';
   title.textContent = item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
   const listLabel = document.createElement('p');
-  listLabel.className = 'truncate text-xs text-slate-400';
+  listLabel.className = 'truncate text-xs text-slate-500 dark:text-slate-400';
   listLabel.textContent = listName;
   info.append(title, listLabel);
   // selectList is defined in list_view.js, resolved lazily the same way

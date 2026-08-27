@@ -36,7 +36,7 @@ function renderNotificationsList() {
   notifEls.list.replaceChildren();
   if (notificationAlerts.length === 0) {
     const li = document.createElement('li');
-    li.className = 'rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500';
+    li.className = 'rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-center text-sm text-slate-500';
     li.textContent = t('notifications.empty');
     notifEls.list.appendChild(li);
     return;
@@ -46,10 +46,10 @@ function renderNotificationsList() {
 
 function buildAlertRow(alert) {
   const li = document.createElement('li');
-  li.className = 'rounded-xl border border-slate-700 bg-slate-900/60 p-3';
+  li.className = 'rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 p-3';
 
   const title = document.createElement('p');
-  title.className = 'mb-2 truncate text-sm font-medium text-slate-100';
+  title.className = 'mb-2 truncate text-sm font-medium text-slate-900 dark:text-slate-100';
   title.textContent = alert.item_title;
   li.appendChild(title);
 
@@ -77,7 +77,7 @@ function buildAlertRow(alert) {
   newLabel.className = 'text-xs text-slate-500';
   newLabel.textContent = t('notifications.newPrice');
   const newValue = document.createElement('span');
-  newValue.className = 'text-base font-semibold text-emerald-400';
+  newValue.className = 'text-base font-semibold text-emerald-600 dark:text-emerald-400';
   newValue.textContent = formatEuro(alert.found_price);
   newPrice.append(newLabel, newValue);
 
@@ -92,7 +92,7 @@ function buildAlertRow(alert) {
     link.href = alert.source_url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.className = 'mb-3 block truncate text-xs text-sky-400 hover:underline';
+    link.className = 'mb-3 block truncate text-xs text-sky-600 dark:text-sky-400 hover:underline';
     link.textContent = alert.source_url;
     li.appendChild(link);
   }
@@ -102,13 +102,13 @@ function buildAlertRow(alert) {
 
   const applyBtn = document.createElement('button');
   applyBtn.type = 'button';
-  applyBtn.className = 'flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400 active:scale-95';
+  applyBtn.className = 'flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 dark:hover:bg-emerald-400 active:scale-95';
   applyBtn.textContent = t('notifications.apply');
   applyBtn.addEventListener('click', () => resolveAlert(alert, 'accepted'));
 
   const ignoreBtn = document.createElement('button');
   ignoreBtn.type = 'button';
-  ignoreBtn.className = 'flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800 active:scale-95';
+  ignoreBtn.className = 'flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800 active:scale-95';
   ignoreBtn.textContent = t('notifications.ignore');
   ignoreBtn.addEventListener('click', () => resolveAlert(alert, 'rejected'));
 

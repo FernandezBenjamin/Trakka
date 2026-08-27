@@ -39,6 +39,10 @@
       online: 'En ligne',
       offline: 'Hors-ligne',
       pending: '{count} en attente',
+      themeSwitcher: 'Changer de thème',
+      themeLight: 'Clair',
+      themeDark: 'Sombre',
+      themeAuto: 'Système',
     },
     dashboard: {
       house: 'Maison',

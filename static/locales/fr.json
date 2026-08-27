@@ -12,7 +12,11 @@
     "online": "En ligne",
     "offline": "Hors-ligne",
     "pending": "{count} en attente",
-    "adminSettings": "Paramètres du Système"
+    "adminSettings": "Paramètres du Système",
+    "themeSwitcher": "Changer de thème",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "themeAuto": "Système"
   },
   "dashboard": {
     "house": "Maison",

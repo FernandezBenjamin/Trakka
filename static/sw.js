@@ -7,13 +7,16 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's/CDN_ASSETS' contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v14';
-const RUNTIME_CACHE = 'trakka-runtime-v14';
+const SHELL_CACHE = 'trakka-shell-v15';
+const RUNTIME_CACHE = 'trakka-runtime-v15';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
   '/',
   '/index.html',
+  '/js/theme-init.js',
+  '/js/theme.js',
+  '/js/tailwind-config.js',
   '/js/i18n.js',
   '/js/app.js',
   '/js/db.js',
@@ -36,6 +39,7 @@ const APP_SHELL = [
   '/icons/trakka-maskable-192.png',
   '/icons/trakka-maskable-512.png',
   '/icons/trakka-lockup-dark-bg.svg',
+  '/icons/trakka-lockup-light-bg.svg',
 ];
 
 // index.html's styling depends entirely on this cross-origin script (the

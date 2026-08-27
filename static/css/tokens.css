@@ -1,22 +1,86 @@
+/* Design tokens for Trakka's light/dark theme.
+ *
+ * Light values live on the bare :root and are the default (and the only
+ * ones a browser with CSS but no JS ever sees). Dark values are redefined
+ * twice: once inside a prefers-color-scheme media query (so an OS-level
+ * dark preference is honored even before static/js/theme.js runs or if JS
+ * is unavailable), guarded by :not([data-theme="light"]) so an explicit
+ * light choice can still win; and again under :root[data-theme="dark"] so
+ * an explicit dark choice always wins regardless of the OS setting.
+ * static/js/theme.js is what actually sets/clears data-theme on <html> —
+ * see that file and the inline anti-FOUC script in static/index.html's
+ * <head> for how "Auto" resolves to one of these two states.
+ *
+ * Most of the app's own color choices (buttons, cards, badges, modals)
+ * are expressed directly as Tailwind utility classes with a dark: variant
+ * (see static/index.html and the DOM-building code in static/js/*.js) —
+ * Tailwind's darkMode selector is configured against the same
+ * [data-theme="dark"] attribute these tokens key off, so both systems
+ * flip together. These custom properties back the handful of things that
+ * aren't Tailwind utilities: native form-control chrome (via
+ * color-scheme), the browser UI color (theme-color meta tag, kept in
+ * sync by theme.js), and base.css's own rules.
+ */
 :root {
-  /* Fonds */
-  --tk-bg:            #0f172a;   /* fond principal */
-  --tk-bg-deep:       #0b0f19;   /* fond alternatif, plus profond */
-  --tk-surface:       #1e293b;   /* conteneurs, cartes */
-  --tk-surface-hover: #334155;
+  --tk-bg:            #ffffff;
+  --tk-bg-deep:       #f8fafc;
+  --tk-surface:       #f1f5f9;
+  --tk-surface-hover: #e2e8f0;
 
-  /* Accent principal */
   --tk-accent:        #6366f1;
   --tk-accent-light:  #8b5cf6;
   --tk-accent-grad:   linear-gradient(135deg, #8b5cf6, #6366f1);
 
-  /* Accent secondaire — reserve aux etats termine / valide / online */
   --tk-success:       #10b981;
+  --tk-success-light: #059669;
+
+  --tk-text:          #0f172a;
+  --tk-text-muted:    #475569;
+  --tk-text-subtle:   #64748b;
+  --tk-border:        #e2e8f0;
+  --tk-border-strong: #cbd5e1;
+
+  --tk-overlay:       rgb(2 6 23 / 0.4);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --tk-bg:            #0f172a;
+    --tk-bg-deep:       #0b0f19;
+    --tk-surface:       #1e293b;
+    --tk-surface-hover: #334155;
+
+    --tk-success-light: #34d399;
+
+    --tk-text:          #f8fafc;
+    --tk-text-muted:    #94a3b8;
+    --tk-text-subtle:   #64748b;
+    --tk-border:        #1e293b;
+    --tk-border-strong: #334155;
+
+    --tk-overlay:       rgb(2 6 23 / 0.7);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --tk-bg:            #0f172a;
+  --tk-bg-deep:       #0b0f19;
+  --tk-surface:       #1e293b;
+  --tk-surface-hover: #334155;
+
   --tk-success-light: #34d399;
 
-  /* Texte */
   --tk-text:          #f8fafc;
   --tk-text-muted:    #94a3b8;
   --tk-text-subtle:   #64748b;
   --tk-border:        #1e293b;
+  --tk-border-strong: #334155;
+
+  --tk-overlay:       rgb(2 6 23 / 0.7);
+
+  color-scheme: dark;
 }
