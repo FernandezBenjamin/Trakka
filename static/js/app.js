@@ -265,6 +265,9 @@ els.houseSelect.addEventListener('change', async (event) => {
   }
   selectHouse(Number(value));
   await refreshVisibleView();
+  // refreshNotifications is defined in notifications.js, resolved lazily
+  // the same way refreshVisibleView's own cross-file calls already are.
+  refreshNotifications();
 });
 
 function openNewHouseModal() {
@@ -743,6 +746,7 @@ function registerServiceWorker() {
     if (event.data && event.data.type === 'trakka-sync-complete') {
       refreshVisibleView();
       updateNetworkStatus();
+      refreshNotifications();
     }
   });
 }
@@ -753,7 +757,12 @@ window.addEventListener('online', () => {
 });
 window.addEventListener('offline', updateNetworkStatus);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) updateNetworkStatus();
+  if (!document.hidden) {
+    updateNetworkStatus();
+    // Picks up whatever the periodic backend price-drop scan found while
+    // this tab was in the background, without requiring a full reload.
+    refreshNotifications();
+  }
 });
 
 // Paints the dashboard from whatever's already in IndexedDB before any
@@ -799,6 +808,9 @@ async function init() {
   // run unconditionally regardless of whether the /me check above worked.
   await loadHouses();
   await loadDashboard();
+  // loadNotifications is defined in notifications.js, resolved lazily the
+  // same way every other cross-file call in this function already is.
+  await loadNotifications();
 }
 
 // Re-render everything that embeds translated strings inside JS-generated
@@ -809,6 +821,7 @@ document.addEventListener('trakka:lang-changed', () => {
   els.houseSelect.value = state.currentHouseId !== null ? String(state.currentHouseId) : CREATE_HOUSE_OPTION_VALUE;
   refreshVisibleView();
   updateNetworkStatus();
+  refreshNotifications();
 });
 
 init();

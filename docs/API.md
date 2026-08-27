@@ -304,6 +304,40 @@ curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"recurrence_rule": ""}'
 
 `204` on success, `404` if not found, `403` if the caller isn't a member of the item's list's house.
 
+### `POST /api/v1/items/{id}/price-check`
+
+Triggers an immediate, synchronous re-check of this one item's product page for a lower price than what's currently recorded — the on-demand counterpart to the periodic background scan described under "Price alerts" below. `400` if the item has no `url` or no `price` to compare against (nothing to check). `404` if not found, `403` if the caller isn't a member of the item's list's house. Otherwise `200` with `{"alert": null}` if nothing lower was found (or a lower price was already known via an earlier still-pending alert for this item), or `{"alert": {...}}` with the pending alert (freshly created, or the pre-existing one) if one exists.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/items/1/price-check
+```
+
+## Price alerts
+
+A price alert records a lower price found for an item's `url` than its current `price` — created either by a periodic background scan (every `PRICE_CHECK_INTERVAL_HOURS`, default 24; see [docs/DEPLOYMENT.md](DEPLOYMENT.md)) or by `POST /api/v1/items/{id}/price-check` above. Every alert starts `pending` and is resolved exactly once, either `accepted` (applies `found_price` to the item, marking it `price_auto: true`) or `rejected` (dismissed, item untouched) — see `internal/db.AcceptPriceAlert`/`RejectPriceAlert` in [CLAUDE.md](../CLAUDE.md). The frontend surfaces pending alerts as a badge count on the header's 🔔 button, with a drawer to accept/reject each one (`static/js/notifications.js`).
+
+### `GET /api/v1/price-alerts?house_id={id}`
+
+`house_id` is required. `?status=` optionally restricts the result to one of `pending`/`accepted`/`rejected` (the notification bell always passes `status=pending`); omitted returns every status, newest first. `400` if `house_id` is missing/invalid or `status` isn't a recognized value. `403` if the caller isn't a member of the house.
+
+```bash
+curl -b cookies.txt "http://localhost:8080/api/v1/price-alerts?house_id=1&status=pending"
+```
+
+Each alert includes `item_title` and `list_id` (joined in for display and click-through, never writable) alongside `item_id`, `original_price` (a snapshot of the item's price when the alert was created), `found_price`, `source_url`, `status`, and `created_at`.
+
+### `PATCH /api/v1/price-alerts/{id}`
+
+```bash
+# apply the lower price found
+curl -X PATCH http://localhost:8080/api/v1/price-alerts/1 -d '{"status": "accepted"}'
+
+# dismiss it instead
+curl -X PATCH http://localhost:8080/api/v1/price-alerts/1 -d '{"status": "rejected"}'
+```
+
+`status` is required and must be `"accepted"` or `"rejected"`. `404` if not found, `403` if the caller isn't a member of the alert's item's list's house, `409` if the alert was already resolved (an alert can only ever be actioned once, whichever status wins the race). `200` with the updated alert otherwise.
+
 ## Static assets
 
 Everything under `static/` is served from `/` (e.g. `static/index.html` → `/`, `static/js/app.js` → `/js/app.js`). This is unrelated to the JSON API but shares the same HTTP server and the same security headers.

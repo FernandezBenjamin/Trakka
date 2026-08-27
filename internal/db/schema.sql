@@ -82,3 +82,28 @@ CREATE TABLE IF NOT EXISTS house_members (
 );
 
 CREATE INDEX IF NOT EXISTS idx_house_members_user_id ON house_members(user_id);
+
+-- Price-drop / better-deal alerts surfaced by internal/scraper's periodic
+-- and on-demand price checks (see internal/handlers/price_alerts.go). A
+-- pending alert means a lower price than the item's current price was found
+-- at source_url; accepting one applies found_price to the item, rejecting
+-- one just dismisses it without touching the item. original_price is a
+-- snapshot of the item's price at the moment the alert was created, not
+-- re-read from the item at accept/reject time, so a notification always
+-- reflects what the comparison was actually made against even if the
+-- item's price changes in the meantime. This is a brand new table (not an
+-- evolution of an existing shipped one), so it needs no addColumnIfMissing
+-- guard — CREATE TABLE IF NOT EXISTS alone is enough for it to appear on an
+-- existing /data/trakka.db the same way it does on a fresh one.
+CREATE TABLE IF NOT EXISTS price_alerts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id        INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    original_price REAL NOT NULL,
+    found_price    REAL NOT NULL,
+    source_url     TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_alerts_item_id ON price_alerts(item_id);
+CREATE INDEX IF NOT EXISTS idx_price_alerts_status ON price_alerts(status);

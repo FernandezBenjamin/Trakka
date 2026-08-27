@@ -83,6 +83,15 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	// The periodic price-drop scan runs detached from any request, on its
+	// own cancelable context, the same "never r.Context()" reasoning
+	// scrapeProductInfo already follows — canceled only on shutdown, below.
+	priceScanCtx, cancelPriceScan := context.WithCancel(context.Background())
+	defer cancelPriceScan()
+	if cfg.PriceCheckInterval > 0 {
+		go runPriceAlertScanLoop(priceScanCtx, app, cfg.PriceCheckInterval, logger)
+	}
+
 	serverErrs := make(chan error, 1)
 	go func() {
 		logger.Info("listening", "addr", srv.Addr, "db_path", cfg.DBPath, "static_dir", cfg.StaticDir)
@@ -112,6 +121,30 @@ func main() {
 		}
 		// database.Close() runs via the deferred call above once main
 		// returns, after in-flight requests have drained.
+	}
+}
+
+// runPriceAlertScanLoop periodically re-checks every eligible item's price
+// for a better deal (see handlers.Application.RunPriceAlertScan), stopping
+// once ctx is canceled during shutdown. It runs an initial scan right away
+// rather than waiting a full interval for the first one, so a freshly
+// deployed instance doesn't sit with an empty notification center for up to
+// PRICE_CHECK_INTERVAL_HOURS before its first check. Runs in its own
+// goroutine (see the call site in main), so this scan itself never delays
+// server startup.
+func runPriceAlertScanLoop(ctx context.Context, app *handlers.Application, interval time.Duration, logger *slog.Logger) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	logger.Info("starting periodic price alert scan", "interval", interval)
+	app.RunPriceAlertScan(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			app.RunPriceAlertScan(ctx)
+		}
 	}
 }
 

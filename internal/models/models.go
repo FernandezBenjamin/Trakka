@@ -144,3 +144,35 @@ var ValidHouseRoles = map[string]bool{
 	"owner":  true,
 	"member": true,
 }
+
+// PriceAlert records a lower price internal/scraper found for an item
+// versus its current price, awaiting a user decision (see
+// internal/handlers/price_alerts.go). It is only ever created by the
+// periodic background scan or an on-demand check, never directly through
+// the API. OriginalPrice is a snapshot of the item's price at the moment
+// the alert was created, not re-read live from the item, so a notification
+// always reflects what the comparison was actually made against even if
+// the item's price changes in the meantime.
+type PriceAlert struct {
+	ID     int64 `json:"id"`
+	ItemID int64 `json:"item_id"`
+	// ItemTitle/ListID are populated by a JOIN for display and
+	// authorization purposes only (mirroring HouseMember's
+	// Email/DisplayName) — never written back to the database.
+	ItemTitle     string  `json:"item_title"`
+	ListID        int64   `json:"list_id"`
+	OriginalPrice float64 `json:"original_price"`
+	FoundPrice    float64 `json:"found_price"`
+	SourceURL     string  `json:"source_url"`
+	Status        string  `json:"status"`
+	CreatedAt     string  `json:"created_at"`
+}
+
+// ValidPriceAlertStatuses enumerates the allowed values for
+// PriceAlert.Status, and the "status" filter accepted by
+// GET /api/v1/price-alerts.
+var ValidPriceAlertStatuses = map[string]bool{
+	"pending":  true,
+	"accepted": true,
+	"rejected": true,
+}

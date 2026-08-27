@@ -42,6 +42,15 @@
           <span id="pending-badge" hidden class="rounded-full bg-amber-400/20 px-2 py-0.5 text-xs font-semibold text-amber-300"></span>
         </div>
         <div class="relative">
+          <button type="button" id="notifications-button" aria-haspopup="dialog"
+                  data-i18n-aria-label="notifications.button" aria-label="Bons plans détectés"
+                  class="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-700 bg-slate-800/60 text-slate-300 hover:bg-slate-800">
+            <span aria-hidden="true" class="text-lg leading-none">🔔</span>
+            <span id="notifications-badge" hidden
+                  class="absolute -top-1 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[11px] font-semibold text-white">0</span>
+          </button>
+        </div>
+        <div class="relative">
           <button type="button" id="lang-button" aria-haspopup="true" aria-expanded="false"
                   data-i18n-aria-label="header.langSwitcher" aria-label="Changer de langue"
                   class="flex h-11 items-center gap-1 rounded-full border border-slate-700 bg-slate-800/60 px-3 text-sm font-medium text-slate-300 hover:bg-slate-800">
@@ -295,6 +304,20 @@
     </div>
   </div>
 
+  <div id="notifications-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="notifications-modal-title" class="w-full max-w-md rounded-t-2xl bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 id="notifications-modal-title" data-i18n="notifications.title" class="text-lg font-semibold">Bons plans détectés</h2>
+        <button type="button" id="close-notifications-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <ul id="notifications-list" class="max-h-[60vh] space-y-3 overflow-y-auto"></ul>
+    </div>
+  </div>
+
   <div id="edit-item-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4">
     <div role="dialog" aria-modal="true" aria-labelledby="edit-item-modal-title" class="w-full max-w-md rounded-t-2xl bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
       <div class="mb-4 flex items-center justify-between">
@@ -380,5 +403,6 @@
   <script src="/js/list_view.js"></script>
   <script src="/js/planning.js"></script>
   <script src="/js/urgent.js"></script>
+  <script src="/js/notifications.js"></script>
 </body>
 </html>

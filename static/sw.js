@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's/CDN_ASSETS' contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v12';
-const RUNTIME_CACHE = 'trakka-runtime-v12';
+const SHELL_CACHE = 'trakka-shell-v13';
+const RUNTIME_CACHE = 'trakka-runtime-v13';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -21,6 +21,7 @@ const APP_SHELL = [
   '/js/list_view.js',
   '/js/planning.js',
   '/js/urgent.js',
+  '/js/notifications.js',
   '/css/base.css',
   '/css/tokens.css',
   '/locales/fr.json',

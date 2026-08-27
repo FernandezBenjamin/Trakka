@@ -69,6 +69,15 @@
     "unscheduled": "— Non planifié —",
     "moveAriaLabel": "Déplacer {title} vers un autre mois"
   },
+  "notifications": {
+    "button": "Bons plans détectés",
+    "title": "Bons plans détectés",
+    "empty": "Aucun bon plan pour le moment.",
+    "oldPrice": "Ancien prix",
+    "newPrice": "Nouveau prix trouvé",
+    "apply": "Appliquer le nouveau prix",
+    "ignore": "Ignorer"
+  },
   "urgent": {
     "tabTitle": "Urgent",
     "title": "Achats & Tâches Urgentes",

@@ -69,6 +69,15 @@
     "unscheduled": "— Unscheduled —",
     "moveAriaLabel": "Move {title} to a different month"
   },
+  "notifications": {
+    "button": "Deals detected",
+    "title": "Deals detected",
+    "empty": "No deals right now.",
+    "oldPrice": "Old price",
+    "newPrice": "New price found",
+    "apply": "Apply new price",
+    "ignore": "Ignore"
+  },
   "urgent": {
     "tabTitle": "Urgent",
     "title": "Urgent Shopping & Tasks",

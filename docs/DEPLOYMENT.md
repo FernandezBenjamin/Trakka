@@ -16,6 +16,7 @@ Trakka ships as a single static Go binary in a minimal Alpine image, with a [com
 | `OIDC_CLIENT_SECRET` | *(empty)* | OIDC client secret. Treat as sensitive — pass it as a secret/secret-file in production, not a plain compose env value, the same way you would any other credential. |
 | `SESSION_COOKIE_SECURE` | `true` | Whether the session cookie gets the `Secure` attribute. Only set to `false` for plain-HTTP `localhost` testing (see [docs/PWA.md](PWA.md) — the same HTTPS-or-localhost requirement service workers have). |
 | `SESSION_TTL_HOURS` | `720` (30 days) | How long a session stays valid after login. |
+| `PRICE_CHECK_INTERVAL_HOURS` | `24` | How often the background price-drop scan (see [docs/API.md](API.md#price-alerts)) re-checks every item that has both a `url` and a `price`. Set to `0` (or negative) to disable the periodic scan entirely — the on-demand `POST /api/v1/items/{id}/price-check` endpoint still works regardless. |
 
 There is no config file — every setting is an environment variable, set in [compose.yml](../compose.yml) or passed to `docker run` / `podman run`. OIDC is only enabled when `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` are **all** set; setting one or two of the three fails startup with a clear error rather than silently half-enabling it. See [docs/API.md](API.md#authentication) for the resulting `/auth/...` endpoints.
 

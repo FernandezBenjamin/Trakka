@@ -28,6 +28,12 @@ type Config struct {
 
 	SessionCookieSecure bool
 	SessionTTL          time.Duration
+
+	// PriceCheckInterval is how often the background price-drop scan
+	// (internal/handlers.RunPriceAlertScan) re-checks every eligible item.
+	// A value <= 0 disables the periodic scan entirely (on-demand checks via
+	// POST /api/v1/items/{id}/price-check still work regardless).
+	PriceCheckInterval time.Duration
 }
 
 func Load() Config {
@@ -45,6 +51,8 @@ func Load() Config {
 
 		SessionCookieSecure: envBool("SESSION_COOKIE_SECURE", true),
 		SessionTTL:          time.Duration(envInt("SESSION_TTL_HOURS", 720)) * time.Hour,
+
+		PriceCheckInterval: time.Duration(envInt("PRICE_CHECK_INTERVAL_HOURS", 24)) * time.Hour,
 	}
 }
 
