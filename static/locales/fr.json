@@ -11,7 +11,8 @@
     "langEn": "English",
     "online": "En ligne",
     "offline": "Hors-ligne",
-    "pending": "{count} en attente"
+    "pending": "{count} en attente",
+    "adminSettings": "Paramètres du Système"
   },
   "dashboard": {
     "house": "Maison",
@@ -123,6 +124,20 @@
     "imagePreview": {
       "ariaLabel": "Aperçu de l'image de l'article",
       "close": "Fermer l'aperçu"
+    },
+    "adminSettings": {
+      "title": "Paramètres du Système",
+      "instanceNameLabel": "Nom de l'instance",
+      "registrationOpenLabel": "Autoriser les nouvelles inscriptions",
+      "oidcSectionTitle": "Connexion SSO (OIDC)",
+      "oidcEnabledLabel": "Activer la connexion SSO",
+      "oidcIssuerLabel": "URL de l'émetteur (Issuer)",
+      "oidcClientIdLabel": "Client ID",
+      "oidcClientSecretLabel": "Client Secret",
+      "oidcClientSecretPlaceholderSet": "•••••••• (laisser vide pour conserver)",
+      "oidcClientSecretPlaceholderUnset": "Aucun secret enregistré",
+      "submit": "Enregistrer",
+      "saved": "Paramètres enregistrés."
     }
   },
   "undo": {

@@ -7,15 +7,18 @@ import (
 
 	"trakka/internal/auth"
 	"trakka/internal/db"
+	"trakka/internal/settings"
 )
 
 // loginPageData is what templates/login.html renders. Error is always
 // mapped from a fixed, known ?error= code below — never raw query-string
 // content — even though html/template auto-escapes regardless.
 type loginPageData struct {
-	OIDCEnabled bool
-	Mode        string // "login" | "register"
-	Error       string
+	OIDCEnabled      bool
+	RegistrationOpen bool
+	InstanceName     string
+	Mode             string // "login" | "register"
+	Error            string
 }
 
 var loginErrorMessages = map[string]string{
@@ -25,6 +28,7 @@ var loginErrorMessages = map[string]string{
 	"oidc_failed":         "La connexion via le fournisseur externe a échoué.",
 	"weak_password":       "Le mot de passe doit contenir au moins 8 caractères.",
 	"invalid_email":       "Adresse email invalide.",
+	"registration_closed": "Les inscriptions sont actuellement fermées.",
 }
 
 func (app *Application) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -33,14 +37,26 @@ func (app *Application) handleLoginPage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	current, err := settings.Resolve(r.Context(), app.DB, app.Config)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
 	mode := "login"
 	if r.URL.Query().Get("mode") == "register" {
 		mode = "register"
 	}
+	if mode == "register" && !current.RegistrationOpen {
+		http.Redirect(w, r, "/auth/login?error=registration_closed", http.StatusFound)
+		return
+	}
 	data := loginPageData{
-		OIDCEnabled: app.Auth.OIDC != nil,
-		Mode:        mode,
-		Error:       loginErrorMessages[r.URL.Query().Get("error")],
+		OIDCEnabled:      app.Auth.OIDC() != nil,
+		RegistrationOpen: current.RegistrationOpen,
+		InstanceName:     current.InstanceName,
+		Mode:             mode,
+		Error:            loginErrorMessages[r.URL.Query().Get("error")],
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := app.LoginTemplate.Execute(w, data); err != nil {
@@ -67,6 +83,16 @@ func (app *Application) handleLoginSubmit(w http.ResponseWriter, r *http.Request
 }
 
 func (app *Application) handleRegisterSubmit(w http.ResponseWriter, r *http.Request) {
+	current, err := settings.Resolve(r.Context(), app.DB, app.Config)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !current.RegistrationOpen {
+		http.Redirect(w, r, "/auth/login?mode=register&error=registration_closed", http.StatusFound)
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/auth/login?mode=register&error=bad_request", http.StatusFound)
 		return
@@ -122,7 +148,8 @@ func (app *Application) finishLogin(w http.ResponseWriter, r *http.Request, user
 const oidcFlowCookieName = "trakka_oidc_flow"
 
 func (app *Application) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
-	if app.Auth.OIDC == nil {
+	oidcClient := app.Auth.OIDC()
+	if oidcClient == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -153,11 +180,12 @@ func (app *Application) handleOIDCLogin(w http.ResponseWriter, r *http.Request) 
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   600,
 	})
-	http.Redirect(w, r, app.Auth.OIDC.AuthorizationURL(state, nonce, challenge), http.StatusFound)
+	http.Redirect(w, r, oidcClient.AuthorizationURL(state, nonce, challenge), http.StatusFound)
 }
 
 func (app *Application) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
-	if app.Auth.OIDC == nil {
+	oidcClient := app.Auth.OIDC()
+	if oidcClient == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -189,7 +217,7 @@ func (app *Application) handleOIDCCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	claims, err := app.Auth.OIDC.Exchange(r.Context(), r.URL.Query().Get("code"), flow.Get("verifier"))
+	claims, err := oidcClient.Exchange(r.Context(), r.URL.Query().Get("code"), flow.Get("verifier"))
 	if err != nil {
 		app.Logger.Warn("oidc exchange failed", "error", err)
 		fail("oidc_failed")

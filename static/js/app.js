@@ -802,6 +802,9 @@ async function init() {
   } catch (err) {
     console.warn('Session non vérifiée (probablement hors ligne) :', err);
   }
+  // refreshAdminButtonVisibility is defined in admin.js, resolved lazily
+  // the same way every other cross-file call in this function already is.
+  refreshAdminButtonVisibility();
 
   // Stale-while-revalidate: now refresh from the network. Both calls fall
   // back to the cache again on their own if this fails, so it's safe to

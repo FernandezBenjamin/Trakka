@@ -50,6 +50,11 @@
                   class="absolute -top-1 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[11px] font-semibold text-white">0</span>
           </button>
         </div>
+        <button type="button" id="admin-settings-button" hidden
+                data-i18n-aria-label="header.adminSettings" aria-label="Paramètres du Système"
+                class="flex h-11 w-11 items-center justify-center rounded-full border border-slate-700 bg-slate-800/60 text-slate-300 hover:bg-slate-800">
+          <span aria-hidden="true" class="text-lg leading-none">⚙️</span>
+        </button>
         <div class="relative">
           <button type="button" id="lang-button" aria-haspopup="true" aria-expanded="false"
                   data-i18n-aria-label="header.langSwitcher" aria-label="Changer de langue"
@@ -318,6 +323,64 @@
     </div>
   </div>
 
+  <div id="admin-settings-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="admin-settings-modal-title" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 id="admin-settings-modal-title" data-i18n="modals.adminSettings.title" class="text-lg font-semibold">Paramètres du Système</h2>
+        <button type="button" id="close-admin-settings-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="admin-settings-form" class="space-y-4">
+        <div>
+          <label for="admin-instance-name" data-i18n="modals.adminSettings.instanceNameLabel" class="mb-1 block text-sm font-medium text-slate-300">Nom de l'instance</label>
+          <input type="text" id="admin-instance-name" required maxlength="100"
+                 class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+
+        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800">
+          <input type="checkbox" id="admin-registration-open"
+                 class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+          <span data-i18n="modals.adminSettings.registrationOpenLabel">Autoriser les nouvelles inscriptions</span>
+        </label>
+
+        <hr class="border-slate-700">
+
+        <h3 data-i18n="modals.adminSettings.oidcSectionTitle" class="text-sm font-semibold text-slate-200">Connexion SSO (OIDC)</h3>
+
+        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800">
+          <input type="checkbox" id="admin-oidc-enabled"
+                 class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+          <span data-i18n="modals.adminSettings.oidcEnabledLabel">Activer la connexion SSO</span>
+        </label>
+
+        <div>
+          <label for="admin-oidc-issuer" data-i18n="modals.adminSettings.oidcIssuerLabel" class="mb-1 block text-sm font-medium text-slate-300">URL de l'émetteur (Issuer)</label>
+          <input type="url" id="admin-oidc-issuer" placeholder="https://idp.example.com"
+                 class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+
+        <div>
+          <label for="admin-oidc-client-id" data-i18n="modals.adminSettings.oidcClientIdLabel" class="mb-1 block text-sm font-medium text-slate-300">Client ID</label>
+          <input type="text" id="admin-oidc-client-id"
+                 class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-base text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+
+        <div>
+          <label for="admin-oidc-client-secret" data-i18n="modals.adminSettings.oidcClientSecretLabel" class="mb-1 block text-sm font-medium text-slate-300">Client Secret</label>
+          <input type="password" id="admin-oidc-client-secret" autocomplete="off"
+                 class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+
+        <p id="admin-settings-status" class="text-sm text-emerald-400" role="status" hidden></p>
+
+        <button type="submit" data-i18n="modals.adminSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
+      </form>
+    </div>
+  </div>
+
   <div id="edit-item-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4">
     <div role="dialog" aria-modal="true" aria-labelledby="edit-item-modal-title" class="w-full max-w-md rounded-t-2xl bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
       <div class="mb-4 flex items-center justify-between">
@@ -404,5 +467,6 @@
   <script src="/js/planning.js"></script>
   <script src="/js/urgent.js"></script>
   <script src="/js/notifications.js"></script>
+  <script src="/js/admin.js"></script>
 </body>
 </html>

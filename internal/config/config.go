@@ -34,6 +34,14 @@ type Config struct {
 	// A value <= 0 disables the periodic scan entirely (on-demand checks via
 	// POST /api/v1/items/{id}/price-check still work regardless).
 	PriceCheckInterval time.Duration
+
+	// InstanceName and RegistrationOpen are the env-var defaults for two of
+	// the settings manageable at runtime via the admin-only
+	// PATCH /api/v1/admin/settings endpoint (see internal/settings.Resolve).
+	// A row in the system_settings table always takes priority over these
+	// once one exists; these are only what a fresh instance starts with.
+	InstanceName     string
+	RegistrationOpen bool
 }
 
 func Load() Config {
@@ -53,6 +61,9 @@ func Load() Config {
 		SessionTTL:          time.Duration(envInt("SESSION_TTL_HOURS", 720)) * time.Hour,
 
 		PriceCheckInterval: time.Duration(envInt("PRICE_CHECK_INTERVAL_HOURS", 24)) * time.Hour,
+
+		InstanceName:     envOr("INSTANCE_NAME", "Trakka"),
+		RegistrationOpen: envBool("REGISTRATION_OPEN", true),
 	}
 }
 

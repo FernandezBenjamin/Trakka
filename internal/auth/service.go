@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"trakka/internal/db"
@@ -26,19 +27,43 @@ func mustHash(plain string) string {
 }
 
 // Service implements registration, local authentication, and session
-// management on top of internal/db. OIDC is nil when no provider is
+// management on top of internal/db. OIDC() returns nil when no provider is
 // configured.
 type Service struct {
 	DB           *db.DB
-	OIDC         *OIDCClient
 	SessionTTL   time.Duration
 	CookieSecure bool
+
+	// oidc is held behind an atomic.Pointer rather than a plain field
+	// because the admin settings panel (internal/handlers/admin.go) can
+	// reconfigure or disable OIDC at any time from a request goroutine,
+	// concurrently with other goroutines serving /auth/oidc/... — a plain
+	// field read/written without synchronization would be a data race.
+	oidc atomic.Pointer[OIDCClient]
 }
 
 // NewService constructs a Service. oidc may be nil if OIDC is not
 // configured.
 func NewService(database *db.DB, oidc *OIDCClient, sessionTTL time.Duration, cookieSecure bool) *Service {
-	return &Service{DB: database, OIDC: oidc, SessionTTL: sessionTTL, CookieSecure: cookieSecure}
+	s := &Service{DB: database, SessionTTL: sessionTTL, CookieSecure: cookieSecure}
+	s.oidc.Store(oidc)
+	return s
+}
+
+// OIDC returns the currently active OIDC client, or nil if OIDC isn't
+// configured right now.
+func (s *Service) OIDC() *OIDCClient {
+	return s.oidc.Load()
+}
+
+// SetOIDC atomically replaces the active OIDC client — called by the admin
+// settings endpoint after successfully re-running discovery against a new
+// issuer/client configuration, or with nil to disable OIDC login entirely.
+// Any authorization flow already in flight against the previous client
+// keeps working (Exchange only needs the client instance it started with),
+// so swapping never invalidates a login that's mid-redirect.
+func (s *Service) SetOIDC(oidc *OIDCClient) {
+	s.oidc.Store(oidc)
 }
 
 // Register creates a new local account. Returns db.ErrDuplicateEmail if the

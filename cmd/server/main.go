@@ -20,6 +20,7 @@ import (
 	"trakka/internal/config"
 	"trakka/internal/db"
 	"trakka/internal/handlers"
+	"trakka/internal/settings"
 )
 
 func main() {
@@ -50,12 +51,33 @@ func main() {
 		}
 	}()
 
+	resolvedSettings, err := settings.Resolve(context.Background(), database, cfg)
+	if err != nil {
+		logger.Error("resolving system settings", "error", err)
+		os.Exit(1)
+	}
+
 	var oidcClient *auth.OIDCClient
-	if cfg.OIDCEnabled() {
-		oidcClient, err = auth.NewOIDCClient(context.Background(), cfg.OIDCIssuer, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.BaseURL+"/auth/oidc/callback")
-		if err != nil {
-			logger.Error("oidc discovery failed", "error", err)
-			os.Exit(1)
+	if resolvedSettings.OIDCEnabled {
+		switch {
+		case resolvedSettings.OIDCIssuer == "" || resolvedSettings.OIDCClientID == "" || resolvedSettings.OIDCClientSecret == "":
+			logger.Warn("oidc is marked enabled but incompletely configured; starting with OIDC disabled until fixed via PATCH /api/v1/admin/settings")
+		case cfg.BaseURL == "":
+			logger.Warn("oidc is enabled but BASE_URL is not set; starting with OIDC disabled")
+		default:
+			// Unlike the env-var-only OIDC config this replaces (which still
+			// fails startup outright via cfg.Validate() below on a broken
+			// all-or-nothing env setup), a DB-driven OIDC config that was valid
+			// when an admin saved it can still fail discovery later purely
+			// because the IdP is temporarily unreachable. Crashing local-auth
+			// availability along with it on every restart until the IdP comes
+			// back would be worse than starting up with OIDC login simply
+			// unavailable — so this logs and continues rather than exiting.
+			oidcClient, err = auth.NewOIDCClient(context.Background(), resolvedSettings.OIDCIssuer, resolvedSettings.OIDCClientID, resolvedSettings.OIDCClientSecret, cfg.BaseURL+"/auth/oidc/callback")
+			if err != nil {
+				logger.Error("oidc discovery failed at startup; starting with OIDC disabled", "error", err)
+				oidcClient = nil
+			}
 		}
 	}
 	authService := auth.NewService(database, oidcClient, cfg.SessionTTL, cfg.SessionCookieSecure)
@@ -72,6 +94,7 @@ func main() {
 		Logger:        logger,
 		Auth:          authService,
 		LoginTemplate: loginTemplate,
+		Config:        cfg,
 	}
 
 	srv := &http.Server{

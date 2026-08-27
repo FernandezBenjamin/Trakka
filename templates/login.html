@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <title>Connexion — Trakka</title>
+  <title>Connexion — {{.InstanceName}}</title>
 
   <link rel="icon" href="/icons/favicon.ico" sizes="32x32">
   <link rel="icon" href="/icons/trakka-favicon.svg" type="image/svg+xml">
@@ -88,9 +88,11 @@
       </a>
       {{end}}
 
+      {{if .RegistrationOpen}}
       <p class="mt-4 text-center text-sm text-slate-400">
         Pas encore de compte ? <a href="/auth/login?mode=register" class="font-medium text-sky-400 hover:text-sky-300">Créer un compte</a>
       </p>
+      {{end}}
       {{end}}
     </div>
   </main>

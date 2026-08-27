@@ -27,7 +27,7 @@ These are classic server-rendered, form-POST endpoints (not JSON) — `/auth/log
 |---|---|---|
 | `/auth/login` | `GET` | Renders the login/register page. Redirects to `/` if already authenticated. |
 | `/auth/login` | `POST` | Form fields: `email`, `password`. On success, sets the session cookie and redirects to `/`; on failure, redirects to `/auth/login?error=invalid_credentials`. |
-| `/auth/register` | `POST` | Form fields: `email`, `password`, `password_confirm`, `display_name`. Creates the account, a personal house ("Ma Maison") owned by the new user, a session, then redirects to `/`. `email_taken` on a duplicate email. |
+| `/auth/register` | `POST` | Form fields: `email`, `password`, `password_confirm`, `display_name`. Creates the account, a personal house ("Ma Maison") owned by the new user, a session, then redirects to `/`. `email_taken` on a duplicate email; `registration_closed` (both here and on `GET /auth/login?mode=register`) if an admin has closed registration via [Admin settings](#admin-settings). |
 | `/auth/logout` | `POST` | Revokes the session and redirects to `/auth/login`. |
 | `/auth/oidc/login` | `GET` | Redirects to the configured OIDC provider. `404` if OIDC isn't configured. |
 | `/auth/oidc/callback` | `GET` | The provider's redirect target. Verifies the id_token, provisions the account on first login (with a personal house, same as local registration), sets the session cookie, redirects to `/`. |
@@ -45,8 +45,10 @@ curl -b cookies.txt http://localhost:8080/api/v1/me
 Returns the authenticated user. `401 {"error": "authentication required"}` if the session cookie is missing, invalid, or expired.
 
 ```json
-{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "created_at": "..." }
+{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "..." }
 ```
+
+`is_admin` grants access to the [Admin settings](#admin-settings) endpoints below. The very first account ever created on an instance (local or OIDC-provisioned) becomes an admin automatically — see `internal/db.CreateUser` in [CLAUDE.md](../CLAUDE.md) — and there is currently no endpoint to grant or revoke it for any other account.
 
 **CSRF**: the login/register forms carry no CSRF token — there's no pre-existing session for a forged POST to hijack at that point, so there's nothing for an attacker to gain. Every subsequent state-changing call goes through `/api/v1/...`, which is protected by the session cookie's `SameSite=Strict` attribute: it's never attached to a cross-site request (form or `fetch`), which closes the standard CSRF vector without a separate token.
 
@@ -337,6 +339,52 @@ curl -X PATCH http://localhost:8080/api/v1/price-alerts/1 -d '{"status": "reject
 ```
 
 `status` is required and must be `"accepted"` or `"rejected"`. `404` if not found, `403` if the caller isn't a member of the alert's item's list's house, `409` if the alert was already resolved (an alert can only ever be actioned once, whichever status wins the race). `200` with the updated alert otherwise.
+
+## Admin settings
+
+Two endpoints, both gated behind `models.User.IsAdmin` (`403 {"error": "admin access required"}` for anyone else) rather than house membership — these are system-wide, not scoped to a house. They manage the `system_settings` table (see [docs/DATABASE.md](DATABASE.md#system_settings)), which takes priority over the equivalent environment variable whenever a row exists (`internal/settings.Resolve`); a value with no row falls back to its env var. The frontend surfaces this as a "Paramètres du Système" panel behind a ⚙️ button in the header, visible only to admins (`static/js/admin.js`).
+
+### `GET /api/v1/admin/settings`
+
+```bash
+curl -b cookies.txt http://localhost:8080/api/v1/admin/settings
+```
+
+```json
+{
+  "instance_name": "Trakka",
+  "registration_open": true,
+  "oidc_enabled": false,
+  "oidc_issuer": "",
+  "oidc_client_id": "",
+  "oidc_client_secret_set": false
+}
+```
+
+The OIDC client secret is never returned — `oidc_client_secret_set` only reports whether one is currently stored, the same write-only-secret convention most admin panels use for third-party API credentials. There is no field-level access finer than "admin or not": any admin can read and change every setting.
+
+### `PATCH /api/v1/admin/settings`
+
+Every field is optional — send only what you want to change.
+
+```bash
+# rename the instance and close local registration
+curl -X PATCH http://localhost:8080/api/v1/admin/settings \
+  -d '{"instance_name": "Chez Nous", "registration_open": false}'
+
+# enable OIDC/SSO
+curl -X PATCH http://localhost:8080/api/v1/admin/settings \
+  -d '{"oidc_enabled": true, "oidc_issuer": "https://idp.example.com", "oidc_client_id": "trakka", "oidc_client_secret": "..."}'
+```
+
+- `instance_name` (string, non-empty) — shown in the login page's `<title>` and, once loaded, the SPA header.
+- `registration_open` (bool) — when `false`, `GET /auth/login?mode=register` and `POST /auth/register` both redirect with `?error=registration_closed` instead of showing/accepting the registration form. Existing accounts (local or OIDC) can still log in regardless.
+- `oidc_enabled` (bool), `oidc_issuer`/`oidc_client_id` (string) — the same three inputs `OIDC_ISSUER`/`OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET` configure via environment variables (see [docs/DEPLOYMENT.md](DEPLOYMENT.md)), now editable at runtime without a restart.
+- `oidc_client_secret` (string) — a non-empty value replaces the stored secret; omitted or empty leaves whatever's currently stored untouched. There is no way to explicitly blank the secret out other than disabling OIDC.
+
+Enabling OIDC (or changing its issuer/client id/secret while already enabled) re-runs OIDC discovery synchronously against the new values, bounded to 10s, **before** anything is persisted: `400` with a descriptive message if `oidc_issuer`/`oidc_client_id`/`oidc_client_secret` aren't all non-empty, if the server's `BASE_URL` environment variable isn't set (still required — see [docs/DEPLOYMENT.md](DEPLOYMENT.md) — since it isn't itself one of the dynamic settings), or if discovery against the new issuer fails. On any of these the previously active configuration (and OIDC client) is left completely untouched. On success, the new settings are saved and take effect immediately for the next `/auth/oidc/login` — no server restart needed. `400` also if `instance_name` would end up empty. `200` with the resulting settings (in the same shape as the `GET` above) otherwise.
+
+Like house mutations, this endpoint returns `503` immediately rather than queuing if the browser is offline (`static/sw.js`) — a global, security-sensitive setting change is not something that should silently reapply later once connectivity returns.
 
 ## Static assets
 

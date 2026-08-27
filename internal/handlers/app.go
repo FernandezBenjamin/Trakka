@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"trakka/internal/auth"
+	"trakka/internal/config"
 	"trakka/internal/db"
 )
 
@@ -20,6 +21,13 @@ type Application struct {
 	Logger        *slog.Logger
 	Auth          *auth.Service
 	LoginTemplate *template.Template
+	// Config is the env-var configuration loaded at startup. Handlers read
+	// it for values that stay env-only even after the admin settings panel
+	// was added — currently just BaseURL, needed to build the OIDC
+	// redirect_uri when the admin (re)enables OIDC at runtime (see
+	// internal/handlers/admin.go) — and pass it to internal/settings.Resolve
+	// as the fallback under whatever's stored in system_settings.
+	Config config.Config
 }
 
 // Routes builds the full HTTP handler: middleware chain + route table.
@@ -71,6 +79,9 @@ func (app *Application) Routes() http.Handler {
 
 	apiMux.HandleFunc("GET /api/v1/price-alerts", app.handlePriceAlertsIndex)
 	apiMux.HandleFunc("PATCH /api/v1/price-alerts/{id}", app.handlePriceAlertsUpdate)
+
+	apiMux.HandleFunc("GET /api/v1/admin/settings", app.handleAdminSettingsShow)
+	apiMux.HandleFunc("PATCH /api/v1/admin/settings", app.handleAdminSettingsUpdate)
 
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
 	mux.Handle("/", http.FileServer(http.Dir(app.StaticDir)))

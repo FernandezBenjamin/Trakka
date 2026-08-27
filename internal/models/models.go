@@ -106,7 +106,13 @@ type User struct {
 	ID          int64  `json:"id"`
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
-	CreatedAt   string `json:"created_at"`
+	// IsAdmin grants access to the /api/v1/admin/... endpoints and the
+	// "Paramètres du Système" panel (see internal/handlers/admin.go). It is
+	// never settable through the registration/profile API — the only way to
+	// become an admin is being the very first account created on a fresh
+	// instance (internal/db.CreateUser).
+	IsAdmin   bool   `json:"is_admin"`
+	CreatedAt string `json:"created_at"`
 }
 
 // UserWithCredentials is returned by db lookups used for authentication

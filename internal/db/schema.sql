@@ -107,3 +107,17 @@ CREATE TABLE IF NOT EXISTS price_alerts (
 
 CREATE INDEX IF NOT EXISTS idx_price_alerts_item_id ON price_alerts(item_id);
 CREATE INDEX IF NOT EXISTS idx_price_alerts_status ON price_alerts(status);
+
+-- Dynamic runtime settings (OIDC configuration, open/closed registration,
+-- instance name) that take priority over their equivalent environment
+-- variable whenever a row exists here — see internal/settings.Resolve.
+-- Managed exclusively through the admin-only PATCH /api/v1/admin/settings
+-- endpoint; nothing else writes to this table. A brand new table, so (like
+-- price_alerts above) it needs no addColumnIfMissing guard — CREATE TABLE
+-- IF NOT EXISTS alone is enough for it to appear on an existing
+-- /data/trakka.db the same way it does on a fresh one.
+CREATE TABLE IF NOT EXISTS system_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

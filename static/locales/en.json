@@ -11,7 +11,8 @@
     "langEn": "English",
     "online": "Online",
     "offline": "Offline",
-    "pending": "{count} pending"
+    "pending": "{count} pending",
+    "adminSettings": "System Settings"
   },
   "dashboard": {
     "house": "House",
@@ -123,6 +124,20 @@
     "imagePreview": {
       "ariaLabel": "Item image preview",
       "close": "Close preview"
+    },
+    "adminSettings": {
+      "title": "System Settings",
+      "instanceNameLabel": "Instance name",
+      "registrationOpenLabel": "Allow new account registration",
+      "oidcSectionTitle": "SSO Login (OIDC)",
+      "oidcEnabledLabel": "Enable SSO login",
+      "oidcIssuerLabel": "Issuer URL",
+      "oidcClientIdLabel": "Client ID",
+      "oidcClientSecretLabel": "Client Secret",
+      "oidcClientSecretPlaceholderSet": "•••••••• (leave blank to keep)",
+      "oidcClientSecretPlaceholderUnset": "No secret set",
+      "submit": "Save",
+      "saved": "Settings saved."
     }
   },
   "undo": {

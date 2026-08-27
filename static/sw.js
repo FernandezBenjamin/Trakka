@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's/CDN_ASSETS' contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v13';
-const RUNTIME_CACHE = 'trakka-runtime-v13';
+const SHELL_CACHE = 'trakka-shell-v14';
+const RUNTIME_CACHE = 'trakka-runtime-v14';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -22,6 +22,7 @@ const APP_SHELL = [
   '/js/planning.js',
   '/js/urgent.js',
   '/js/notifications.js',
+  '/js/admin.js',
   '/css/base.css',
   '/css/tokens.css',
   '/locales/fr.json',
@@ -339,6 +340,19 @@ async function queueOfflineWrite(method, url, body) {
   // docs/PWA.md explicitly calls out as unsupported. Mutating a house
   // requires connectivity; queuing anything else stays exactly as before.
   if (pathname === '/api/v1/houses' || /^\/api\/v1\/houses\/[^/]+$/.test(pathname)) {
+    return jsonError(
+      { 'Content-Type': 'application/json; charset=utf-8' },
+      503,
+      'Cette action nécessite une connexion réseau.'
+    );
+  }
+
+  // Admin settings (OIDC config, registration policy, instance name) are a
+  // rare, system-wide mutation with real side effects (re-running OIDC
+  // discovery, flipping registration open/closed) — the same reasoning that
+  // keeps houses off the offline queue applies here, even more so given
+  // what's at stake if a stale queued change silently reapplied later.
+  if (pathname === '/api/v1/admin/settings') {
     return jsonError(
       { 'Content-Type': 'application/json; charset=utf-8' },
       503,

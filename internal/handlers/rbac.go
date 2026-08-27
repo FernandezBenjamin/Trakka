@@ -41,6 +41,17 @@ func (app *Application) authorizeHouseOwner(w http.ResponseWriter, r *http.Reque
 	return true
 }
 
+// authorizeAdmin writes a 403 and returns false unless the authenticated
+// caller has the system-wide admin role (see models.User.IsAdmin) — the
+// gate for every /api/v1/admin/... endpoint.
+func (app *Application) authorizeAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if !userFromContext(r).IsAdmin {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return false
+	}
+	return true
+}
+
 // authorizeItemAccess resolves listID to its house and checks membership,
 // for item handlers that only have a list_id in hand (never a house_id
 // directly).
