@@ -10,7 +10,22 @@ import (
 	"trakka/internal/models"
 )
 
+// handleListsIndex lists the caller's lists. ?shared_with_me=true switches
+// to a different, mutually exclusive mode: every List reachable only via a
+// list_shares/space_shares grant (see db.ListSharedListsForUser) rather than
+// the caller's own House-scoped lists — house_id/type filters don't apply
+// to that mode, mirroring how ?house_id= itself is optional below.
 func (app *Application) handleListsIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("shared_with_me") == "true" {
+		lists, err := app.DB.ListSharedListsForUser(r.Context(), userFromContext(r).ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, lists)
+		return
+	}
+
 	typeFilter := r.URL.Query().Get("type")
 	if typeFilter != "" && !models.ValidListTypes[typeFilter] {
 		writeError(w, http.StatusBadRequest, "invalid type filter")
@@ -125,7 +140,7 @@ func (app *Application) handleListsShow(w http.ResponseWriter, r *http.Request) 
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeHouseAccess(w, r, list.HouseID) {
+	if !app.authorizeListAccess(w, r, list, false) {
 		return
 	}
 
@@ -153,7 +168,10 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeHouseAccess(w, r, existing.HouseID) {
+	// Renaming/retyping/recategorizing a list counts as "editing" it, so a
+	// write-level List/Space share is enough here — unlike deleting it
+	// outright (handleListsDelete below), which stays House-membership-only.
+	if !app.authorizeListAccess(w, r, existing, true) {
 		return
 	}
 
@@ -209,6 +227,9 @@ func (app *Application) handleListsDelete(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
+	// Deliberately House-membership-only, unlike handleListsUpdate above: a
+	// write-level List/Space share lets someone edit a list and its items,
+	// not destroy the list itself (and everyone else's items in it).
 	if !app.authorizeHouseAccess(w, r, existing.HouseID) {
 		return
 	}

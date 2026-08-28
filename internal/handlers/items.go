@@ -32,7 +32,7 @@ func (app *Application) handleItemsIndex(w http.ResponseWriter, r *http.Request)
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeHouseAccess(w, r, list.HouseID) {
+	if !app.authorizeListAccess(w, r, list, false) {
 		return
 	}
 
@@ -112,7 +112,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeHouseAccess(w, r, list.HouseID) {
+	if !app.authorizeListAccess(w, r, list, true) {
 		return
 	}
 
@@ -140,7 +140,7 @@ func (app *Application) handleItemsShow(w http.ResponseWriter, r *http.Request) 
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeItemAccess(w, r, item.ListID) {
+	if !app.authorizeItemAccess(w, r, item.ListID, false) {
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -160,7 +160,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeItemAccess(w, r, existing.ListID) {
+	if !app.authorizeItemAccess(w, r, existing.ListID, true) {
 		return
 	}
 	previousURL := stringValue(existing.URL)
@@ -288,7 +288,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeItemAccess(w, r, item.ListID) {
+	if !app.authorizeItemAccess(w, r, item.ListID, true) {
 		return
 	}
 	previousURL := stringValue(item.URL)
@@ -429,7 +429,7 @@ func (app *Application) handleItemsDelete(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeItemAccess(w, r, existing.ListID) {
+	if !app.authorizeItemAccess(w, r, existing.ListID, true) {
 		return
 	}
 

@@ -142,7 +142,7 @@ func (app *Application) handlePriceAlertsUpdate(w http.ResponseWriter, r *http.R
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeItemAccess(w, r, alert.ListID) {
+	if !app.authorizeItemAccess(w, r, alert.ListID, true) {
 		return
 	}
 
@@ -184,7 +184,7 @@ func (app *Application) handleItemsPriceCheck(w http.ResponseWriter, r *http.Req
 		app.serverError(w, r, err)
 		return
 	}
-	if !app.authorizeItemAccess(w, r, item.ListID) {
+	if !app.authorizeItemAccess(w, r, item.ListID, true) {
 		return
 	}
 	if item.URL == nil || *item.URL == "" {

@@ -19,23 +19,26 @@ const planningEls = {
   tabPlanning: document.getElementById('tab-planning'),
   tabUrgent: document.getElementById('tab-urgent'),
   tabSpaces: document.getElementById('tab-spaces'),
+  tabShared: document.getElementById('tab-shared'),
   dashboardView: document.getElementById('dashboard-view'),
   planningView: document.getElementById('planning-view'),
   urgentView: document.getElementById('urgent-view'),
   spacesView: document.getElementById('spaces-view'),
+  sharedView: document.getElementById('shared-view'),
   horizonButtons: document.querySelectorAll('#planning-view [data-horizon]'),
   total: document.getElementById('planning-total'),
   months: document.getElementById('planning-months'),
 };
 
-// The four dashboard tabs (Lists / Budget & Forecast / Urgent / Spaces) are
-// mutually exclusive, so the switcher lives here rather than being split
-// across each tab's own file — setActiveTab is the single place that shows
-// one view and hides the other three. urgent.js/spaces.js call back into
-// loadUrgentView/loadSpacesView the same deferred-call way buildItemRow
-// calls monthLabel (defined below) — all script tags finish loading and
-// defining their top-level functions before any click can actually fire.
-let activeTab = 'dashboard'; // 'dashboard' | 'planning' | 'urgent' | 'spaces'
+// The five dashboard tabs (Lists / Budget & Forecast / Urgent / Spaces /
+// Shared with me) are mutually exclusive, so the switcher lives here rather
+// than being split across each tab's own file — setActiveTab is the single
+// place that shows one view and hides the other four. urgent.js/spaces.js/
+// shares.js call back into loadUrgentView/loadSpacesView/loadSharedView the
+// same deferred-call way buildItemRow calls monthLabel (defined below) —
+// all script tags finish loading and defining their top-level functions
+// before any click can actually fire.
+let activeTab = 'dashboard'; // 'dashboard' | 'planning' | 'urgent' | 'spaces' | 'shared'
 let planningHorizon = 3;
 // Every one-off scheduled item currently known for state.currentHouseId, as
 // { item, listName } — re-grouped by month locally on every horizon change
@@ -58,6 +61,10 @@ function isUrgentTabActive() {
 
 function isSpacesTabActive() {
   return activeTab === 'spaces';
+}
+
+function isSharedTabActive() {
+  return activeTab === 'shared';
 }
 
 // monthsFromNow(3) with today in August 2026 returns
@@ -108,23 +115,27 @@ function setActiveTab(tab) {
   planningEls.planningView.hidden = tab !== 'planning';
   planningEls.urgentView.hidden = tab !== 'urgent';
   planningEls.spacesView.hidden = tab !== 'spaces';
+  planningEls.sharedView.hidden = tab !== 'shared';
   setTabButtonState(planningEls.tabDashboard, tab === 'dashboard');
   setTabButtonState(planningEls.tabPlanning, tab === 'planning');
   setTabButtonState(planningEls.tabUrgent, tab === 'urgent');
   setTabButtonState(planningEls.tabSpaces, tab === 'spaces');
+  setTabButtonState(planningEls.tabShared, tab === 'shared');
   if (tab === 'planning') loadPlanningView();
-  // loadUrgentView/loadSpacesView are defined in urgent.js/spaces.js, both
-  // loaded after this file — safe to call here since this only ever runs
-  // from a click, well after every script has finished loading and defined
-  // its top-level functions.
+  // loadUrgentView/loadSpacesView/loadSharedView are defined in urgent.js/
+  // spaces.js/shares.js, all loaded after this file — safe to call here
+  // since this only ever runs from a click, well after every script has
+  // finished loading and defined its top-level functions.
   if (tab === 'urgent') loadUrgentView();
   if (tab === 'spaces') loadSpacesView();
+  if (tab === 'shared') loadSharedView();
 }
 
 planningEls.tabDashboard.addEventListener('click', () => setActiveTab('dashboard'));
 planningEls.tabPlanning.addEventListener('click', () => setActiveTab('planning'));
 planningEls.tabUrgent.addEventListener('click', () => setActiveTab('urgent'));
 planningEls.tabSpaces.addEventListener('click', () => setActiveTab('spaces'));
+planningEls.tabShared.addEventListener('click', () => setActiveTab('shared'));
 
 function setHorizonButtonState(button, active) {
   button.classList.toggle('border-sky-500', active);

@@ -2,9 +2,10 @@
 
 // "Espaces" (custom categories) view: a fourth tab alongside the dashboard,
 // the planning view and the urgent view (shares `state`, `els`, `apiRequest`,
-// `showError`/`hideError`, `t`, `TRASH_ICON_SVG`, `refreshPendingBadge`,
-// `buildListCard`, `urlBadges`, `progressBadge`, `noBadges`, `isPurchaseList`
-// with app.js, and `PENCIL_ICON_SVG` with list_view.js — same classic-
+// `showError`/`hideError`, `t`, `TRASH_ICON_SVG`, `SHARE_ICON_SVG`,
+// `refreshPendingBadge`, `buildListCard`, `urlBadges`, `progressBadge`,
+// `noBadges`, `isPurchaseList` with app.js, `PENCIL_ICON_SVG` with
+// list_view.js, and `openShareModal` with shares.js — same classic-
 // <script>-tags shared-scope pattern as planning.js/urgent.js). A custom
 // category ("space") is a personal, freeform way to group lists across
 // their fixed `type` (e.g. a "Homelab" space mixing a shopping list, a todo
@@ -246,6 +247,25 @@ function buildCategorySection(category) {
     openCategoryModal(category);
   });
   actions.appendChild(editBtn);
+
+  // Sharing a Space is the owning user's call alone (see
+  // internal/handlers/shares.go's authorizeSpaceOwner) — every category
+  // rendered on this tab is always one of the caller's own (see
+  // customCategories above), so the button is unconditional here, unlike
+  // buildListCard's own share button which is hidden on a card reached via
+  // a share. openShareModal is defined in shares.js, resolved lazily the
+  // same way openCategoryModal's own cross-file calls already are.
+  const shareBtn = document.createElement('button');
+  shareBtn.type = 'button';
+  shareBtn.setAttribute('aria-label', t('spaces.shareAriaLabel', { name: category.name }));
+  shareBtn.className =
+    'flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400';
+  shareBtn.innerHTML = SHARE_ICON_SVG;
+  shareBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    openShareModal({ kind: 'space', id: category.id, name: category.name });
+  });
+  actions.appendChild(shareBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';

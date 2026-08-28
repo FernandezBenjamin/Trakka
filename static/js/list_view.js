@@ -12,6 +12,7 @@ const listEls = {
   itemsHeading: document.getElementById('items-heading'),
   backButton: document.getElementById('back-button'),
   editListButton: document.getElementById('edit-list-button'),
+  shareListButton: document.getElementById('share-list-button'),
   financeTotal: document.getElementById('finance-total'),
   financeSpent: document.getElementById('finance-spent'),
   financeRemaining: document.getElementById('finance-remaining'),
@@ -785,6 +786,11 @@ listEls.backButton.addEventListener('click', () => {
 // other cross-file call in this file already is.
 listEls.editListButton.addEventListener('click', () => {
   if (state.currentList) openListModal(state.currentList);
+});
+
+// openShareModal is defined in shares.js, resolved lazily the same way.
+listEls.shareListButton.addEventListener('click', () => {
+  if (state.currentList) openShareModal({ kind: 'list', id: state.currentList.id, name: state.currentList.name });
 });
 
 // ---------------------------------------------------------------------------

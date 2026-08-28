@@ -67,12 +67,22 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("POST /api/v1/custom-categories", app.handleCustomCategoriesCreate)
 	apiMux.HandleFunc("PUT /api/v1/custom-categories/{id}", app.handleCustomCategoriesUpdate)
 	apiMux.HandleFunc("DELETE /api/v1/custom-categories/{id}", app.handleCustomCategoriesDelete)
+	// "Space" is this app's user-facing name for a custom category (see
+	// static/js/spaces.js's "Espaces" tab) — these routes live under the
+	// existing /custom-categories/{id} resource, not a separate /spaces
+	// root, so there's only ever one URL naming a given category.
+	apiMux.HandleFunc("GET /api/v1/custom-categories/{id}/share", app.handleSpaceShareIndex)
+	apiMux.HandleFunc("POST /api/v1/custom-categories/{id}/share", app.handleSpaceShareCreate)
+	apiMux.HandleFunc("DELETE /api/v1/custom-categories/{id}/share/{userId}", app.handleSpaceShareRevoke)
 
 	apiMux.HandleFunc("GET /api/v1/lists", app.handleListsIndex)
 	apiMux.HandleFunc("POST /api/v1/lists", app.handleListsCreate)
 	apiMux.HandleFunc("GET /api/v1/lists/{id}", app.handleListsShow)
 	apiMux.HandleFunc("PUT /api/v1/lists/{id}", app.handleListsUpdate)
 	apiMux.HandleFunc("DELETE /api/v1/lists/{id}", app.handleListsDelete)
+	apiMux.HandleFunc("GET /api/v1/lists/{id}/share", app.handleListShareIndex)
+	apiMux.HandleFunc("POST /api/v1/lists/{id}/share", app.handleListShareCreate)
+	apiMux.HandleFunc("DELETE /api/v1/lists/{id}/share/{userId}", app.handleListShareRevoke)
 
 	apiMux.HandleFunc("GET /api/v1/items", app.handleItemsIndex)
 	apiMux.HandleFunc("POST /api/v1/items", app.handleItemsCreate)

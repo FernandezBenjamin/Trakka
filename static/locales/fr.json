@@ -2,6 +2,7 @@
   "common": {
     "deleteList": "Supprimer {name}",
     "editList": "Modifier {name}",
+    "shareList": "Partager {name}",
     "removeMember": "Retirer {email}"
   },
   "header": {
@@ -38,6 +39,7 @@
   "items": {
     "back": "Retour au tableau de bord",
     "editList": "Modifier la liste",
+    "shareList": "Partager la liste",
     "financeTotal": "Total estimé",
     "financeSpent": "Déjà dépensé",
     "financeRemaining": "Reste à dépenser",
@@ -112,7 +114,16 @@
     "listCount": "{count} liste(s)",
     "emptyCategory": "Aucune liste dans cet espace pour le moment.",
     "editAriaLabel": "Modifier l'espace « {name} »",
+    "shareAriaLabel": "Partager l'espace « {name} »",
     "deleteAriaLabel": "Supprimer l'espace « {name} »"
+  },
+  "shares": {
+    "tabTitle": "Partagé avec moi",
+    "sharedBadge": "Partagé",
+    "sharedTitle": "Partagé avec moi",
+    "sharedSubtitle": "Listes qu'un autre utilisateur vous a partagées directement, ou via un de ses espaces.",
+    "sharedEmptyTitle": "Rien n'a été partagé avec vous pour le moment",
+    "sharedEmptyHint": "Quand quelqu'un partage une liste ou un espace avec vous, il apparaît ici."
   },
   "modals": {
     "close": "Fermer",
@@ -145,6 +156,15 @@
       "title": "Membres de la Maison",
       "invitePlaceholder": "Email de la personne à inviter",
       "inviteSubmit": "Inviter"
+    },
+    "share": {
+      "titleList": "Partager la liste",
+      "titleSpace": "Partager l'espace",
+      "emailPlaceholder": "Email de la personne",
+      "permissionRead": "Lecture seule",
+      "permissionWrite": "Édition",
+      "submit": "Partager",
+      "revokeAriaLabel": "Retirer l'accès de {email}"
     },
     "newCategory": {
       "titleCreate": "Nouvel espace",

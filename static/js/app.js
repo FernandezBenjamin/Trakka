@@ -81,6 +81,14 @@ const TRASH_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
   '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
 
+// Same static-markup-only safety rule as TRASH_ICON_SVG above. Used for the
+// 👥 "Partager" button on a list card/space section (see buildListCard
+// below and spaces.js's buildCategorySection) and for the 👥 "shared with
+// you" indicator on a card in the "Partagé avec moi" tab (shares.js).
+const SHARE_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
+  '<path d="M16 11a4 4 0 1 0-4-4"/><path d="M8 21v-2a4 4 0 0 1 4-4h1"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>';
+
 function showError(message) {
   els.errorBanner.textContent = message;
   els.errorBanner.hidden = false;
@@ -588,6 +596,13 @@ function buildListCard(list, badgesFragment) {
   typeRow.className = 'mb-2 flex flex-wrap items-center gap-1.5 empty:hidden';
   const typeBadgeEl = typeBadge(list.type);
   if (typeBadgeEl) typeRow.appendChild(typeBadgeEl);
+  // list.access_source is only ever set by db.ListSharedListsForUser (see
+  // shares.js's "Partagé avec moi" tab) — the 👥 indicator CLAUDE.md's
+  // sharing feature asks for, so a list someone else shared with you is
+  // recognizable at a glance among your own.
+  if (list.access_source) {
+    typeRow.appendChild(badge(`👥 ${t('shares.sharedBadge')}`, 'violet'));
+  }
 
   const titleRow = document.createElement('div');
   titleRow.className = 'flex min-w-0 items-center gap-2';
@@ -617,21 +632,39 @@ function buildListCard(list, badgesFragment) {
   const actions = document.createElement('div');
   actions.className = 'flex shrink-0 items-center gap-1';
 
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.setAttribute('aria-label', t('common.editList', { name: list.name }));
-  editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200';
-  editBtn.innerHTML = PENCIL_ICON_SVG;
-  editBtn.addEventListener('click', () => openListModal(list));
-  actions.appendChild(editBtn);
+  // A card reached via db.ListSharedListsForUser (list.access_source set —
+  // see shares.js's "Partagé avec moi" tab) shows no edit/share/delete
+  // controls at all: managing, editing or deleting a list requires actual
+  // House membership (see internal/handlers/shares.go's
+  // handleListShareCreate and handleListsDelete), which by definition this
+  // list showing up there means the viewer doesn't have. openShareModal is
+  // defined in shares.js, resolved lazily the same way openListModal above
+  // already is.
+  if (!list.access_source) {
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.setAttribute('aria-label', t('common.editList', { name: list.name }));
+    editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200';
+    editBtn.innerHTML = PENCIL_ICON_SVG;
+    editBtn.addEventListener('click', () => openListModal(list));
+    actions.appendChild(editBtn);
 
-  const deleteBtn = document.createElement('button');
-  deleteBtn.type = 'button';
-  deleteBtn.setAttribute('aria-label', t('common.deleteList', { name: list.name }));
-  deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
-  deleteBtn.innerHTML = TRASH_ICON_SVG;
-  deleteBtn.addEventListener('click', () => removeList(list));
-  actions.appendChild(deleteBtn);
+    const shareBtn = document.createElement('button');
+    shareBtn.type = 'button';
+    shareBtn.setAttribute('aria-label', t('common.shareList', { name: list.name }));
+    shareBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400';
+    shareBtn.innerHTML = SHARE_ICON_SVG;
+    shareBtn.addEventListener('click', () => openShareModal({ kind: 'list', id: list.id, name: list.name }));
+    actions.appendChild(shareBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.setAttribute('aria-label', t('common.deleteList', { name: list.name }));
+    deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
+    deleteBtn.innerHTML = TRASH_ICON_SVG;
+    deleteBtn.addEventListener('click', () => removeList(list));
+    actions.appendChild(deleteBtn);
+  }
 
   row.append(openBtn, actions);
   li.appendChild(row);
@@ -765,6 +798,10 @@ function refreshVisibleView() {
     // isSpacesTabActive/refreshSpacesIfActive are defined in spaces.js,
     // resolved lazily the same way.
     refreshSpacesIfActive();
+  } else if (isSharedTabActive()) {
+    // isSharedTabActive/refreshSharedIfActive are defined in shares.js,
+    // resolved lazily the same way.
+    refreshSharedIfActive();
   } else {
     loadDashboard();
   }

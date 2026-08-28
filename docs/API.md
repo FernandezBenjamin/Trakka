@@ -207,11 +207,13 @@ Returns lists belonging to houses the caller is a member of, newest first. Items
 Query parameters:
 - `type` (optional) — filter to `todo`, `shopping`, `groceries`, `recurring_shopping` or `custom`. `400` if any other value is given.
 - `house_id` (optional) — filter to lists belonging to that house. `400` if not a positive integer; `403` if the caller isn't a member of that house.
+- `shared_with_me` (optional) — when `"true"`, switches to a different, mutually exclusive mode: instead of the caller's own house-scoped lists, returns every list reachable only via a [List or Space share](#sharing) (see `access_source`/`access_permission` below), excluding any whose house they're already a plain member of. `type`/`house_id` don't apply in this mode.
 
 ```bash
 curl -b cookies.txt http://localhost:8080/api/v1/lists
 curl -b cookies.txt http://localhost:8080/api/v1/lists?type=shopping
 curl -b cookies.txt http://localhost:8080/api/v1/lists?house_id=1
+curl -b cookies.txt http://localhost:8080/api/v1/lists?shared_with_me=true
 ```
 
 ```json
@@ -223,7 +225,7 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists?house_id=1
 ]
 ```
 
-`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories).
+`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission` are only present in the `?shared_with_me=true` mode above — see [Sharing](#sharing).
 
 ### `POST /api/v1/lists`
 
@@ -256,21 +258,63 @@ Returns the list **with its items embedded**, ordered by `position` then `id`.
     ]
   }
   ```
-- `404` if the list doesn't exist. `403` if the caller isn't a member of the list's house.
+- `404` if the list doesn't exist. `403` unless the caller has at least read [access](#sharing) to the list — house membership, a Space share, or a List share.
 
 ### `PUT /api/v1/lists/{id}`
 
-Full replace of `name`, `type`, `custom_category_id`, and `icon` (same validation as `POST`; omitting/nulling `custom_category_id` **dissociates** the list from whatever category it had, and omitting `icon` clears it, since this is a full replace). `house_id` cannot be changed via this endpoint. Returns the updated list (no `items`). `404` if not found, `403` if the caller isn't a member of the list's house, `400` if `custom_category_id` is given but doesn't reference a category the caller owns.
+Full replace of `name`, `type`, `custom_category_id`, and `icon` (same validation as `POST`; omitting/nulling `custom_category_id` **dissociates** the list from whatever category it had, and omitting `icon` clears it, since this is a full replace). `house_id` cannot be changed via this endpoint. Returns the updated list (no `items`). `404` if not found, `403` unless the caller has **write** [access](#sharing) to the list (house membership, or a `write` Space/List share), `400` if `custom_category_id` is given but doesn't reference a category the caller owns.
 
 ### `DELETE /api/v1/lists/{id}`
 
-`204` on success. Deleting a list **cascades** to delete all its items (`ON DELETE CASCADE`). `404` if not found, `403` if the caller isn't a member of the list's house.
+`204` on success. Deleting a list **cascades** to delete all its items (`ON DELETE CASCADE`). `404` if not found, `403` if the caller isn't a member of the list's house — deliberately **not** extended to a `write` Space/List share the way `PUT` and the [items](#items) endpoints are, since deleting a list outright is a house-management-level action, not just editing it (see [Sharing](#sharing)).
+
+## Sharing
+
+Beyond house membership, a [Space](#custom-categories) or an individual [List](#lists) can be shared directly with one other user by email, granting `read` or `write` access to it without adding them to the whole parent house. A user's effective access level to a list is the highest of: house membership (always `write`), a `list_shares` grant on the list itself, and a `space_shares` grant on the list's attached custom category, if any. See the "granular sharing" design in [CLAUDE.md](../CLAUDE.md) and [docs/DATABASE.md](DATABASE.md#space_shares-and-list_shares) for the full model.
+
+Sharing a **Space** is its owner's call alone (the same person who can rename/delete it) — `custom_categories` has no other notion of membership. Sharing a **List** requires actual membership of its house, not merely write access granted through another share, so access can never be used to extend itself further.
+
+Both share types expose the same three endpoints, swapping `/custom-categories/{id}` for `/lists/{id}`:
+
+### `GET /api/v1/custom-categories/{id}/share` · `GET /api/v1/lists/{id}/share`
+
+Lists everyone a Space/List is currently shared with (the roster shown in the share modal), each with the recipient's `email`/`display_name` joined in. `404` if the category doesn't exist or isn't owned by the caller (Space); `404` if the list doesn't exist, `403` if the caller isn't a member of its house (List).
+
+```bash
+curl -b cookies.txt http://localhost:8080/api/v1/lists/1/share
+```
+
+```json
+[
+  { "id": 1, "list_id": 1, "shared_with_user_id": 2, "permission": "read", "created_at": "...", "email": "bob@example.com", "display_name": "Bob" }
+]
+```
+
+### `POST /api/v1/custom-categories/{id}/share` · `POST /api/v1/lists/{id}/share`
+
+Grants (or updates the permission of, if one already exists) a share, looked up by the recipient's email — there's no email-sending infrastructure in this project, so an email with no account fails clearly rather than creating a ghost row, mirroring `POST /api/v1/houses/{id}/members`.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/lists/1/share \
+  -d '{"email": "bob@example.com", "permission": "read"}'
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `email` | string | yes | trimmed; `400` if empty; `404` if no account exists for it |
+| `permission` | string | yes | `"read"` or `"write"`, else `400` |
+
+`400` if sharing with yourself, or (List only) if the recipient is already a member of the list's house. `404`/`403` access rules match the `GET` above. `201` with the created/updated share.
+
+### `DELETE /api/v1/custom-categories/{id}/share/{userId}` · `DELETE /api/v1/lists/{id}/share/{userId}`
+
+Revokes a share. `204` on success, `404` if no such share exists (also on a repeat call — revoking is not idempotent-silent), otherwise the same `404`/`403` access rules as `GET` above.
 
 ## Items
 
 ### `GET /api/v1/items?list_id={id}`
 
-`list_id` is required. Returns `200` with an array. `400` if `list_id` is missing, not a positive integer, or doesn't reference an existing list. `403` if the caller isn't a member of the list's house.
+`list_id` is required. Returns `200` with an array. `400` if `list_id` is missing, not a positive integer, or doesn't reference an existing list. `403` unless the caller has at least read [access](#sharing) to the list.
 
 ```bash
 curl -b cookies.txt "http://localhost:8080/api/v1/items?list_id=1"
@@ -297,7 +341,7 @@ curl -X POST http://localhost:8080/api/v1/items \
 | `recurrence_end_date` | string | no | `YYYY-MM-DD`; the last date a recurring item should recur on. `400` if given but not a real calendar date |
 | `is_urgent` | boolean | no | flags the item as needing attention right away (e.g. "out of toilet paper"); defaults to `false`. Independent of every other field — no validation beyond being a boolean |
 
-`201` with the created item. If `url` is given, the server kicks off a **best-effort** lookup against that URL (see `internal/scraper` in [CLAUDE.md](../CLAUDE.md)) for whichever of `price`/`image_url` the item is still missing (an explicit `price` in the request skips price detection but the image is still looked up), and waits up to ~2.5s for it before responding: if it finishes in time, the `201` response already carries `price` (with `price_auto: true`) and `image_url`, and reports `price_status: "found"`; if the site is slow to respond, the lookup keeps running in the background and the response instead carries `price_status: "pending"` — poll `GET /api/v1/items/{id}` (or re-fetch the list) a few seconds later to pick it up. `price_status: "none"` means there was no `url` to scrape or no price was found in time — this is unaffected by whether an image was found. `image_url`, when present, is always an absolute `http://`/`https://` URL. `price_status` is response-only — it's never persisted and never appears on a plain `GET`.
+`400` if `list_id` doesn't reference an existing list. `403` unless the caller has **write** [access](#sharing) to the list. `201` with the created item. If `url` is given, the server kicks off a **best-effort** lookup against that URL (see `internal/scraper` in [CLAUDE.md](../CLAUDE.md)) for whichever of `price`/`image_url` the item is still missing (an explicit `price` in the request skips price detection but the image is still looked up), and waits up to ~2.5s for it before responding: if it finishes in time, the `201` response already carries `price` (with `price_auto: true`) and `image_url`, and reports `price_status: "found"`; if the site is slow to respond, the lookup keeps running in the background and the response instead carries `price_status: "pending"` — poll `GET /api/v1/items/{id}` (or re-fetch the list) a few seconds later to pick it up. `price_status: "none"` means there was no `url` to scrape or no price was found in time — this is unaffected by whether an image was found. `image_url`, when present, is always an absolute `http://`/`https://` URL. `price_status` is response-only — it's never persisted and never appears on a plain `GET`.
 
 ### Recurring items
 
@@ -321,7 +365,7 @@ curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"is_urgent": true}'
 
 ### `GET /api/v1/items/{id}`
 
-`200` with the item, `404` if not found, `403` if the caller isn't a member of the item's list's house.
+`200` with the item, `404` if not found, `403` unless the caller has at least read [access](#sharing) to the item's list.
 
 ### `PUT /api/v1/items/{id}`
 
@@ -332,7 +376,7 @@ curl -X PUT http://localhost:8080/api/v1/items/1 \
   -d '{"title": "Lait", "url": "https://example.com/lait", "quantity": 2, "price": 1.85, "done": true, "position": 0, "target_month": "2026-11", "recurrence_rule": "WEEKLY"}'
 ```
 
-`404` if not found. `400` if `price` is negative, `target_month` isn't `YYYY-MM`, `due_date`/`recurrence_end_date` isn't `YYYY-MM-DD`, or `recurrence_rule` isn't a recognized form. `403` if the caller isn't a member of the item's list's house. `price_auto` is always reset to `false` by this endpoint (a full replace is always an explicit, manual value, even when `price` is omitted). If `url` changes to something new, `image_url` is cleared (a scraped image is tied to the `url` it was found on) and the same bounded lookup as `POST` above kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response. If `done` transitions from `false` to `true` on a recurring item (`recurrence_rule` set, after this request's changes are applied), see "Recurring items" above — the response's `done`/`due_date` may not match what was sent.
+`404` if not found. `400` if `price` is negative, `target_month` isn't `YYYY-MM`, `due_date`/`recurrence_end_date` isn't `YYYY-MM-DD`, or `recurrence_rule` isn't a recognized form. `403` unless the caller has **write** [access](#sharing) to the item's list. `price_auto` is always reset to `false` by this endpoint (a full replace is always an explicit, manual value, even when `price` is omitted). If `url` changes to something new, `image_url` is cleared (a scraped image is tied to the `url` it was found on) and the same bounded lookup as `POST` above kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response. If `done` transitions from `false` to `true` on a recurring item (`recurrence_rule` set, after this request's changes are applied), see "Recurring items" above — the response's `done`/`due_date` may not match what was sent.
 
 ### `PATCH /api/v1/items/{id}`
 
@@ -342,7 +386,7 @@ Partial update — only send the fields you want to change. This is the endpoint
 curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"done": true}'
 ```
 
-All fields (`title`, `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`) are optional. `title`, if given, cannot be empty; `quantity`, if given, must be positive; `price`, if given, must be a non-negative number or `null` (unlike the other fields, `price` distinguishes "omitted" — leave unchanged — from an explicit `null` — clear the recorded price). Sending `price` (either a number or `null`) always resets `price_auto` to `false`, since a `price` supplied in the request is by definition a manual value. `target_month`, if given, must be `YYYY-MM` or an empty string (clears it back to unscheduled) — omitting it entirely leaves the item's schedule untouched. `due_date`/`recurrence_end_date`, if given, must be `YYYY-MM-DD` or an empty string (clears them). `recurrence_rule`, if given, must be one of the recognized forms or an empty string — clearing it this way also clears `due_date` and `recurrence_end_date`, since neither means anything once the item stops recurring. There is no `image_url` field to set directly — it's scraper-only. If `url` changes to something new, `image_url` is cleared (same reasoning as `PUT` above) and the bounded lookup described under `POST` kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response; an unrelated `PATCH` (e.g. `{"done": true}`) never re-triggers it, since `url` isn't changing. If `done` is being set to `true` on a recurring item, see "Recurring items" above — the response's `done`/`due_date` may not match what was sent. `404` if not found, `403` if the caller isn't a member of the item's list's house.
+All fields (`title`, `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`) are optional. `title`, if given, cannot be empty; `quantity`, if given, must be positive; `price`, if given, must be a non-negative number or `null` (unlike the other fields, `price` distinguishes "omitted" — leave unchanged — from an explicit `null` — clear the recorded price). Sending `price` (either a number or `null`) always resets `price_auto` to `false`, since a `price` supplied in the request is by definition a manual value. `target_month`, if given, must be `YYYY-MM` or an empty string (clears it back to unscheduled) — omitting it entirely leaves the item's schedule untouched. `due_date`/`recurrence_end_date`, if given, must be `YYYY-MM-DD` or an empty string (clears them). `recurrence_rule`, if given, must be one of the recognized forms or an empty string — clearing it this way also clears `due_date` and `recurrence_end_date`, since neither means anything once the item stops recurring. There is no `image_url` field to set directly — it's scraper-only. If `url` changes to something new, `image_url` is cleared (same reasoning as `PUT` above) and the bounded lookup described under `POST` kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response; an unrelated `PATCH` (e.g. `{"done": true}`) never re-triggers it, since `url` isn't changing. If `done` is being set to `true` on a recurring item, see "Recurring items" above — the response's `done`/`due_date` may not match what was sent. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list.
 
 ```bash
 # clear a previously recorded price without touching anything else
@@ -357,11 +401,11 @@ curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"recurrence_rule": ""}'
 
 ### `DELETE /api/v1/items/{id}`
 
-`204` on success, `404` if not found, `403` if the caller isn't a member of the item's list's house.
+`204` on success, `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list.
 
 ### `POST /api/v1/items/{id}/price-check`
 
-Triggers an immediate, synchronous re-check of this one item's product page for a lower price than what's currently recorded — the on-demand counterpart to the periodic background scan described under "Price alerts" below. `400` if the item has no `url` or no `price` to compare against (nothing to check). `404` if not found, `403` if the caller isn't a member of the item's list's house. Otherwise `200` with `{"alert": null}` if nothing lower was found (or a lower price was already known via an earlier still-pending alert for this item), or `{"alert": {...}}` with the pending alert (freshly created, or the pre-existing one) if one exists.
+Triggers an immediate, synchronous re-check of this one item's product page for a lower price than what's currently recorded — the on-demand counterpart to the periodic background scan described under "Price alerts" below. `400` if the item has no `url` or no `price` to compare against (nothing to check). `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list. Otherwise `200` with `{"alert": null}` if nothing lower was found (or a lower price was already known via an earlier still-pending alert for this item), or `{"alert": {...}}` with the pending alert (freshly created, or the pre-existing one) if one exists.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/items/1/price-check
@@ -391,7 +435,7 @@ curl -X PATCH http://localhost:8080/api/v1/price-alerts/1 -d '{"status": "accept
 curl -X PATCH http://localhost:8080/api/v1/price-alerts/1 -d '{"status": "rejected"}'
 ```
 
-`status` is required and must be `"accepted"` or `"rejected"`. `404` if not found, `403` if the caller isn't a member of the alert's item's list's house, `409` if the alert was already resolved (an alert can only ever be actioned once, whichever status wins the race). `200` with the updated alert otherwise.
+`status` is required and must be `"accepted"` or `"rejected"`. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the alert's item's list, `409` if the alert was already resolved (an alert can only ever be actioned once, whichever status wins the race). `200` with the updated alert otherwise.
 
 ## Admin settings
 

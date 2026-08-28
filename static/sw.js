@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's/CDN_ASSETS' contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v22';
-const RUNTIME_CACHE = 'trakka-runtime-v22';
+const SHELL_CACHE = 'trakka-shell-v23';
+const RUNTIME_CACHE = 'trakka-runtime-v23';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -25,6 +25,7 @@ const APP_SHELL = [
   '/js/planning.js',
   '/js/urgent.js',
   '/js/spaces.js',
+  '/js/shares.js',
   '/js/notifications.js',
   '/js/admin.js',
   '/css/base.css',
@@ -236,10 +237,18 @@ async function mirrorReadResponse(url, response) {
   }
 
   const listMatch = url.pathname.match(/^\/api\/v1\/lists\/(\d+)$/);
+  // ?shared_with_me=true returns lists from Houses the caller isn't
+  // necessarily a member of (see db.ListSharedListsForUser), tagged with
+  // access_source/access_permission — mirroring those into the same
+  // IndexedDB store as the caller's own House-scoped lists would pollute it
+  // with rows that don't belong to any of their own Houses, for a view that
+  // has no offline support in the first place (see shares.js's
+  // loadSharedView). Skip it entirely rather than either.
+  const isSharedWithMe = url.pathname === '/api/v1/lists' && url.searchParams.get('shared_with_me') === 'true';
 
   if (url.pathname === '/api/v1/houses' && Array.isArray(data)) {
     await self.TrakkaDB.putHouses(data);
-  } else if (url.pathname === '/api/v1/lists' && Array.isArray(data)) {
+  } else if (url.pathname === '/api/v1/lists' && !isSharedWithMe && Array.isArray(data)) {
     await self.TrakkaDB.putLists(data.map(withoutItems));
   } else if (listMatch && data && typeof data === 'object') {
     const { items, ...list } = data;
@@ -258,6 +267,14 @@ async function offlineReadFallback(url) {
   if (url.pathname === '/api/v1/houses') {
     const houses = await self.TrakkaDB.getHouses();
     return new Response(JSON.stringify(houses), { status: 200, headers });
+  }
+
+  if (url.pathname === '/api/v1/lists' && url.searchParams.get('shared_with_me') === 'true') {
+    // No offline mirror for cross-house shared lists (see mirrorReadResponse
+    // above) — answer with an empty list rather than falling through to the
+    // general lists mirror below, which would incorrectly surface the
+    // caller's own House-scoped lists in the "Partagé avec moi" tab.
+    return new Response(JSON.stringify([]), { status: 200, headers });
   }
 
   if (url.pathname === '/api/v1/lists') {
@@ -372,6 +389,20 @@ async function queueOfflineWrite(method, url, body) {
   // keeps houses off the offline queue applies here, even more so given
   // what's at stake if a stale queued change silently reapplied later.
   if (pathname === '/api/v1/admin/settings') {
+    return jsonError(
+      { 'Content-Type': 'application/json; charset=utf-8' },
+      503,
+      'Cette action nécessite une connexion réseau.'
+    );
+  }
+
+  // Granting/revoking a List or Space share needs an immediate round-trip
+  // (looking up the recipient by email, confirming they aren't already a
+  // House member) and reports success or failure back to the modal right
+  // away — queuing it silently, like houses/admin settings above, would
+  // surface a confusing failure only once the queue eventually flushes,
+  // long after the modal already looked like it worked.
+  if (/^\/api\/v1\/(custom-categories|lists)\/[^/]+\/share(\/[^/]+)?$/.test(pathname)) {
     return jsonError(
       { 'Content-Type': 'application/json; charset=utf-8' },
       503,

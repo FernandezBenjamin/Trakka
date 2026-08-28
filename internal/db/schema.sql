@@ -165,3 +165,40 @@ CREATE TABLE IF NOT EXISTS system_settings (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+-- Granular sharing, layered on top of house membership: a Space
+-- (custom_categories row) or an individual List can be shared directly with
+-- one other user, giving them access to it without adding them to the whole
+-- parent House — see internal/handlers/shares.go and the
+-- "granular sharing" bullet in CLAUDE.md for the full access-check design
+-- (internal/db.AccessLevelForList combines House membership, a List share,
+-- and a Space share into one read/write verdict). Both are brand new
+-- tables, so neither needs an addColumnIfMissing guard.
+--
+-- Sharing a Space is the owning user's call alone (the same person who can
+-- rename/delete it — see custom_categories above), since a category has no
+-- other notion of membership; sharing a List requires actual membership of
+-- its parent House (internal/handlers.handleListShareCreate), so access
+-- granted via a List/Space share can never itself be used to grant further
+-- access, only real House membership can.
+CREATE TABLE IF NOT EXISTS space_shares (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    custom_category_id  INTEGER NOT NULL REFERENCES custom_categories(id) ON DELETE CASCADE,
+    shared_with_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission          TEXT NOT NULL DEFAULT 'read' CHECK (permission IN ('read', 'write')),
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (custom_category_id, shared_with_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_space_shares_user_id ON space_shares(shared_with_user_id);
+
+CREATE TABLE IF NOT EXISTS list_shares (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_id             INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+    shared_with_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission          TEXT NOT NULL DEFAULT 'read' CHECK (permission IN ('read', 'write')),
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (list_id, shared_with_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_list_shares_user_id ON list_shares(shared_with_user_id);

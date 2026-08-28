@@ -35,6 +35,19 @@ type List struct {
 	CreatedAt string  `json:"created_at"`
 	UpdatedAt string  `json:"updated_at"`
 	Items     []*Item `json:"items,omitempty"`
+	// AccessSource is a response-only field (never persisted) populated
+	// exclusively by db.ListSharedListsForUser to say how the requesting
+	// user reached a list they aren't a House member of: "list_share" (a
+	// direct List share) or "space_share" (via the list's parent Space
+	// being shared with them). Empty on every other read (GetList,
+	// ListListsForUser's ordinary House-scoped listing, ...), since those
+	// aren't about a sharing relationship. The frontend uses it to show the
+	// 👥 "shared with you" indicator (see static/js/shares.js).
+	AccessSource string `json:"access_source,omitempty"`
+	// AccessPermission mirrors AccessSource: the "read"/"write" level the
+	// requesting user actually holds via that share. Always empty wherever
+	// AccessSource is.
+	AccessPermission string `json:"access_permission,omitempty"`
 }
 
 // Item represents a single entry within a List.
@@ -236,4 +249,47 @@ type CustomCategory struct {
 	Color     string `json:"color,omitempty"`
 	Position  int    `json:"position"`
 	CreatedAt string `json:"created_at"`
+}
+
+// SpaceShare grants one other user ("SharedWithUserID") read or write
+// access to every List attached to a CustomCategory ("space"), independent
+// of whether they belong to those lists' Houses — see
+// internal/handlers/shares.go and db.AccessLevelForList. Only the category's
+// own owner may create/revoke one (the same person who can rename/delete
+// the category itself).
+type SpaceShare struct {
+	ID               int64  `json:"id"`
+	CustomCategoryID int64  `json:"custom_category_id"`
+	SharedWithUserID int64  `json:"shared_with_user_id"`
+	Permission       string `json:"permission"`
+	CreatedAt        string `json:"created_at"`
+	// Email/DisplayName are populated by a JOIN for the roster endpoint
+	// only (mirrors HouseMember.Email/DisplayName above).
+	Email       string `json:"email,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+// ListShare grants one other user ("SharedWithUserID") read or write access
+// to a single List, independent of House membership — see
+// internal/handlers/shares.go and db.AccessLevelForList. Only an actual
+// member of the list's House may create/revoke one (see
+// handleListShareCreate), so access granted through a share can never
+// itself be used to extend further access.
+type ListShare struct {
+	ID               int64  `json:"id"`
+	ListID           int64  `json:"list_id"`
+	SharedWithUserID int64  `json:"shared_with_user_id"`
+	Permission       string `json:"permission"`
+	CreatedAt        string `json:"created_at"`
+	// Email/DisplayName are populated by a JOIN for the roster endpoint
+	// only (mirrors HouseMember.Email/DisplayName above).
+	Email       string `json:"email,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+// ValidSharePermissions enumerates the allowed values for
+// SpaceShare.Permission/ListShare.Permission.
+var ValidSharePermissions = map[string]bool{
+	"read":  true,
+	"write": true,
 }
