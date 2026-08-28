@@ -142,7 +142,7 @@ func (s *Service) RevokeSession(ctx context.Context, rawToken string) error {
 // exists, and Strict blocks it from ever being sent cross-site, closing
 // off CSRF against the JSON API without needing a separate token.
 func (s *Service) SetSessionCookie(w http.ResponseWriter, rawToken string, expiresAt time.Time) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set from CookieSecure (SESSION_COOKIE_SECURE), gosec only recognizes a literal `true`
 		Name:     SessionCookieName,
 		Value:    rawToken,
 		Path:     "/",
@@ -155,7 +155,7 @@ func (s *Service) SetSessionCookie(w http.ResponseWriter, rawToken string, expir
 
 // ClearSessionCookie expires the session cookie immediately (logout).
 func (s *Service) ClearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set from CookieSecure (SESSION_COOKIE_SECURE), gosec only recognizes a literal `true`
 		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",

@@ -21,7 +21,7 @@ type loginPageData struct {
 	Error            string
 }
 
-var loginErrorMessages = map[string]string{
+var loginErrorMessages = map[string]string{ // #nosec G101 -- these are user-facing UI strings, not credentials
 	"bad_request":         "Requête invalide, veuillez réessayer.",
 	"invalid_credentials": "Email ou mot de passe incorrect.",
 	"email_taken":         "Un compte existe déjà avec cet email.",
@@ -171,7 +171,7 @@ func (app *Application) handleOIDCLogin(w http.ResponseWriter, r *http.Request) 
 	}
 
 	flow := url.Values{"state": {state}, "nonce": {nonce}, "verifier": {verifier}}
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set from CookieSecure (SESSION_COOKIE_SECURE), gosec only recognizes a literal `true`
 		Name:     oidcFlowCookieName,
 		Value:    flow.Encode(),
 		Path:     "/auth/oidc",
@@ -192,9 +192,16 @@ func (app *Application) handleOIDCCallback(w http.ResponseWriter, r *http.Reques
 
 	flowCookie, cookieErr := r.Cookie(oidcFlowCookieName)
 	// Clear the flow cookie unconditionally: it's single-use regardless of
-	// whether this callback succeeds.
-	http.SetCookie(w, &http.Cookie{
-		Name: oidcFlowCookieName, Value: "", Path: "/auth/oidc", MaxAge: -1,
+	// whether this callback succeeds. Attributes mirror the cookie set in
+	// handleOIDCLogin above so the browser matches it for deletion.
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set from CookieSecure (SESSION_COOKIE_SECURE), gosec only recognizes a literal `true`
+		Name:     oidcFlowCookieName,
+		Value:    "",
+		Path:     "/auth/oidc",
+		HttpOnly: true,
+		Secure:   app.Auth.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 
 	fail := func(code string) { http.Redirect(w, r, "/auth/login?error="+code, http.StatusFound) }

@@ -1,0 +1,79 @@
+name: 🐛 Bug report
+description: Report incorrect behavior in Trakka (Go backend or PWA frontend)
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report. Before continuing, please check
+        that this hasn't already been reported in the [existing issues](../../issues).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: A clear and concise description of the problem.
+      placeholder: What happens, and why it isn't the expected behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How to reproduce the bug, step by step.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (Go / JS)
+      description: >
+        Paste any relevant logs here: server-side `slog` (JSON) output, or the browser console
+        (JS) on the PWA side. Content will be automatically formatted as a code block.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Trakka version/commit, deployment mode (Docker/Podman/go run), server OS.
+      placeholder: "e.g. commit 7c63270, docker compose, Debian 12"
+    validations:
+      required: false
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser / client platform
+      description: Browser and version, or "N/A" if the bug is purely backend.
+      placeholder: "e.g. Firefox 128 on Android, or Chrome 127 desktop"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have verified a similar issue does not already exist
+          required: true
+        - label: The bug is reliably reproducible (or I've described the conditions under which it appears)
+          required: false

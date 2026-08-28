@@ -238,7 +238,7 @@ func hasExistingSchema(conn *sql.DB) (bool, error) {
 // migration below opens one.
 func backupBeforeMigration(conn *sql.DB, dbPath string, fromVersion, toVersion int, logger *slog.Logger) error {
 	backupDir := filepath.Join(filepath.Dir(dbPath), "backups")
-	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+	if err := os.MkdirAll(backupDir, 0o750); err != nil {
 		return fmt.Errorf("creating backup directory %s: %w", backupDir, err)
 	}
 

@@ -27,7 +27,7 @@ const (
 	KeyOIDCEnabled      = "oidc_enabled"
 	KeyOIDCIssuer       = "oidc_issuer"
 	KeyOIDCClientID     = "oidc_client_id"
-	KeyOIDCClientSecret = "oidc_client_secret"
+	KeyOIDCClientSecret = "oidc_client_secret" // #nosec G101 -- this is the settings-table key name, not a credential value
 )
 
 // Values is the fully resolved set of runtime settings. OIDCClientSecret is

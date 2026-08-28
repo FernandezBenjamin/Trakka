@@ -1,0 +1,25 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # Deferred cleanup calls (Close/Rollback after the primary read/write
+      # error is already handled) are a standard, low-risk Go idiom — the
+      # error path that actually matters (the query, the write, the commit)
+      # is already checked explicitly everywhere in this codebase. Excluding
+      # them keeps errcheck meaningful for genuinely unchecked errors instead
+      # of nagging on this one recurring pattern.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Tx).Rollback
+        - (*trakka/internal/db.DB).Close
+
+formatters:
+  enable:
+    - gofmt
