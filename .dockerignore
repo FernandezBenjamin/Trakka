@@ -1,0 +1,8 @@
+.git
+.gitignore
+*.md
+compose.yml
+data/
+*.db
+*.db-wal
+*.db-shm

@@ -1,0 +1,45 @@
+/* The browser's built-in `[hidden] { display: none }` rule is UA-origin,
+   which the CSS cascade always ranks below any author-origin rule at equal
+   importance — including Tailwind's `.flex`/`.grid`/`.block` utilities —
+   regardless of specificity or source order. Any element that combines the
+   `hidden` attribute with one of those display utilities (e.g. a modal
+   toggled via `el.hidden = true/false` that also needs `flex` while shown)
+   would otherwise stay visible even when `hidden` is set. This restores
+   `hidden` as the final word without touching every such element's classes
+   or JS toggle logic individually. */
+[hidden] {
+  display: none !important;
+}
+
+/* Smooth, app-wide crossfade when the theme is switched manually (Light /
+   Dark / Auto, see static/js/theme.js). Scoped to the properties that
+   actually change between themes rather than `all`, so layout-affecting
+   properties (width, transform, ...) are never accidentally animated. The
+   very first paint never transitions: static/js/theme.js's anti-FOUC
+   inline script in index.html's <head> sets data-theme before the
+   stylesheet is even applied, so there's nothing to fade from on load. */
+body,
+header,
+button,
+input,
+select,
+textarea,
+[class*="bg-"],
+[class*="border-"],
+[class*="text-"] {
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+/* Native form-control chrome (checkboxes, <select> menus, scrollbars,
+   the OS-level UI relevant to <input type="month">, etc.) is drawn by the
+   browser itself and isn't reachable through Tailwind utility classes —
+   `color-scheme` (set per-theme in tokens.css) is what keeps it in sync
+   with the rest of the page instead of staying permanently light. */
+::selection {
+  background-color: var(--tk-accent);
+  color: #ffffff;
+}
+
+* {
+  scrollbar-color: var(--tk-border-strong) transparent;
+}

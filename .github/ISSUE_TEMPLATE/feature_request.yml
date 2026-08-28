@@ -1,0 +1,64 @@
+name: ✨ Feature request
+description: Propose an enhancement or improvement for Trakka
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement to Trakka! Keep in mind the project aims to stay
+        **ultra-lightweight** (< 20MB RAM at runtime) with no unnecessary dependencies — see
+        `CLAUDE.md` for the project's conventions.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What need or current limitation motivates this proposal?
+      placeholder: "e.g. There's no way to sort lists by creation date..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the feature or change you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered other approaches? Why is this one preferable?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact on lists/budget
+      description: Does this feature affect lists (shopping/to-do), budget/planning, or is it independent of them?
+      multiple: true
+      options:
+        - Shopping lists
+        - To-do lists
+        - Budget & Purchase Planning
+        - Sharing (Houses / Spaces / Lists)
+        - PWA / offline mode
+        - Authentication / sessions
+        - No direct impact (tooling, docs, CI...)
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have verified a similar proposal does not already exist
+          required: true
+        - label: This proposal stays consistent with the project's "ultra-lightweight" goal (see CLAUDE.md)
+          required: false

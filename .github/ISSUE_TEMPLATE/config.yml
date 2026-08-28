@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Project documentation
+    url: https://github.com/FernandezBenjamin/Trakka/blob/main/CLAUDE.md
+    about: "Check CLAUDE.md and the docs/ folder first (API.md, DATABASE.md, DEPLOYMENT.md, DEVELOPMENT.md, PWA.md) — your question might already be answered there."
+  - name: 🤝 Contributing guide
+    url: https://github.com/FernandezBenjamin/Trakka/blob/main/.github/CONTRIBUTING.md
+    about: "Before opening a ticket to propose code, read CONTRIBUTING.md to learn the process to follow (fork, branch, conventions, CI)."

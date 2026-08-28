@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- See static/js/theme-init.js for why this has to be an external file
+       (this app's CSP has no 'unsafe-inline' for scripts) and run before
+       any stylesheet is parsed. This page has no header/toggle of its
+       own, but shares localStorage with the app (same origin), so an
+       explicit choice made there still applies here — only "Auto" truly
+       depends on this file's resolution. -->
+  <script src="/js/theme-init.js"></script>
+  <meta name="color-scheme" content="light dark">
+  <title>Connexion — {{.InstanceName}}</title>
+
+  <link rel="icon" href="/icons/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/icons/trakka-favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <meta name="theme-color" content="#0f172a" id="theme-color-meta">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/js/tailwind-config.js"></script>
+</head>
+<body class="min-h-screen bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 antialiased">
+
+  <main class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10 sm:px-6">
+    <div class="mb-8 flex justify-center">
+      <img src="/icons/trakka-lockup-light-bg.svg" alt="Trakka" class="h-9 w-auto dark:hidden">
+      <img src="/icons/trakka-lockup-dark-bg.svg" alt="Trakka" class="hidden h-9 w-auto dark:block">
+    </div>
+
+    {{if .Error}}
+    <div role="alert" class="mb-4 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/60 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">{{.Error}}</div>
+    {{end}}
+
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 p-6 shadow-xl">
+      {{if eq .Mode "register"}}
+      <h1 class="mb-6 text-xl font-semibold">Créer un compte</h1>
+      <form method="post" action="/auth/register" class="space-y-4">
+        <div>
+          <label for="display_name" class="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Nom</label>
+          <input id="display_name" name="display_name" type="text" autocomplete="name"
+                 class="min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <div>
+          <label for="email" class="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Email</label>
+          <input id="email" name="email" type="email" required autocomplete="email"
+                 class="min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <div>
+          <label for="password" class="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Mot de passe</label>
+          <input id="password" name="password" type="password" required minlength="8" autocomplete="new-password"
+                 class="min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <div>
+          <label for="password_confirm" class="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Confirmer le mot de passe</label>
+          <input id="password_confirm" name="password_confirm" type="password" required minlength="8" autocomplete="new-password"
+                 class="min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <button type="submit"
+                class="min-h-[44px] w-full rounded-xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-400 active:scale-95">
+          Créer mon compte
+        </button>
+      </form>
+      <p class="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
+        Déjà un compte ? <a href="/auth/login" class="font-medium text-sky-600 dark:text-sky-400 hover:text-sky-600 dark:hover:text-sky-300">Se connecter</a>
+      </p>
+      {{else}}
+      <h1 class="mb-6 text-xl font-semibold">Connexion</h1>
+      <form method="post" action="/auth/login" class="space-y-4">
+        <div>
+          <label for="email" class="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Email</label>
+          <input id="email" name="email" type="email" required autocomplete="email"
+                 class="min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <div>
+          <label for="password" class="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Mot de passe</label>
+          <input id="password" name="password" type="password" required autocomplete="current-password"
+                 class="min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <button type="submit"
+                class="min-h-[44px] w-full rounded-xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-400 active:scale-95">
+          Se connecter
+        </button>
+      </form>
+
+      {{if .OIDCEnabled}}
+      <div class="my-5 flex items-center gap-3 text-xs uppercase tracking-wide text-slate-500">
+        <span class="h-px flex-1 bg-slate-100 dark:bg-slate-800"></span>
+        ou
+        <span class="h-px flex-1 bg-slate-100 dark:bg-slate-800"></span>
+      </div>
+      <a href="/auth/oidc/login"
+         class="flex min-h-[44px] w-full items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-900 dark:text-slate-100 transition hover:bg-slate-300 dark:hover:bg-slate-700 active:scale-95">
+        Se connecter avec SSO
+      </a>
+      {{end}}
+
+      {{if .RegistrationOpen}}
+      <p class="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
+        Pas encore de compte ? <a href="/auth/login?mode=register" class="font-medium text-sky-600 dark:text-sky-400 hover:text-sky-600 dark:hover:text-sky-300">Créer un compte</a>
+      </p>
+      {{end}}
+      {{end}}
+    </div>
+  </main>
+</body>
+</html>

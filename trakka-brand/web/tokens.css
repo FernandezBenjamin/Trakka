@@ -1,0 +1,22 @@
+:root {
+  /* Fonds */
+  --tk-bg:            #0f172a;   /* fond principal */
+  --tk-bg-deep:       #0b0f19;   /* fond alternatif, plus profond */
+  --tk-surface:       #1e293b;   /* conteneurs, cartes */
+  --tk-surface-hover: #334155;
+
+  /* Accent principal */
+  --tk-accent:        #6366f1;
+  --tk-accent-light:  #8b5cf6;
+  --tk-accent-grad:   linear-gradient(135deg, #8b5cf6, #6366f1);
+
+  /* Accent secondaire — reserve aux etats termine / valide / online */
+  --tk-success:       #10b981;
+  --tk-success-light: #34d399;
+
+  /* Texte */
+  --tk-text:          #f8fafc;
+  --tk-text-muted:    #94a3b8;
+  --tk-text-subtle:   #64748b;
+  --tk-border:        #1e293b;
+}
