@@ -1,4 +1,4 @@
-<picture>
+<picture align="center">
   <source media="(prefers-color-scheme: dark)" srcset="static/icons/trakka-lockup-dark-bg.svg">
   <img alt="Trakka" src="static/icons/trakka-lockup-light-bg.svg" height="64">
 </picture>

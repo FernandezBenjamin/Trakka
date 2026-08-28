@@ -20,11 +20,15 @@ services:
       PORT: "8080"
       DB_PATH: /data/trakka.db
       STATIC_DIR: /app/static
-      TZ: Europe/Paris
+      # TZ intentionally not set: the distroless runtime image ships no
+      # tzdata, so it would be silently ignored — every timestamp this app
+      # stores or logs is already UTC by convention (see CLAUDE.md).
     ports:
       - "8080:8080"
     volumes:
       - trakka_data:/data
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     networks:
       - trakka_net
     healthcheck:
@@ -33,7 +37,16 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
-    # Rootless-friendly: no privileged capabilities are required.
+    # Runtime hardening: the image is distroless (no shell) and runs as the
+    # fixed non-root UID:GID baked into the Dockerfile; the root filesystem
+    # is read-only and every Linux capability is dropped since a plain HTTP
+    # server talking to SQLite needs none of them (not even NET_BIND_SERVICE,
+    # since it binds an unprivileged port). /data (the SQLite file, including
+    # its -wal/-shm siblings) and /tmp are the only writable paths.
+    read_only: true
+    user: "10001:10001"
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
 

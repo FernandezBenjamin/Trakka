@@ -68,10 +68,12 @@ No `--userns=keep-id` or extra rootless flags are needed for normal operation: t
 
 Multi-stage [Dockerfile](../Dockerfile):
 
-1. **Build stage** — `golang:1.27.0-alpine`, compiles `./cmd/server` with `CGO_ENABLED=0` to a fully static binary (`modernc.org/sqlite` is pure Go, so this works with no `libsqlite3`).
-2. **Runtime stage** — `alpine:latest`, copies in only the binary and `static/`, creates the non-root `trakka` user/group at UID/GID `10001`, and owns `/data` and `/app` by that user.
+1. **Build stage** — `golang:1.27.0-alpine`, compiles `./cmd/server` with `CGO_ENABLED=0` to a fully static, stripped binary (`-ldflags="-s -w"`); `modernc.org/sqlite` is pure Go, so this works with no `libsqlite3`. This stage also creates the `/etc/passwd`/`/etc/group` entries for UID/GID `10001` and an empty, correctly-owned `/data` directory, since neither can be created in the shell-less runtime stage below.
+2. **Runtime stage** — [`gcr.io/distroless/static-debian12`](https://github.com/GoogleContainerTools/distroless), not Alpine: no shell, no package manager, nothing beyond CA certificates and the binary itself. Only the compiled `trakka` binary, `static/`, `templates/`, and the passwd/group/`/data` entries prepared in the build stage are copied in; `USER 10001:10001` (the same fixed non-root UID as before) is set explicitly rather than relying on the image's own built-in `nonroot` user (which is UID `65532`), to keep the Podman rootless-mapping behavior described below unchanged.
 
-The Go version in the build stage and the `go` directive in [go.mod](../go.mod) are intentionally kept in lockstep (both `1.27.0`) — see [CLAUDE.md](../CLAUDE.md) if you need to bump the SQLite driver or Go version.
+The Go version in the build stage and the `go` directive in [go.mod](../go.mod) are intentionally kept in lockstep (both `1.27.0`) — see [CLAUDE.md](../CLAUDE.md) if you need to bump the SQLite driver or Go version. The distroless runtime tag is not part of that lockstep (it tracks Debian 12 rebuilds, not a Go version); pin it to a digest before relying on it for production reproducibility.
+
+Distroless ships no `tzdata`, unlike the old Alpine runtime image (which had it installed via `apk add`). This is harmless here: the app never calls `time.LoadLocation`, and every timestamp it stores or logs is UTC by convention (see [CLAUDE.md](../CLAUDE.md)) — with no zoneinfo database and no `TZ` set, Go's `time.Local` simply behaves as UTC. `compose.yml` no longer sets `TZ`, since distroless would silently ignore it anyway.
 
 ## Healthcheck
 
@@ -105,11 +107,16 @@ All three are named Docker/Podman volumes (not bind mounts), which sidesteps hos
 
 ## Security posture
 
-- Non-root, fixed UID/GID in both services.
+- Non-root, fixed UID/GID (`10001:10001`) in both services, set both in the Dockerfile (`USER`) and again explicitly in `compose.yml` (`user:`) for defense in depth.
+- Distroless runtime image for `trakka` (no shell, no package manager) — see [Image build](#image-build) above.
+- `read_only: true` on the `trakka` service: the root filesystem is mounted read-only, with `/data` (the named volume) and `/tmp` (an in-memory `tmpfs`, capped at 16MB) as the only writable paths. Nothing in the app writes anywhere else — the SQLite file (plus its `-wal`/`-shm` siblings) lives entirely under `/data`.
+- `cap_drop: [ALL]` on the `trakka` service: a plain HTTP server backed by SQLite needs no Linux capabilities, not even `NET_BIND_SERVICE` (it binds the unprivileged port `8080`).
 - `security_opt: no-new-privileges:true` on both services in `compose.yml`.
-- No privileged capabilities, no host networking.
+- No host networking.
 - Every HTTP response (API and static) carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a strict `Content-Security-Policy` (`default-src 'self'`, no `unsafe-inline`), and `Referrer-Policy: no-referrer` — see [docs/API.md](API.md) and `internal/handlers/middleware.go`.
 - All SQL is parameterized (no string-built queries); any user-supplied URL is validated to be an absolute `http://`/`https://` URL before it's ever stored or rendered.
+
+`radicale` (the optional CalDAV companion, gated behind the `calendar` profile) is a third-party image and is intentionally left out of the `read_only`/`cap_drop` hardening above — it wasn't built with a read-only root filesystem in mind, and hardening it is out of scope for Trakka itself.
 
 ## PWA / offline support
 
