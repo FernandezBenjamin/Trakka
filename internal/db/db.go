@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver, no CGO
 )
@@ -99,6 +100,9 @@ func Open(path string) (*DB, error) {
 	if _, err := conn.Exec(`CREATE INDEX IF NOT EXISTS idx_lists_house_id ON lists(house_id)`); err != nil {
 		return nil, fmt.Errorf("creating lists.house_id index: %w", err)
 	}
+	if err := migrateListsTypeCheck(conn); err != nil {
+		return nil, fmt.Errorf("migrating lists.type constraint: %w", err)
+	}
 	if err := ensureDefaultHouse(conn); err != nil {
 		return nil, fmt.Errorf("seeding default house: %w", err)
 	}
@@ -130,6 +134,121 @@ func ensureDefaultHouse(conn *sql.DB) error {
 		`UPDATE lists SET house_id = (SELECT id FROM houses ORDER BY id ASC LIMIT 1) WHERE house_id IS NULL`,
 	); err != nil {
 		return fmt.Errorf("backfilling lists.house_id: %w", err)
+	}
+	return nil
+}
+
+// migrateListsTypeCheck widens the `type` CHECK constraint on an existing
+// lists table from the original ('shopping', 'todo') to the current full
+// set ('todo', 'shopping', 'groceries', 'recurring_shopping', 'custom') —
+// see the comment above the `lists` CREATE TABLE statement in schema.sql
+// for why editing that statement alone isn't enough: SQLite has no
+// `ALTER TABLE ... ADD/DROP CONSTRAINT`, so a database file created before
+// this migration existed keeps enforcing the old, narrower CHECK forever
+// unless something rebuilds the table. This is that something, run
+// unconditionally at every startup right after lists.house_id is in place
+// (the recreated table needs to carry that column too). It detects whether
+// the migration is still needed by inspecting sqlite_master's stored SQL
+// for the table — a fresh database created after this migration was added
+// already has the wide CHECK from schema.sql itself, so this is a no-op for
+// it — and otherwise rebuilds the table following SQLite's own documented
+// 12-step "Making Other Kinds Of Table Schema Changes" procedure: create a
+// new table under a temporary name, copy every row across preserving its
+// id, drop the *old* table, then rename the temporary one into the now-free
+// "lists" name — deliberately in that order (new table first, old one
+// dropped rather than renamed away) rather than the more obvious
+// "rename old table out of the way, create the new one in its place":
+// renaming "lists" itself, even briefly, makes SQLite rewrite
+// items.list_id's foreign key definition to point at whatever temporary
+// name "lists" was renamed to (this was tried and confirmed to actually
+// happen — PRAGMA foreign_keys=OFF does *not* suppress it, only
+// PRAGMA legacy_alter_table would, and even then only by accident), leaving
+// a dangling reference once that temporary table is dropped. Dropping the
+// old table outright never triggers that rewrite (only RENAME does), and
+// the final rename target ("lists") has nothing pointing at its temporary
+// pre-rename name, so items.list_id's definition — untouched throughout —
+// simply resolves correctly again the moment the name "lists" exists.
+// PRAGMA foreign_keys=OFF around the whole thing (set *outside* the
+// transaction, since SQLite ignores changes to that pragma mid-transaction)
+// is still worth keeping: it's what stops SQLite from enforcing
+// items.list_id against a temporarily-absent "lists" table while the DROP/
+// CREATE/RENAME sequence is mid-flight.
+func migrateListsTypeCheck(conn *sql.DB) error {
+	var tableSQL string
+	err := conn.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'lists'`).Scan(&tableSQL)
+	if err == sql.ErrNoRows {
+		return nil // schema.sql hasn't created it yet somehow — nothing to migrate
+	}
+	if err != nil {
+		return fmt.Errorf("reading lists table definition: %w", err)
+	}
+	if strings.Contains(tableSQL, "'groceries'") {
+		return nil // already has the wide CHECK, nothing to do
+	}
+
+	if _, err := conn.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disabling foreign keys for lists migration: %w", err)
+	}
+	defer func() { _, _ = conn.Exec(`PRAGMA foreign_keys = ON`) }()
+
+	tx, err := conn.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning lists migration transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		CREATE TABLE lists_type_widen_new (
+		    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		    name       TEXT NOT NULL,
+		    type       TEXT NOT NULL DEFAULT 'shopping' CHECK (type IN ('todo', 'shopping', 'groceries', 'recurring_shopping', 'custom')),
+		    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+		    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+		    house_id   INTEGER REFERENCES houses(id) ON DELETE CASCADE
+		)
+	`); err != nil {
+		return fmt.Errorf("creating replacement lists table: %w", err)
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO lists_type_widen_new (id, name, type, created_at, updated_at, house_id)
+		SELECT id, name, type, created_at, updated_at, house_id FROM lists
+	`); err != nil {
+		return fmt.Errorf("copying lists rows: %w", err)
+	}
+	if _, err := tx.Exec(`DROP TABLE lists`); err != nil {
+		return fmt.Errorf("dropping old lists table: %w", err)
+	}
+	if _, err := tx.Exec(`ALTER TABLE lists_type_widen_new RENAME TO lists`); err != nil {
+		return fmt.Errorf("renaming replacement lists table into place: %w", err)
+	}
+	// The old table's indexes were attached to it and went away along with
+	// it (DROP TABLE drops its indexes too) — recreate them so the rebuilt
+	// table isn't left missing indexes it had a moment ago.
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_lists_type ON lists(type)`); err != nil {
+		return fmt.Errorf("recreating idx_lists_type: %w", err)
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_lists_house_id ON lists(house_id)`); err != nil {
+		return fmt.Errorf("recreating idx_lists_house_id: %w", err)
+	}
+
+	// Belt-and-suspenders: confirm items.list_id (the only foreign key that
+	// references lists) actually still resolves before committing, rather
+	// than trusting the reasoning above blindly.
+	rows, err := tx.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		return fmt.Errorf("running foreign_key_check after lists migration: %w", err)
+	}
+	hasViolation := rows.Next()
+	closeErr := rows.Close()
+	if hasViolation {
+		return fmt.Errorf("lists migration left a dangling foreign key reference")
+	}
+	if closeErr != nil {
+		return fmt.Errorf("checking foreign_key_check results: %w", closeErr)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing lists migration: %w", err)
 	}
 	return nil
 }

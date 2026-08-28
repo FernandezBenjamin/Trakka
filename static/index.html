@@ -205,7 +205,7 @@
         <h1 id="items-heading" class="text-xl font-semibold"></h1>
       </div>
 
-      <div id="finance-summary" data-shopping-only hidden class="mb-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-4 sm:grid-cols-3">
+      <div id="finance-summary" data-item-field="price" hidden class="mb-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-4 sm:grid-cols-3">
         <div class="flex flex-col gap-1">
           <span data-i18n="items.financeTotal" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Total estimé</span>
           <span id="finance-total" class="text-lg font-semibold text-slate-900 dark:text-slate-100">0,00&nbsp;€</span>
@@ -223,15 +223,15 @@
       <form id="create-item-form" class="mb-4 flex flex-wrap gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3">
         <input type="text" id="item-title" required maxlength="500" data-i18n-placeholder="items.titlePlaceholder" placeholder="Article ou tâche"
                class="min-w-[10rem] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <input type="url" id="item-url" data-i18n-placeholder="items.urlPlaceholder" placeholder="URL (optionnel)"
+        <input type="url" id="item-url" data-item-field="url" data-i18n-placeholder="items.urlPlaceholder" placeholder="URL (optionnel)"
                class="min-w-[8rem] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         <input type="number" id="item-quantity" min="1" value="1" data-i18n-aria-label="items.quantityAriaLabel" aria-label="Quantité"
                class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <input type="number" id="item-price" data-shopping-only hidden step="0.01" min="0" data-i18n-placeholder="items.pricePlaceholder" placeholder="Prix € (optionnel)" data-i18n-aria-label="items.priceAriaLabel" aria-label="Prix en euros"
+        <input type="number" id="item-price" data-item-field="price" hidden step="0.01" min="0" data-i18n-placeholder="items.pricePlaceholder" placeholder="Prix € (optionnel)" data-i18n-aria-label="items.priceAriaLabel" aria-label="Prix en euros"
                class="w-36 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <select id="item-target-month" data-shopping-only hidden data-i18n-aria-label="items.targetMonthAriaLabel" aria-label="Mois prévu (optionnel)"
+        <select id="item-target-month" data-item-field="target-month" hidden data-i18n-aria-label="items.targetMonthAriaLabel" aria-label="Mois prévu (optionnel)"
                 class="min-w-[11rem] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
-        <select id="item-recurrence" data-i18n-aria-label="items.recurrenceAriaLabel" aria-label="Récurrence"
+        <select id="item-recurrence" data-item-field="recurrence" data-i18n-aria-label="items.recurrenceAriaLabel" aria-label="Récurrence"
                 class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
           <option value="" data-i18n="items.recurrenceNone">Ne pas répéter</option>
           <option value="DAILY" data-i18n="items.recurrenceDaily">Tous les jours</option>
@@ -281,9 +281,17 @@
         <div>
           <span data-i18n="modals.newList.typeLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Type</span>
           <div class="grid grid-cols-2 gap-2">
+            <label data-type-option class="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+              <input type="radio" name="list-type" value="groceries" class="sr-only">
+              <span aria-hidden="true">🛒</span> <span data-i18n="modals.newList.typeGroceries">Courses</span>
+            </label>
             <label data-type-option class="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-sky-500 bg-sky-500/10 px-4 py-3 text-sm font-medium text-sky-600 dark:text-sky-300">
               <input type="radio" name="list-type" value="shopping" checked class="sr-only">
-              <span aria-hidden="true">🛒</span> <span data-i18n="modals.newList.typeShopping">Courses</span>
+              <span aria-hidden="true">🛍️</span> <span data-i18n="modals.newList.typeShopping">Achats Ponctuels</span>
+            </label>
+            <label data-type-option class="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+              <input type="radio" name="list-type" value="recurring_shopping" class="sr-only">
+              <span aria-hidden="true">🔄</span> <span data-i18n="modals.newList.typeRecurring">Abonnements &amp; Récurrences</span>
             </label>
             <label data-type-option class="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300">
               <input type="radio" name="list-type" value="todo" class="sr-only">
@@ -428,13 +436,13 @@
                  class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         </div>
 
-        <div>
+        <div id="edit-item-url-field" data-item-field="url">
           <label for="edit-item-url" data-i18n="modals.editItem.urlLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">URL (optionnel)</label>
           <input type="url" id="edit-item-url" placeholder="https://..."
                  class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         </div>
 
-        <div id="edit-item-price-field" data-shopping-only hidden>
+        <div id="edit-item-price-field" data-item-field="price" hidden>
           <div class="mb-1 flex flex-wrap items-center gap-2">
             <label for="edit-item-price" data-i18n="modals.editItem.priceLabel" class="block text-sm font-medium text-slate-600 dark:text-slate-300">Prix (€, optionnel)</label>
             <span id="edit-item-price-auto-badge" hidden data-i18n="modals.editItem.autoBadge"
@@ -444,13 +452,13 @@
                  class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         </div>
 
-        <div id="edit-item-target-month-field" data-shopping-only hidden>
+        <div id="edit-item-target-month-field" data-item-field="target-month" hidden>
           <label for="edit-item-target-month" data-i18n="modals.editItem.targetMonthLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Mois prévu (optionnel)</label>
           <input type="month" id="edit-item-target-month" placeholder="AAAA-MM"
                  class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         </div>
 
-        <div>
+        <div id="edit-item-recurrence-field" data-item-field="recurrence">
           <label for="edit-item-recurrence" data-i18n="modals.editItem.recurrenceLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Récurrence</label>
           <select id="edit-item-recurrence"
                   class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">

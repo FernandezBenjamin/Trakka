@@ -57,7 +57,7 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 		in.Type = "shopping"
 	}
 	if !models.ValidListTypes[in.Type] {
-		writeError(w, http.StatusBadRequest, "type must be 'shopping' or 'todo'")
+		writeError(w, http.StatusBadRequest, "type must be one of 'todo', 'shopping', 'groceries', 'recurring_shopping', 'custom'")
 		return
 	}
 	if in.HouseID <= 0 {
@@ -146,7 +146,7 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		in.Type = "shopping"
 	}
 	if !models.ValidListTypes[in.Type] {
-		writeError(w, http.StatusBadRequest, "type must be 'shopping' or 'todo'")
+		writeError(w, http.StatusBadRequest, "type must be one of 'todo', 'shopping', 'groceries', 'recurring_shopping', 'custom'")
 		return
 	}
 

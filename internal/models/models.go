@@ -93,10 +93,21 @@ type Item struct {
 	PriceStatus string `json:"price_status,omitempty"`
 }
 
-// ValidListTypes enumerates the allowed values for List.Type.
+// ValidListTypes enumerates the allowed values for List.Type. `shopping`
+// (one-off purchases), `groceries` (day-to-day shopping runs) and
+// `recurring_shopping` (subscriptions/recurring purchases) are all
+// purchase-oriented list types with different item-form fields shown by the
+// frontend (see applyListTypeVisibility in static/js/list_view.js) — the
+// same lists.type column just distinguishes which fields make sense for a
+// given list, it's not a separate concept from `shopping`. `custom` is
+// accepted for forward compatibility (mirrors the `type` CHECK constraint in
+// schema.sql) but has no dedicated UI yet.
 var ValidListTypes = map[string]bool{
-	"shopping": true,
-	"todo":     true,
+	"todo":               true,
+	"shopping":           true,
+	"groceries":          true,
+	"recurring_shopping": true,
+	"custom":             true,
 }
 
 // User is the API-facing account shape. It never carries a password hash

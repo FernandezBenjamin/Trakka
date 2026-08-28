@@ -152,14 +152,14 @@ Removes a member. A user may always remove **themselves** ("leave house") regard
 
 ## Lists
 
-A list has a `type` of either `shopping` or `todo`, and belongs to exactly one house (`house_id`).
+A list has a `type` of `todo`, `shopping`, `groceries`, `recurring_shopping` or `custom`, and belongs to exactly one house (`house_id`). `shopping` (one-off purchases), `groceries` (day-to-day shopping runs) and `recurring_shopping` (subscriptions/recurring purchases) are all purchase-oriented types stored the same way — the frontend just shows a different subset of the item form's fields depending on which one a list has (see `static/js/list_view.js`'s `applyListTypeVisibility`): `groceries` shows only name/quantity, `shopping` adds URL/price/target month, `recurring_shopping` adds URL/price/recurrence instead of a target month. `custom` is accepted by the API for forward compatibility but has no dedicated item-form behavior yet.
 
 ### `GET /api/v1/lists`
 
 Returns lists belonging to houses the caller is a member of, newest first. Items are **not** embedded here (see `GET /api/v1/lists/{id}` for that).
 
 Query parameters:
-- `type` (optional) — filter to `shopping` or `todo`. `400` if any other value is given.
+- `type` (optional) — filter to `todo`, `shopping`, `groceries`, `recurring_shopping` or `custom`. `400` if any other value is given.
 - `house_id` (optional) — filter to lists belonging to that house. `400` if not a positive integer; `403` if the caller isn't a member of that house.
 
 ```bash
@@ -184,7 +184,7 @@ curl -X POST http://localhost:8080/api/v1/lists \
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `name` | string | yes | trimmed; `400` if empty |
-| `type` | string | no | `shopping` (default) or `todo`; `400` if anything else |
+| `type` | string | no | `shopping` (default), `todo`, `groceries`, `recurring_shopping` or `custom`; `400` if anything else |
 | `house_id` | integer | yes | must reference an existing house, else `400` |
 
 `201` with the created list (no `items` field).

@@ -547,7 +547,11 @@ async function renderDashboardFromCache() {
     (list) => !pendingDeletedListIds.has(list.id)
   );
 
-  renderGrid(els.shoppingLists, detailed.filter((l) => l.type === 'shopping'), urlBadges, 'Aucune liste de courses pour le moment.');
+  // 'shopping', 'groceries' and 'recurring_shopping' are all purchase-
+  // oriented types (see models.ValidListTypes) — anything that isn't 'todo'
+  // (including a future 'custom' list) lands in the purchases grid rather
+  // than silently disappearing from the dashboard.
+  renderGrid(els.shoppingLists, detailed.filter((l) => l.type !== 'todo'), urlBadges, 'Aucune liste de courses pour le moment.');
   renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, 'Aucun espace tâches pour le moment.');
 }
 
@@ -591,7 +595,11 @@ async function loadDashboard() {
     )
   );
 
-  renderGrid(els.shoppingLists, detailed.filter((l) => l.type === 'shopping'), urlBadges, 'Aucune liste de courses pour le moment.');
+  // 'shopping', 'groceries' and 'recurring_shopping' are all purchase-
+  // oriented types (see models.ValidListTypes) — anything that isn't 'todo'
+  // (including a future 'custom' list) lands in the purchases grid rather
+  // than silently disappearing from the dashboard.
+  renderGrid(els.shoppingLists, detailed.filter((l) => l.type !== 'todo'), urlBadges, 'Aucune liste de courses pour le moment.');
   renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, 'Aucun espace tâches pour le moment.');
 }
 

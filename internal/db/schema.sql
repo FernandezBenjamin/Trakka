@@ -12,10 +12,22 @@ CREATE TABLE IF NOT EXISTS houses (
 -- table already had a shipped shape, so (like items.price) it's applied via
 -- the addColumnIfMissing() guard in internal/db/db.go, right after this
 -- schema is applied. See "Evolving the schema" in docs/DATABASE.md.
+--
+-- The `type` CHECK constraint was widened from ('shopping', 'todo') to add
+-- 'groceries', 'recurring_shopping' and 'custom'. SQLite has no
+-- `ALTER TABLE ... ADD/DROP CONSTRAINT`, so — unlike a new column — this
+-- edit alone has no effect on a database file that already has this table;
+-- migrateListsTypeCheck() in internal/db/db.go, run on every startup right
+-- after this schema is applied, is what actually widens it on an existing
+-- /data/trakka.db (by rebuilding the table — SQLite's only way to change a
+-- CHECK constraint), same "never edit an existing CREATE TABLE in place and
+-- expect it to reach existing deployments" caveat documented in
+-- docs/DATABASE.md#evolving-the-schema, just for a constraint rather than a
+-- column.
 CREATE TABLE IF NOT EXISTS lists (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL,
-    type       TEXT NOT NULL DEFAULT 'shopping' CHECK (type IN ('shopping', 'todo')),
+    type       TEXT NOT NULL DEFAULT 'shopping' CHECK (type IN ('todo', 'shopping', 'groceries', 'recurring_shopping', 'custom')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

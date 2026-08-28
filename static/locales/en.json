@@ -98,7 +98,9 @@
       "nameLabel": "Name",
       "namePlaceholder": "E.g. Weekly groceries",
       "typeLabel": "Type",
-      "typeShopping": "Shopping",
+      "typeGroceries": "Groceries",
+      "typeShopping": "One-off Purchases",
+      "typeRecurring": "Subscriptions & Recurring",
       "typeTodo": "Tasks",
       "submit": "Create list"
     },

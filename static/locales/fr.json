@@ -98,7 +98,9 @@
       "nameLabel": "Nom",
       "namePlaceholder": "Ex. Courses de la semaine",
       "typeLabel": "Type",
-      "typeShopping": "Courses",
+      "typeGroceries": "Courses",
+      "typeShopping": "Achats Ponctuels",
+      "typeRecurring": "Abonnements & Récurrences",
       "typeTodo": "Tâches",
       "submit": "Créer la liste"
     },

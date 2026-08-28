@@ -82,7 +82,37 @@ function formatEuro(amount) {
 }
 
 function typeLabel(type) {
-  return type === 'todo' ? 'tâches' : 'courses';
+  switch (type) {
+    case 'todo':
+      return 'tâches';
+    case 'recurring_shopping':
+      return 'abonnements';
+    default:
+      return 'courses';
+  }
+}
+
+// FIELD_VISIBILITY_BY_TYPE maps a list type to which of the create/edit-item
+// form's optional fields make sense for it: `url`/`price`/`target-month`/
+// `recurrence` each correspond to one or more elements flagged
+// data-item-field="..." in index.html (see applyListTypeVisibility below).
+// `groceries` shows only the always-present name/quantity fields; `shopping`
+// adds URL/price/target month (purchase planning) but not recurrence;
+// `recurring_shopping` adds URL/price/recurrence instead of a target month,
+// since a subscription/recurring purchase isn't scheduled for one specific
+// month. Any other type (`todo`, `custom`, or anything unrecognized) falls
+// back to DEFAULT_FIELD_VISIBILITY, the same shape every list had before
+// groceries/recurring_shopping existed: URL and recurrence shown, price/
+// target month hidden.
+const FIELD_VISIBILITY_BY_TYPE = {
+  groceries: { url: false, price: false, targetMonth: false, recurrence: false },
+  shopping: { url: true, price: true, targetMonth: true, recurrence: false },
+  recurring_shopping: { url: true, price: true, targetMonth: false, recurrence: true },
+};
+const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetMonth: false, recurrence: true };
+
+function fieldVisibilityFor(type) {
+  return FIELD_VISIBILITY_BY_TYPE[type] || DEFAULT_FIELD_VISIBILITY;
 }
 
 // Fills listEls.itemTargetMonth with a fixed set of rolling-month options,
@@ -114,15 +144,17 @@ function ensureTargetMonthOptions() {
   });
 }
 
-// Shows/hides every element flagged data-shopping-only (the price input on
-// the create-item form, the price field in the edit modal, and the
-// financial summary bar) — price only makes sense on `shopping` lists.
+// Shows/hides every element flagged data-item-field="url|price|target-month|
+// recurrence" (the create-item form's inputs, the edit modal's fields, and
+// the financial summary bar) according to fieldVisibilityFor(type) — see its
+// comment above for which fields each list type shows.
 function applyListTypeVisibility(type) {
-  const isShopping = type === 'shopping';
+  const visibility = fieldVisibilityFor(type);
   ensureTargetMonthOptions();
-  for (const el of document.querySelectorAll('[data-shopping-only]')) {
-    el.hidden = !isShopping;
-  }
+  for (const el of document.querySelectorAll('[data-item-field="url"]')) el.hidden = !visibility.url;
+  for (const el of document.querySelectorAll('[data-item-field="price"]')) el.hidden = !visibility.price;
+  for (const el of document.querySelectorAll('[data-item-field="target-month"]')) el.hidden = !visibility.targetMonth;
+  for (const el of document.querySelectorAll('[data-item-field="recurrence"]')) el.hidden = !visibility.recurrence;
 }
 
 // Recomputes the financial summary bar directly from state.currentList.items
@@ -409,7 +441,7 @@ function renderItems() {
   const active = items.filter((item) => !item.done).sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
   const done = items.filter((item) => item.done);
 
-  if (list.type === 'shopping') updateFinanceSummary(items);
+  if (fieldVisibilityFor(list.type).price) updateFinanceSummary(items);
 
   listEls.itemsActive.replaceChildren();
   if (items.length === 0) {
@@ -628,29 +660,29 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   if (state.currentListId === null || !state.currentList) return;
 
   const title = listEls.itemTitle.value.trim();
-  const url = listEls.itemUrl.value.trim();
   const quantity = Number.parseInt(listEls.itemQuantity.value, 10) || 1;
   if (!title) return;
 
-  // Price and target month only apply to shopping lists — gated on the
-  // list's actual type rather than the inputs' `hidden` state, so a stale
-  // value left over from a previously-open shopping list can never leak
-  // into a todo item.
+  // URL, price, target month and recurrence only apply to list types that
+  // show them (see fieldVisibilityFor) — gated on the list's actual type
+  // rather than the inputs' `hidden` state, so a stale value left over from
+  // a previously-open list of a different type can never leak into this one.
+  const visibility = fieldVisibilityFor(state.currentList.type);
+  const url = visibility.url ? listEls.itemUrl.value.trim() : '';
   let price = null;
   let targetMonth = '';
-  if (state.currentList.type === 'shopping') {
+  if (visibility.price) {
     const raw = listEls.itemPrice.value.trim();
     if (raw !== '') {
       const parsed = Number.parseFloat(raw);
       if (Number.isFinite(parsed) && parsed >= 0) price = parsed;
     }
-    targetMonth = listEls.itemTargetMonth.value;
   }
+  if (visibility.targetMonth) targetMonth = listEls.itemTargetMonth.value;
 
-  // Recurrence and urgency both apply regardless of list type (a todo
-  // chore repeats, or presses, just as naturally as a shopping item),
-  // unlike price/target_month above.
-  const recurrenceRule = listEls.itemRecurrence.value;
+  // Urgency applies regardless of list type (a todo chore, or a grocery
+  // item, needs attention right away just as naturally as a shopping item).
+  const recurrenceRule = visibility.recurrence ? listEls.itemRecurrence.value : '';
   const isUrgent = listEls.itemUrgent.checked;
 
   const payload = { list_id: state.currentListId, title, quantity };
@@ -753,23 +785,20 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   const url = listEls.editItemUrl.value.trim();
   if (!title) return;
 
-  // `price` and `target_month` are only ever included for shopping lists.
-  // When included, an empty field sends an explicit "clear" value (`null`
-  // for price, `""` for target_month) rather than omitting the key (leave
-  // unchanged) — see the PATCH handler's field-presence handling in
-  // internal/handlers/items.go.
-  // Recurrence and is_urgent, unlike price/target_month, apply to both
-  // list types, so they're always included in the payload rather than
-  // gated on state.currentList.type — an empty recurrence_rule clears it
-  // back to "not recurring", same "absent = untouched, empty = clear" PATCH
-  // convention; is_urgent is a plain boolean with no such ambiguity.
+  // `price`/`target_month`/`recurrence_rule` are only ever included for list
+  // types that show them (see fieldVisibilityFor) — when included, an empty
+  // field sends an explicit "clear" value (`null` for price, `""` for
+  // target_month/recurrence_rule) rather than omitting the key (leave
+  // unchanged), see the PATCH handler's field-presence handling in
+  // internal/handlers/items.go. is_urgent, unlike those three, applies to
+  // every list type, so it's always included in the payload.
+  const visibility = fieldVisibilityFor(state.currentList && state.currentList.type);
   const payload = {
     title,
     url,
-    recurrence_rule: listEls.editItemRecurrence.value,
     is_urgent: listEls.editItemUrgent.checked,
   };
-  if (state.currentList && state.currentList.type === 'shopping') {
+  if (visibility.price) {
     const raw = listEls.editItemPrice.value.trim();
     if (raw === '') {
       payload.price = null;
@@ -781,8 +810,9 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
       }
       payload.price = parsed;
     }
-    payload.target_month = listEls.editItemTargetMonth.value;
   }
+  if (visibility.targetMonth) payload.target_month = listEls.editItemTargetMonth.value;
+  if (visibility.recurrence) payload.recurrence_rule = listEls.editItemRecurrence.value;
 
   const item = editingItem;
   const previous = {
@@ -797,7 +827,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   item.url = url || null;
   if ('price' in payload) item.price = payload.price;
   if ('target_month' in payload) item.target_month = payload.target_month || null;
-  item.recurrence_rule = payload.recurrence_rule || null;
+  if ('recurrence_rule' in payload) item.recurrence_rule = payload.recurrence_rule || null;
   item.is_urgent = payload.is_urgent;
   renderItems();
   closeEditItemModal();
