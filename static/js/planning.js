@@ -137,8 +137,8 @@ for (const button of planningEls.horizonButtons) {
 }
 
 // Fetches every purchase-oriented list in the current house — 'shopping',
-// 'groceries' and 'recurring_shopping' alike (anything that isn't 'todo';
-// see the same convention/comment in app.js's loadDashboard) — plus each
+// 'groceries' and 'recurring_shopping' alike (anything that isn't 'todo' or
+// 'custom'; see isPurchaseList in app.js, which this mirrors) — plus each
 // one's items (the same "list_id -> detail" fan-out loadDashboard already
 // does for its badges), then splits items into the two buckets this view
 // budgets separately: recurring items (recurrence_rule set — these live
@@ -146,9 +146,14 @@ for (const button of planningEls.horizonButtons) {
 // any list type) always go through the recurrence projection regardless of
 // target_month, since a recurring cost isn't pinned to a single month; a
 // non-recurring item only counts if it has a target_month. Items with
-// neither simply don't appear in this view. Re-run whenever the planning
-// tab is opened, the house changes, or the offline queue flushes; horizon
-// changes alone just re-filter/re-project the already-loaded result.
+// neither simply don't appear in this view. 'custom' (freeform notes) lists
+// are excluded from the fetch entirely rather than just relying on their
+// items never having a target_month/recurrence_rule set through the UI —
+// this budget view must strictly ignore them even if one somehow carries
+// either field (e.g. set directly through the API). Re-run whenever the
+// planning tab is opened, the house changes, or the offline queue flushes;
+// horizon changes alone just re-filter/re-project the already-loaded
+// result.
 async function loadPlanningView() {
   if (state.currentHouseId === null) {
     planningEntries = [];
@@ -159,7 +164,7 @@ async function loadPlanningView() {
 
   try {
     const lists = await apiRequest(`/lists?house_id=${state.currentHouseId}`);
-    const purchaseLists = lists.filter((list) => list.type !== 'todo');
+    const purchaseLists = lists.filter((list) => isPurchaseList(list.type));
     const detailed = await Promise.all(
       purchaseLists.map((list) => apiRequest(`/lists/${list.id}`).catch(() => ({ ...list, items: [] })))
     );

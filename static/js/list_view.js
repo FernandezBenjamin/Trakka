@@ -87,6 +87,8 @@ function typeLabel(type) {
       return 'tâches';
     case 'recurring_shopping':
       return 'abonnements';
+    case 'custom':
+      return 'notes';
     default:
       return 'courses';
   }
@@ -94,22 +96,29 @@ function typeLabel(type) {
 
 // FIELD_VISIBILITY_BY_TYPE maps a list type to which of the create/edit-item
 // form's optional fields make sense for it: `url`/`price`/`target-month`/
-// `recurrence` each correspond to one or more elements flagged
-// data-item-field="..." in index.html (see applyListTypeVisibility below).
-// `groceries` shows only the always-present name/quantity fields; `shopping`
-// adds URL/price/target month (purchase planning) but not recurrence;
-// `recurring_shopping` adds URL/price/recurrence instead of a target month,
-// since a subscription/recurring purchase isn't scheduled for one specific
-// month. Any other type (`todo`, `custom`, or anything unrecognized) falls
-// back to DEFAULT_FIELD_VISIBILITY, the same shape every list had before
-// groceries/recurring_shopping existed: URL and recurrence shown, price/
-// target month hidden.
+// `recurrence`/`quantity`/`urgent` each correspond to one or more elements
+// flagged data-item-field="..." in index.html (see applyListTypeVisibility
+// below); `done` isn't a form field but tells renderItems/buildItemRow below
+// whether to render the completion checkbox at all. `groceries` shows only
+// the always-present name/quantity fields; `shopping` adds URL/price/target
+// month (purchase planning) but not recurrence; `recurring_shopping` adds
+// URL/price/recurrence instead of a target month, since a subscription/
+// recurring purchase isn't scheduled for one specific month. `custom` (a
+// freeform list — names, ideas, notes) is the odd one out: it has no notion
+// of a "done" task, a price, a schedule, or urgency, so it hides every
+// optional field and even the completion checkbox itself, leaving only the
+// name — see buildItemRow's line-number marker for what replaces the
+// checkbox. Any other/unrecognized type falls back to
+// DEFAULT_FIELD_VISIBILITY, the same shape every list had before groceries/
+// recurring_shopping/custom existed: URL and recurrence shown, price/target
+// month hidden.
 const FIELD_VISIBILITY_BY_TYPE = {
-  groceries: { url: false, price: false, targetMonth: false, recurrence: false },
-  shopping: { url: true, price: true, targetMonth: true, recurrence: false },
-  recurring_shopping: { url: true, price: true, targetMonth: false, recurrence: true },
+  groceries: { url: false, price: false, targetMonth: false, recurrence: false, quantity: true, urgent: true, done: true },
+  shopping: { url: true, price: true, targetMonth: true, recurrence: false, quantity: true, urgent: true, done: true },
+  recurring_shopping: { url: true, price: true, targetMonth: false, recurrence: true, quantity: true, urgent: true, done: true },
+  custom: { url: false, price: false, targetMonth: false, recurrence: false, quantity: false, urgent: false, done: false },
 };
-const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetMonth: false, recurrence: true };
+const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetMonth: false, recurrence: true, quantity: true, urgent: true, done: true };
 
 function fieldVisibilityFor(type) {
   return FIELD_VISIBILITY_BY_TYPE[type] || DEFAULT_FIELD_VISIBILITY;
@@ -145,9 +154,12 @@ function ensureTargetMonthOptions() {
 }
 
 // Shows/hides every element flagged data-item-field="url|price|target-month|
-// recurrence" (the create-item form's inputs, the edit modal's fields, and
-// the financial summary bar) according to fieldVisibilityFor(type) — see its
-// comment above for which fields each list type shows.
+// recurrence|quantity|urgent" (the create-item form's inputs, the edit
+// modal's fields, and the financial summary bar) according to
+// fieldVisibilityFor(type) — see its comment above for which fields each
+// list type shows. Also swaps the create form's title placeholder to a
+// custom-list-flavored hint ("Prénom, idée, note...") so the single
+// remaining input reads as "add a note" rather than "add an item".
 function applyListTypeVisibility(type) {
   const visibility = fieldVisibilityFor(type);
   ensureTargetMonthOptions();
@@ -155,6 +167,9 @@ function applyListTypeVisibility(type) {
   for (const el of document.querySelectorAll('[data-item-field="price"]')) el.hidden = !visibility.price;
   for (const el of document.querySelectorAll('[data-item-field="target-month"]')) el.hidden = !visibility.targetMonth;
   for (const el of document.querySelectorAll('[data-item-field="recurrence"]')) el.hidden = !visibility.recurrence;
+  for (const el of document.querySelectorAll('[data-item-field="quantity"]')) el.hidden = !visibility.quantity;
+  for (const el of document.querySelectorAll('[data-item-field="urgent"]')) el.hidden = !visibility.urgent;
+  listEls.itemTitle.placeholder = t(type === 'custom' ? 'items.titlePlaceholderCustom' : 'items.titlePlaceholder');
 }
 
 // Recomputes the financial summary bar directly from state.currentList.items
@@ -298,7 +313,23 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !listEls.imagePreviewModal.hidden) closeImagePreview();
 });
 
-function buildItemRow(item) {
+// A small non-interactive line-number marker shown instead of the
+// completion checkbox for list types with no "done" concept (currently only
+// `custom` — see FIELD_VISIBILITY_BY_TYPE's `done` flag) — a freeform note
+// like a name/idea isn't a task that gets checked off, so it gets a plain
+// "1.", "2.", ... in the same 44px slot the checkbox would otherwise occupy,
+// keeping row alignment identical between list types. Falls back to a bare
+// bullet when no index is available (shouldn't normally happen, since every
+// caller in renderItems passes one).
+function buildLineMarker(index) {
+  const span = document.createElement('span');
+  span.className = 'flex h-11 w-11 shrink-0 items-center justify-center text-sm font-semibold text-slate-400 dark:text-slate-500';
+  span.textContent = typeof index === 'number' ? `${index + 1}.` : '•';
+  span.setAttribute('aria-hidden', 'true');
+  return span;
+}
+
+function buildItemRow(item, { showCheckbox = true, index } = {}) {
   const li = document.createElement('li');
   // An unfinished urgent item gets a distinctive rose border so it stands
   // out at a glance in the (already sorted-to-top, see renderItems) active
@@ -309,17 +340,20 @@ function buildItemRow(item) {
       ? 'flex items-center gap-3 rounded-xl border-2 border-rose-500/60 bg-rose-500/5 p-3'
       : 'flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3';
 
-  const checkboxLabel = document.createElement('label');
-  checkboxLabel.className = 'flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center';
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = item.done;
-  checkbox.className = 'h-5 w-5 rounded-full border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40';
-  checkbox.setAttribute('aria-label', `Marquer « ${item.title} » comme terminé`);
-  checkbox.addEventListener('change', () => toggleDone(item));
-  checkboxLabel.appendChild(checkbox);
-
-  li.appendChild(checkboxLabel);
+  if (showCheckbox) {
+    const checkboxLabel = document.createElement('label');
+    checkboxLabel.className = 'flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = item.done;
+    checkbox.className = 'h-5 w-5 rounded-full border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40';
+    checkbox.setAttribute('aria-label', `Marquer « ${item.title} » comme terminé`);
+    checkbox.addEventListener('change', () => toggleDone(item));
+    checkboxLabel.appendChild(checkbox);
+    li.appendChild(checkboxLabel);
+  } else {
+    li.appendChild(buildLineMarker(index));
+  }
 
   // A thumbnail only ever appears when a product image was actually found
   // (see internal/scraper's og:image/JSON-LD/twitter:image lookup) — no
@@ -441,7 +475,8 @@ function renderItems() {
   const active = items.filter((item) => !item.done).sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
   const done = items.filter((item) => item.done);
 
-  if (fieldVisibilityFor(list.type).price) updateFinanceSummary(items);
+  const visibility = fieldVisibilityFor(list.type);
+  if (visibility.price) updateFinanceSummary(items);
 
   listEls.itemsActive.replaceChildren();
   if (items.length === 0) {
@@ -449,11 +484,19 @@ function renderItems() {
   } else if (active.length === 0) {
     listEls.itemsActive.appendChild(emptyItemsRow('Tout est terminé pour le moment.'));
   } else {
-    for (const item of active) listEls.itemsActive.appendChild(buildItemRow(item));
+    active.forEach((item, index) => {
+      listEls.itemsActive.appendChild(buildItemRow(item, { showCheckbox: visibility.done, index }));
+    });
   }
 
   listEls.itemsDone.replaceChildren();
-  for (const item of done) listEls.itemsDone.appendChild(buildItemRow(item));
+  // Always a checkbox here, regardless of visibility.done: a custom list's
+  // create/edit form never lets an item become done in the first place (the
+  // checkbox is hidden), so any item that does show up in this "done"
+  // bucket only got there some other way (e.g. the list's type was changed
+  // after the item was already completed) — it still needs a way back to
+  // active, which only the checkbox provides.
+  for (const item of done) listEls.itemsDone.appendChild(buildItemRow(item, { showCheckbox: true }));
   listEls.doneSummaryLabel.textContent = `Terminés (${done.length})`;
   listEls.doneSection.hidden = done.length === 0;
 }
@@ -660,14 +703,17 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   if (state.currentListId === null || !state.currentList) return;
 
   const title = listEls.itemTitle.value.trim();
-  const quantity = Number.parseInt(listEls.itemQuantity.value, 10) || 1;
   if (!title) return;
 
-  // URL, price, target month and recurrence only apply to list types that
-  // show them (see fieldVisibilityFor) — gated on the list's actual type
-  // rather than the inputs' `hidden` state, so a stale value left over from
-  // a previously-open list of a different type can never leak into this one.
+  // URL, price, target month, recurrence, quantity and urgency only apply to
+  // list types that show them (see fieldVisibilityFor) — gated on the list's
+  // actual type rather than the inputs' `hidden` state, so a stale value
+  // left over from a previously-open list of a different type (the form
+  // isn't reset on selectList) can never leak into this one — e.g. a
+  // quantity typed while a shopping list's form was open must not survive
+  // into a `custom` note submitted after switching lists without resetting.
   const visibility = fieldVisibilityFor(state.currentList.type);
+  const quantity = visibility.quantity ? Number.parseInt(listEls.itemQuantity.value, 10) || 1 : 1;
   const url = visibility.url ? listEls.itemUrl.value.trim() : '';
   let price = null;
   let targetMonth = '';
@@ -680,10 +726,8 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   }
   if (visibility.targetMonth) targetMonth = listEls.itemTargetMonth.value;
 
-  // Urgency applies regardless of list type (a todo chore, or a grocery
-  // item, needs attention right away just as naturally as a shopping item).
   const recurrenceRule = visibility.recurrence ? listEls.itemRecurrence.value : '';
-  const isUrgent = listEls.itemUrgent.checked;
+  const isUrgent = visibility.urgent ? listEls.itemUrgent.checked : false;
 
   const payload = { list_id: state.currentListId, title, quantity };
   if (url) payload.url = url;

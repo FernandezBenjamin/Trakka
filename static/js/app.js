@@ -38,6 +38,7 @@ const els = {
   houseSelect: document.getElementById('house-select'),
   shoppingLists: document.getElementById('shopping-lists'),
   todoLists: document.getElementById('todo-lists'),
+  customLists: document.getElementById('custom-lists'),
   newListButton: document.getElementById('new-list-button'),
   newListModal: document.getElementById('new-list-modal'),
   closeModalButton: document.getElementById('close-modal-button'),
@@ -459,6 +460,15 @@ function progressBadge(items) {
   return frag;
 }
 
+// custom (freeform notes) lists have no url or completion concept — see
+// FIELD_VISIBILITY_BY_TYPE in list_view.js — so unlike urlBadges/
+// progressBadge there is nothing meaningful to summarize beyond the item
+// count buildListCard already shows; this only exists so renderGrid can be
+// called uniformly with a badge function for every dashboard section.
+function noBadges() {
+  return document.createDocumentFragment();
+}
+
 function emptyState(message) {
   const li = document.createElement('li');
   li.className = 'col-span-full rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-sm text-slate-500';
@@ -532,33 +542,46 @@ async function cachedDashboardLists(houseId) {
   }
 }
 
+// A list is purchase-oriented (lands in the "Achats & Sourcing" grid) when
+// it's neither a todo list nor a custom/freeform one — 'shopping',
+// 'groceries' and 'recurring_shopping' all qualify (see
+// models.ValidListTypes). 'custom' gets its own dedicated "Notes & Listes
+// Libres" grid instead (see renderDashboardGrids below) — a freeform note/
+// idea list has nothing to do with purchasing or tasks, so it must never be
+// folded into either existing section, totals, or filter.
+function isPurchaseList(type) {
+  return type !== 'todo' && type !== 'custom';
+}
+
+// Splits `detailed` (a house's lists, each with its items already attached)
+// into the dashboard's three mutually exclusive grids and renders all of
+// them — shared by the cache-only offline path and the normal network path
+// below so the three-way split can't drift between them.
+function renderDashboardGrids(detailed) {
+  renderGrid(els.shoppingLists, detailed.filter((l) => isPurchaseList(l.type)), urlBadges, 'Aucune liste de courses pour le moment.');
+  renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, 'Aucun espace tâches pour le moment.');
+  renderGrid(els.customLists, detailed.filter((l) => l.type === 'custom'), noBadges, 'Aucune liste libre pour le moment.');
+}
+
 // Renders the dashboard purely from the local IndexedDB mirror, with no
 // network request involved — this is what keeps lists/items on screen while
 // offline instead of the grid going blank. Lists mid-undo-grace-period (see
 // removeList) are filtered out here too, same as the network path below.
 async function renderDashboardFromCache() {
   if (state.currentHouseId === null) {
-    renderGrid(els.shoppingLists, [], urlBadges, 'Créez une Maison pour commencer.');
-    renderGrid(els.todoLists, [], progressBadge, 'Créez une Maison pour commencer.');
+    renderDashboardGrids([]);
     return;
   }
 
   const detailed = (await cachedDashboardLists(state.currentHouseId)).filter(
     (list) => !pendingDeletedListIds.has(list.id)
   );
-
-  // 'shopping', 'groceries' and 'recurring_shopping' are all purchase-
-  // oriented types (see models.ValidListTypes) — anything that isn't 'todo'
-  // (including a future 'custom' list) lands in the purchases grid rather
-  // than silently disappearing from the dashboard.
-  renderGrid(els.shoppingLists, detailed.filter((l) => l.type !== 'todo'), urlBadges, 'Aucune liste de courses pour le moment.');
-  renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, 'Aucun espace tâches pour le moment.');
+  renderDashboardGrids(detailed);
 }
 
 async function loadDashboard() {
   if (state.currentHouseId === null) {
-    renderGrid(els.shoppingLists, [], urlBadges, 'Créez une Maison pour commencer.');
-    renderGrid(els.todoLists, [], progressBadge, 'Créez une Maison pour commencer.');
+    renderDashboardGrids([]);
     return;
   }
 
@@ -595,12 +618,7 @@ async function loadDashboard() {
     )
   );
 
-  // 'shopping', 'groceries' and 'recurring_shopping' are all purchase-
-  // oriented types (see models.ValidListTypes) — anything that isn't 'todo'
-  // (including a future 'custom' list) lands in the purchases grid rather
-  // than silently disappearing from the dashboard.
-  renderGrid(els.shoppingLists, detailed.filter((l) => l.type !== 'todo'), urlBadges, 'Aucune liste de courses pour le moment.');
-  renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, 'Aucun espace tâches pour le moment.');
+  renderDashboardGrids(detailed);
 }
 
 // ---------------------------------------------------------------------------

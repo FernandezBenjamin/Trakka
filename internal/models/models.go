@@ -99,9 +99,14 @@ type Item struct {
 // purchase-oriented list types with different item-form fields shown by the
 // frontend (see applyListTypeVisibility in static/js/list_view.js) — the
 // same lists.type column just distinguishes which fields make sense for a
-// given list, it's not a separate concept from `shopping`. `custom` is
-// accepted for forward compatibility (mirrors the `type` CHECK constraint in
-// schema.sql) but has no dedicated UI yet.
+// given list, it's not a separate concept from `shopping`. `custom` (a
+// freeform list — baby name ideas, notes, an inventory, ...) is the odd one
+// out: every item field beyond the required `title` is already optional at
+// this layer (Quantity defaults to 1, Price/URL/DueDate/TargetMonth/Done all
+// zero-value cleanly), so nothing here needs to special-case it — the
+// frontend is what actually hides the checkbox/finance UI and simplifies the
+// item form down to a single text field for it (see applyListTypeVisibility
+// and FIELD_VISIBILITY_BY_TYPE's `done` flag in static/js/list_view.js).
 var ValidListTypes = map[string]bool{
 	"todo":               true,
 	"shopping":           true,

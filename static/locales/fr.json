@@ -25,6 +25,7 @@
     "newList": "Nouvelle liste",
     "shoppingHeading": "Achats & Sourcing",
     "todoHeading": "Espaces Tâches",
+    "customHeading": "Notes & Listes Libres",
     "createHouseOption": "+ Créer une Maison",
     "tabLists": "Listes"
   },
@@ -34,6 +35,7 @@
     "financeSpent": "Déjà dépensé",
     "financeRemaining": "Reste à dépenser",
     "titlePlaceholder": "Article ou tâche",
+    "titlePlaceholderCustom": "Prénom, idée, note...",
     "urlPlaceholder": "URL (optionnel)",
     "quantityAriaLabel": "Quantité",
     "pricePlaceholder": "Prix € (optionnel)",
@@ -103,6 +105,7 @@
       "typeShopping": "Achats Ponctuels",
       "typeRecurring": "Abonnements & Récurrences",
       "typeTodo": "Tâches",
+      "typeCustom": "Liste Libre / Notes",
       "submit": "Créer la liste"
     },
     "newHouse": {

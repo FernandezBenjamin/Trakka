@@ -152,9 +152,16 @@
           <ul id="shopping-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></ul>
         </section>
 
-        <section aria-labelledby="todo-heading">
+        <section aria-labelledby="todo-heading" class="mb-8">
           <h2 id="todo-heading" data-i18n="dashboard.todoHeading" class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Espaces Tâches</h2>
           <ul id="todo-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></ul>
+        </section>
+
+        <section aria-labelledby="custom-heading">
+          <h2 id="custom-heading" class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <span aria-hidden="true">📝</span> <span data-i18n="dashboard.customHeading">Notes &amp; Listes Libres</span>
+          </h2>
+          <ul id="custom-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></ul>
         </section>
       </div>
 
@@ -225,7 +232,7 @@
                class="min-w-[10rem] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         <input type="url" id="item-url" data-item-field="url" data-i18n-placeholder="items.urlPlaceholder" placeholder="URL (optionnel)"
                class="min-w-[8rem] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <input type="number" id="item-quantity" min="1" value="1" data-i18n-aria-label="items.quantityAriaLabel" aria-label="Quantité"
+        <input type="number" id="item-quantity" data-item-field="quantity" min="1" value="1" data-i18n-aria-label="items.quantityAriaLabel" aria-label="Quantité"
                class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         <input type="number" id="item-price" data-item-field="price" hidden step="0.01" min="0" data-i18n-placeholder="items.pricePlaceholder" placeholder="Prix € (optionnel)" data-i18n-aria-label="items.priceAriaLabel" aria-label="Prix en euros"
                class="w-36 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
@@ -239,7 +246,7 @@
           <option value="MONTHLY" data-i18n="items.recurrenceMonthly">Tous les mois</option>
           <option value="YEARLY" data-i18n="items.recurrenceYearly">Tous les ans</option>
         </select>
-        <label class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+        <label data-item-field="urgent" class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
           <input type="checkbox" id="item-urgent" data-i18n-aria-label="items.urgentAriaLabel" aria-label="Marquer comme urgent"
                  class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-500 focus:ring-rose-500/40">
           <span aria-hidden="true">🚨</span>
@@ -296,6 +303,10 @@
             <label data-type-option class="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300">
               <input type="radio" name="list-type" value="todo" class="sr-only">
               <span aria-hidden="true">✅</span> <span data-i18n="modals.newList.typeTodo">Tâches</span>
+            </label>
+            <label data-type-option class="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+              <input type="radio" name="list-type" value="custom" class="sr-only">
+              <span aria-hidden="true">📝</span> <span data-i18n="modals.newList.typeCustom">Liste Libre / Notes</span>
             </label>
           </div>
         </div>
@@ -470,7 +481,7 @@
           </select>
         </div>
 
-        <div>
+        <div data-item-field="urgent">
           <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
             <input type="checkbox" id="edit-item-urgent"
                    class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-500 focus:ring-rose-500/40">

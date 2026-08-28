@@ -1,7 +1,9 @@
-<picture align="center">
-  <source media="(prefers-color-scheme: dark)" srcset="static/icons/trakka-lockup-dark-bg.svg">
-  <img alt="Trakka" src="static/icons/trakka-lockup-light-bg.svg" height="64">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="static/icons/trakka-lockup-dark-bg.svg">
+    <img alt="Trakka" src="static/icons/trakka-lockup-light-bg.svg" height="64">
+  </picture>
+</p>
 
 Ultra-lightweight shopping-list and to-do API, written in Go. Single static binary, pure-Go SQLite (no CGO), targets **< 20 MB RAM** at runtime, and runs identically under Docker and Podman (rootless).
 

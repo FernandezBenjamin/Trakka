@@ -181,12 +181,21 @@ func (d *DB) RejectPriceAlert(ctx context.Context, id int64) (*models.PriceAlert
 // a price set — the population internal/handlers.RunPriceAlertScan checks
 // on each periodic (or on-demand, for a single item) pass. An item missing
 // either field has nothing to compare a scraped price against, and a done
-// item's price isn't worth chasing anymore.
+// item's price isn't worth chasing anymore. Items belonging to a `custom`
+// (freeform notes) list are excluded via the lists join: the UI never lets
+// a custom-list item carry a url/price (see FIELD_VISIBILITY_BY_TYPE in
+// static/js/list_view.js), so this only ever matters for one created
+// directly through the API, but the price-drop notification center is
+// documented as strictly ignoring custom lists regardless of how the data
+// got there.
 func (d *DB) ListItemsForPriceScan(ctx context.Context) ([]*models.Item, error) {
 	rows, err := d.conn.QueryContext(ctx,
-		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
-		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent
-		 FROM items WHERE done = 0 AND url IS NOT NULL AND url != '' AND price IS NOT NULL`)
+		`SELECT items.id, items.list_id, items.title, items.url, items.quantity, items.done, items.position, items.created_at, items.updated_at,
+		 items.price, items.price_auto, items.image_url, items.target_month,
+		 items.due_date, items.is_recurring, items.recurrence_rule, items.recurrence_end_date, items.is_urgent
+		 FROM items
+		 JOIN lists ON lists.id = items.list_id
+		 WHERE items.done = 0 AND items.url IS NOT NULL AND items.url != '' AND items.price IS NOT NULL AND lists.type != 'custom'`)
 	if err != nil {
 		return nil, fmt.Errorf("querying items for price scan: %w", err)
 	}
