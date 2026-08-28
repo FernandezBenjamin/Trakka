@@ -44,6 +44,7 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 		Type             string `json:"type"`
 		HouseID          int64  `json:"house_id"`
 		CustomCategoryID *int64 `json:"custom_category_id"`
+		Icon             string `json:"icon"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -61,6 +62,7 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "type must be one of 'todo', 'shopping', 'groceries', 'recurring_shopping', 'custom'")
 		return
 	}
+	in.Icon = strings.TrimSpace(in.Icon)
 	if in.HouseID <= 0 {
 		writeError(w, http.StatusBadRequest, "house_id is required")
 		return
@@ -79,7 +81,7 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	list, err := app.DB.CreateList(r.Context(), in.Name, in.Type, in.HouseID, in.CustomCategoryID)
+	list, err := app.DB.CreateList(r.Context(), in.Name, in.Type, in.HouseID, in.CustomCategoryID, in.Icon)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -159,6 +161,7 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		Name             string `json:"name"`
 		Type             string `json:"type"`
 		CustomCategoryID *int64 `json:"custom_category_id"`
+		Icon             string `json:"icon"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -176,11 +179,12 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "type must be one of 'todo', 'shopping', 'groceries', 'recurring_shopping', 'custom'")
 		return
 	}
+	in.Icon = strings.TrimSpace(in.Icon)
 	if !app.validateCustomCategoryOwnership(w, r, in.CustomCategoryID) {
 		return
 	}
 
-	list, err := app.DB.UpdateList(r.Context(), id, in.Name, in.Type, in.CustomCategoryID)
+	list, err := app.DB.UpdateList(r.Context(), id, in.Name, in.Type, in.CustomCategoryID, in.Icon)
 	if errors.Is(err, db.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "list not found")
 		return

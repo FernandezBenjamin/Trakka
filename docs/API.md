@@ -198,6 +198,8 @@ A list has a `type` of `todo`, `shopping`, `groceries`, `recurring_shopping` or 
 
 A list can optionally be attached to one of its house members' [custom categories](#custom-categories) via `custom_category_id` — see `POST`/`PUT` below. It's orthogonal to `type`: a `shopping` list and a `todo` list can both belong to the same "Vacances" category.
 
+A list also carries a freeform `icon` (typically an emoji, e.g. `🛒`/`🖥️`/`📦`) the frontend shows next to its name; `""` (the default) means no icon was set, in which case the frontend falls back to a fixed icon for the list's `type`.
+
 ### `GET /api/v1/lists`
 
 Returns lists belonging to houses the caller is a member of, newest first. Items are **not** embedded here (see `GET /api/v1/lists/{id}` for that).
@@ -236,6 +238,7 @@ curl -X POST http://localhost:8080/api/v1/lists \
 | `type` | string | no | `shopping` (default), `todo`, `groceries`, `recurring_shopping` or `custom`; `400` if anything else |
 | `house_id` | integer | yes | must reference an existing house, else `400` |
 | `custom_category_id` | integer | no | must reference a [custom category](#custom-categories) owned by the caller, else `400`; omitted/`null` leaves the list unattached |
+| `icon` | string | no | trimmed; freeform (typically an emoji); omitted/empty leaves it unset |
 
 `201` with the created list (no `items` field).
 
@@ -257,7 +260,7 @@ Returns the list **with its items embedded**, ordered by `position` then `id`.
 
 ### `PUT /api/v1/lists/{id}`
 
-Full replace of `name`, `type`, and `custom_category_id` (same validation as `POST`; omitting/nulling `custom_category_id` **dissociates** the list from whatever category it had, since this is a full replace). `house_id` cannot be changed via this endpoint. Returns the updated list (no `items`). `404` if not found, `403` if the caller isn't a member of the list's house, `400` if `custom_category_id` is given but doesn't reference a category the caller owns.
+Full replace of `name`, `type`, `custom_category_id`, and `icon` (same validation as `POST`; omitting/nulling `custom_category_id` **dissociates** the list from whatever category it had, and omitting `icon` clears it, since this is a full replace). `house_id` cannot be changed via this endpoint. Returns the updated list (no `items`). `404` if not found, `403` if the caller isn't a member of the list's house, `400` if `custom_category_id` is given but doesn't reference a category the caller owns.
 
 ### `DELETE /api/v1/lists/{id}`
 

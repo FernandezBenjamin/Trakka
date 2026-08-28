@@ -115,6 +115,12 @@ func Open(path string) (*DB, error) {
 	if _, err := conn.Exec(`CREATE INDEX IF NOT EXISTS idx_lists_custom_category_id ON lists(custom_category_id)`); err != nil {
 		return nil, fmt.Errorf("creating lists.custom_category_id index: %w", err)
 	}
+	// Same "must run after migrateListsTypeCheck" reasoning as
+	// custom_category_id above — a freeform display icon (an emoji,
+	// typically), following the same "" default as custom_categories.icon.
+	if err := addColumnIfMissing(conn, "lists", "icon", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, fmt.Errorf("migrating lists table: %w", err)
+	}
 	if err := ensureDefaultHouse(conn); err != nil {
 		return nil, fmt.Errorf("seeding default house: %w", err)
 	}

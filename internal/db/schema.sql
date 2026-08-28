@@ -8,10 +8,11 @@ CREATE TABLE IF NOT EXISTS houses (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
--- lists.house_id is not part of this CREATE TABLE — it was added after the
--- table already had a shipped shape, so (like items.price) it's applied via
--- the addColumnIfMissing() guard in internal/db/db.go, right after this
--- schema is applied. See "Evolving the schema" in docs/DATABASE.md.
+-- lists.house_id/custom_category_id/icon are not part of this CREATE TABLE —
+-- they were added after the table already had a shipped shape, so (like
+-- items.price) they're applied via the addColumnIfMissing() guard in
+-- internal/db/db.go, right after this schema is applied. See "Evolving the
+-- schema" in docs/DATABASE.md.
 --
 -- The `type` CHECK constraint was widened from ('shopping', 'todo') to add
 -- 'groceries', 'recurring_shopping' and 'custom'. SQLite has no

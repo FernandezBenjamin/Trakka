@@ -41,10 +41,15 @@ const els = {
   customLists: document.getElementById('custom-lists'),
   newListButton: document.getElementById('new-list-button'),
   newListModal: document.getElementById('new-list-modal'),
+  newListModalTitle: document.getElementById('new-list-modal-title'),
   closeModalButton: document.getElementById('close-modal-button'),
   createListForm: document.getElementById('create-list-form'),
   listNameInput: document.getElementById('list-name'),
+  listIconInput: document.getElementById('list-icon'),
+  listIconPresetButtons: document.querySelectorAll('#create-list-form [data-list-icon-preset]'),
   typeOptions: document.querySelectorAll('#create-list-form [data-type-option]'),
+  listCategorySelect: document.getElementById('list-category'),
+  listSubmitButton: document.getElementById('list-submit-button'),
   newHouseModal: document.getElementById('new-house-modal'),
   closeHouseModalButton: document.getElementById('close-house-modal-button'),
   createHouseForm: document.getElementById('create-house-form'),
@@ -422,11 +427,46 @@ function badge(text, palette) {
     sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-300',
     slate: 'bg-slate-200/60 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300',
     emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
+    violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-300',
+    orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-300',
   };
   const span = document.createElement('span');
   span.className = `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors[palette] || colors.slate}`;
   span.textContent = text;
   return span;
+}
+
+// One badge per list `type`, always shown on a card regardless of which
+// dashboard section it lands in — the "Achats & Sourcing" grid already
+// mixes 'groceries'/'shopping'/'recurring_shopping' together under one
+// heading (see isPurchaseList below), and the Espaces tab (spaces.js) mixes
+// every type in a single space (e.g. a "Homelab" space holding a shopping
+// list, a todo list and a notes list side by side), so this is the one
+// place that tells them apart at a glance without opening the card. Labels
+// are dedicated, short `dashboard.listType*` i18n keys rather than the
+// "new list" modal's own (longer, more descriptive) type-picker strings —
+// the modal's radio grid has room for "Abonnements & Récurrences", a small
+// pill on a card doesn't. Icons/colors are still kept in sync with that
+// modal's own type-picker icons (static/index.html's #create-list-form) so
+// the same type never shows two different icons in two places.
+const LIST_TYPE_BADGE_META = {
+  shopping: { icon: '🛒', key: 'dashboard.listTypeShopping', palette: 'sky' },
+  recurring_shopping: { icon: '🔄', key: 'dashboard.listTypeRecurring', palette: 'violet' },
+  groceries: { icon: '🛍️', key: 'dashboard.listTypeGroceries', palette: 'emerald' },
+  todo: { icon: '✅', key: 'dashboard.listTypeTodo', palette: 'orange' },
+  custom: { icon: '📝', key: 'dashboard.listTypeCustom', palette: 'slate' },
+};
+
+function typeBadge(type) {
+  const meta = LIST_TYPE_BADGE_META[type];
+  return meta ? badge(`${meta.icon} ${t(meta.key)}`, meta.palette) : null;
+}
+
+// A list's own `icon` (set via the create/edit list modal) takes priority
+// over its type's fixed default — see LIST_TYPE_BADGE_META above — so a
+// list only falls back to a generic type icon until the user picks its own.
+function listIcon(list) {
+  return list.icon || LIST_TYPE_BADGE_META[list.type]?.icon || '📋';
 }
 
 // Shopping cards show which sites their items link to (up to 3 domains,
@@ -488,9 +528,29 @@ function buildListCard(list, badgesFragment) {
   openBtn.className = 'min-h-[44px] flex-1 text-left';
   openBtn.addEventListener('click', () => selectList(list.id));
 
+  // Shown above the name on every card, in every dashboard section, since
+  // even the "Achats & Sourcing" grid mixes several types together (see
+  // isPurchaseList) and the Espaces tab mixes all of them — see
+  // LIST_TYPE_BADGE_META's comment above for why this can't just live
+  // inside badgesRow below.
+  const typeRow = document.createElement('div');
+  typeRow.className = 'mb-2 flex flex-wrap items-center gap-1.5 empty:hidden';
+  const typeBadgeEl = typeBadge(list.type);
+  if (typeBadgeEl) typeRow.appendChild(typeBadgeEl);
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'flex min-w-0 items-center gap-2';
+
+  const iconSpan = document.createElement('span');
+  iconSpan.setAttribute('aria-hidden', 'true');
+  iconSpan.className = 'shrink-0 text-lg leading-none';
+  iconSpan.textContent = listIcon(list);
+
   const title = document.createElement('h3');
-  title.className = 'text-base font-semibold text-slate-900 dark:text-slate-100';
+  title.className = 'truncate text-base font-semibold text-slate-900 dark:text-slate-100';
   title.textContent = list.name;
+
+  titleRow.append(iconSpan, title);
 
   const count = document.createElement('p');
   count.className = 'mt-1 text-sm text-slate-500 dark:text-slate-400';
@@ -501,7 +561,18 @@ function buildListCard(list, badgesFragment) {
   badgesRow.className = 'mt-3 flex flex-wrap gap-1.5 empty:hidden';
   badgesRow.appendChild(badgesFragment);
 
-  openBtn.append(title, count, badgesRow);
+  openBtn.append(typeRow, titleRow, count, badgesRow);
+
+  const actions = document.createElement('div');
+  actions.className = 'flex shrink-0 items-center gap-1';
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.setAttribute('aria-label', t('common.editList', { name: list.name }));
+  editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200';
+  editBtn.innerHTML = PENCIL_ICON_SVG;
+  editBtn.addEventListener('click', () => openListModal(list));
+  actions.appendChild(editBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
@@ -509,8 +580,9 @@ function buildListCard(list, badgesFragment) {
   deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
   deleteBtn.innerHTML = TRASH_ICON_SVG;
   deleteBtn.addEventListener('click', () => removeList(list));
+  actions.appendChild(deleteBtn);
 
-  row.append(openBtn, deleteBtn);
+  row.append(openBtn, actions);
   li.appendChild(row);
   return li;
 }
@@ -637,6 +709,10 @@ function refreshVisibleView() {
     // isUrgentTabActive/refreshUrgentIfActive are defined in urgent.js,
     // resolved lazily the same way.
     refreshUrgentIfActive();
+  } else if (isSpacesTabActive()) {
+    // isSpacesTabActive/refreshSpacesIfActive are defined in spaces.js,
+    // resolved lazily the same way.
+    refreshSpacesIfActive();
   } else {
     loadDashboard();
   }
@@ -691,8 +767,14 @@ function removeList(list) {
 }
 
 // ---------------------------------------------------------------------------
-// "New list" modal
+// "New/edit list" modal — one shared modal for both, mirroring
+// spaces.js's openCategoryModal (editingList === null means "create").
 // ---------------------------------------------------------------------------
+
+// The list currently open in the modal for editing, or null when the modal
+// is in "create" mode — set by openListModal, read by createListForm's
+// submit handler.
+let editingList = null;
 
 function setListTypeSelection(value) {
   for (const label of els.typeOptions) {
@@ -712,9 +794,24 @@ function setListTypeSelection(value) {
   }
 }
 
-function openNewListModal() {
+// Opens the modal in create mode (list === null) or edit mode (prefilled
+// from an existing list, name/icon/type/custom_category_id all editable —
+// house_id stays fixed, matching PUT /api/v1/lists/{id} not accepting it).
+function openListModal(list) {
+  editingList = list || null;
+
   els.createListForm.reset();
-  setListTypeSelection('shopping');
+  els.listNameInput.value = list?.name || '';
+  els.listIconInput.value = list?.icon || '';
+  setListTypeSelection(list?.type || 'shopping');
+  els.newListModalTitle.textContent = t(editingList ? 'modals.newList.titleEdit' : 'modals.newList.titleCreate');
+  els.listSubmitButton.textContent = t(editingList ? 'modals.newList.submitEdit' : 'modals.newList.submitCreate');
+  // populateCategorySelect/loadCustomCategories are defined in spaces.js,
+  // resolved lazily the same way every other cross-file call in this file
+  // already is — refetching here (rather than trusting whatever spaces.js
+  // last cached) keeps the picker correct even if a category was created/
+  // deleted in another tab since the last time the Spaces tab was opened.
+  loadCustomCategories().then(() => populateCategorySelect(els.listCategorySelect, list?.custom_category_id ?? null));
   els.newListModal.hidden = false;
   document.body.classList.add('overflow-hidden');
   els.listNameInput.focus();
@@ -723,6 +820,7 @@ function openNewListModal() {
 function closeNewListModal() {
   els.newListModal.hidden = true;
   document.body.classList.remove('overflow-hidden');
+  editingList = null;
   els.newListButton.focus();
 }
 
@@ -730,13 +828,32 @@ for (const label of els.typeOptions) {
   label.querySelector('input').addEventListener('change', (event) => setListTypeSelection(event.target.value));
 }
 
-els.newListButton.addEventListener('click', openNewListModal);
+els.newListButton.addEventListener('click', () => openListModal(null));
 els.closeModalButton.addEventListener('click', closeNewListModal);
 els.newListModal.addEventListener('click', (event) => {
   if (event.target === els.newListModal) closeNewListModal();
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !els.newListModal.hidden) closeNewListModal();
+  // The category modal can open on top of this one (see the change listener
+  // below) — when it's the one currently visible, let its own Escape
+  // handler in spaces.js close just that one instead of both at once.
+  if (event.key === 'Escape' && !els.newListModal.hidden && spacesEls.categoryModal.hidden) closeNewListModal();
+});
+
+for (const button of els.listIconPresetButtons) {
+  button.addEventListener('click', () => {
+    els.listIconInput.value = button.dataset.listIconPreset;
+  });
+}
+
+// CREATE_CATEGORY_OPTION_VALUE is defined in spaces.js (the module that owns
+// custom categories) — selecting it here is a shortcut into the "new space"
+// modal without leaving the list-creation flow, the same sentinel-option
+// pattern els.houseSelect already uses for CREATE_HOUSE_OPTION_VALUE.
+els.listCategorySelect.addEventListener('change', (event) => {
+  if (event.target.value !== CREATE_CATEGORY_OPTION_VALUE) return;
+  event.target.value = '';
+  openCategoryModal(null, { onCreated: (category) => populateCategorySelect(els.listCategorySelect, category.id) });
 });
 
 els.createListForm.addEventListener('submit', async (event) => {
@@ -744,13 +861,33 @@ els.createListForm.addEventListener('submit', async (event) => {
   hideError();
 
   const name = els.listNameInput.value.trim();
+  const icon = els.listIconInput.value.trim();
   const type = els.newListModal.querySelector('input[name="list-type"]:checked')?.value || 'shopping';
-  if (!name || state.currentHouseId === null) return;
+  const categoryValue = els.listCategorySelect.value;
+  const customCategoryId = categoryValue && categoryValue !== CREATE_CATEGORY_OPTION_VALUE ? Number(categoryValue) : null;
+  if (!name) return;
 
   try {
-    await apiRequest('/lists', { method: 'POST', body: JSON.stringify({ name, type, house_id: state.currentHouseId }) });
+    const isEdit = editingList !== null;
+    if (isEdit) {
+      await apiRequest(`/lists/${editingList.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name, type, icon, custom_category_id: customCategoryId }),
+      });
+    } else {
+      if (state.currentHouseId === null) return;
+      await apiRequest('/lists', {
+        method: 'POST',
+        body: JSON.stringify({ name, type, icon, house_id: state.currentHouseId, custom_category_id: customCategoryId }),
+      });
+    }
     closeNewListModal();
     await loadDashboard();
+    await refreshSpacesIfActive();
+    // No-op if the currently open list detail view isn't the one just
+    // edited (refreshCurrentList is a no-op when state.currentListId is
+    // null) — see list_view.js.
+    await refreshCurrentList();
   } catch (err) {
     showError(err.message);
   }
@@ -844,6 +981,11 @@ async function init() {
   // loadNotifications is defined in notifications.js, resolved lazily the
   // same way every other cross-file call in this function already is.
   await loadNotifications();
+  // loadCustomCategories is defined in spaces.js — fetches the user's custom
+  // categories once at startup (and updates the "Espaces" tab's highlight
+  // dot as a side effect) so the tab reflects reality immediately, without
+  // waiting for it to be opened.
+  await loadCustomCategories();
 }
 
 // Re-render everything that embeds translated strings inside JS-generated

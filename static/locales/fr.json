@@ -1,6 +1,7 @@
 {
   "common": {
     "deleteList": "Supprimer {name}",
+    "editList": "Modifier {name}",
     "removeMember": "Retirer {email}"
   },
   "header": {
@@ -27,10 +28,16 @@
     "todoHeading": "Espaces Tâches",
     "customHeading": "Notes & Listes Libres",
     "createHouseOption": "+ Créer une Maison",
-    "tabLists": "Listes"
+    "tabLists": "Listes",
+    "listTypeShopping": "Achats",
+    "listTypeRecurring": "Récurrence",
+    "listTypeGroceries": "Courses",
+    "listTypeTodo": "Tâches",
+    "listTypeCustom": "Notes / Libre"
   },
   "items": {
     "back": "Retour au tableau de bord",
+    "editList": "Modifier la liste",
     "financeTotal": "Total estimé",
     "financeSpent": "Déjà dépensé",
     "financeRemaining": "Reste à dépenser",
@@ -94,19 +101,39 @@
     "markDoneAriaLabel": "Marquer « {title} » comme terminé",
     "openListLabel": "Ouvrir « {list} »"
   },
+  "spaces": {
+    "tabTitle": "Espaces",
+    "title": "Espaces personnalisés",
+    "subtitle": "Organisez vos listes par thème, au-delà de leur type.",
+    "newCategoryButton": "Nouvel espace",
+    "emptyTitle": "Aucun espace pour le moment",
+    "emptyHint": "Créez un espace pour regrouper vos listes de courses, tâches et notes par thème (ex. Homelab, Vacances...).",
+    "createButton": "Créer une catégorie personnalisée",
+    "listCount": "{count} liste(s)",
+    "emptyCategory": "Aucune liste dans cet espace pour le moment.",
+    "editAriaLabel": "Modifier l'espace « {name} »",
+    "deleteAriaLabel": "Supprimer l'espace « {name} »"
+  },
   "modals": {
     "close": "Fermer",
     "newList": {
-      "title": "Nouvelle liste",
+      "titleCreate": "Nouvelle liste",
+      "titleEdit": "Modifier la liste",
       "nameLabel": "Nom",
       "namePlaceholder": "Ex. Courses de la semaine",
+      "iconLabel": "Icône (emoji, optionnel)",
+      "iconPlaceholder": "🛒",
       "typeLabel": "Type",
       "typeGroceries": "Courses",
       "typeShopping": "Achats Ponctuels",
       "typeRecurring": "Abonnements & Récurrences",
       "typeTodo": "Tâches",
       "typeCustom": "Liste Libre / Notes",
-      "submit": "Créer la liste"
+      "categoryLabel": "Classer dans un espace",
+      "categoryNone": "Aucun",
+      "categoryCreateOption": "+ Créer un nouvel espace",
+      "submitCreate": "Créer la liste",
+      "submitEdit": "Enregistrer"
     },
     "newHouse": {
       "title": "Nouvelle Maison",
@@ -118,6 +145,18 @@
       "title": "Membres de la Maison",
       "invitePlaceholder": "Email de la personne à inviter",
       "inviteSubmit": "Inviter"
+    },
+    "newCategory": {
+      "titleCreate": "Nouvel espace",
+      "titleEdit": "Modifier l'espace",
+      "nameLabel": "Nom",
+      "namePlaceholder": "Ex. Homelab",
+      "iconLabel": "Icône (emoji)",
+      "iconPlaceholder": "🖥️",
+      "colorLabel": "Couleur",
+      "deleteButton": "Supprimer l'espace",
+      "submitCreate": "Créer l'espace",
+      "submitEdit": "Enregistrer"
     },
     "editItem": {
       "title": "Modifier l'article",
@@ -155,6 +194,7 @@
     "listDeleted": "Liste « {name} » supprimée",
     "itemDeleted": "« {title} » supprimé",
     "itemMarkedDone": "« {title} » marqué comme terminé",
-    "itemMarkedUndone": "« {title} » marqué comme à faire"
+    "itemMarkedUndone": "« {title} » marqué comme à faire",
+    "categoryDeleted": "Espace « {name} » supprimé"
   }
 }

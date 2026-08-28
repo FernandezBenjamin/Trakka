@@ -27,9 +27,14 @@ type List struct {
 	// GET /api/v1/lists/{id}) — nil whenever CustomCategoryID is nil, and
 	// never itself accepted on a create/update request.
 	CustomCategory *CustomCategory `json:"custom_category,omitempty"`
-	CreatedAt      string          `json:"created_at"`
-	UpdatedAt      string          `json:"updated_at"`
-	Items          []*Item         `json:"items,omitempty"`
+	// Icon is a short freeform string (typically an emoji) the frontend
+	// renders next to the list's name; "" means no icon was set, in which
+	// case the frontend falls back to a fixed icon for the list's Type (see
+	// LIST_TYPE_BADGE_META in static/js/app.js).
+	Icon      string  `json:"icon,omitempty"`
+	CreatedAt string  `json:"created_at"`
+	UpdatedAt string  `json:"updated_at"`
+	Items     []*Item `json:"items,omitempty"`
 }
 
 // Item represents a single entry within a List.

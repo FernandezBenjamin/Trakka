@@ -19,7 +19,7 @@ import (
 // with its category embedded, matching the API's documented shape for
 // GET /api/v1/lists and GET /api/v1/lists/{id}.
 const listSelect = `
-	SELECT lists.id, lists.house_id, lists.name, lists.type, lists.created_at, lists.updated_at, lists.custom_category_id,
+	SELECT lists.id, lists.house_id, lists.name, lists.type, lists.icon, lists.created_at, lists.updated_at, lists.custom_category_id,
 	       cc.id, cc.user_id, cc.name, cc.icon, cc.color, cc.position, cc.created_at
 	FROM lists LEFT JOIN custom_categories cc ON cc.id = lists.custom_category_id`
 
@@ -30,7 +30,7 @@ func scanListRow(row rowScanner) (*models.List, error) {
 	var catUserID sql.NullInt64
 	var catName, catIcon, catColor, catCreatedAt sql.NullString
 	var catPosition sql.NullInt64
-	if err := row.Scan(&l.ID, &l.HouseID, &l.Name, &l.Type, &l.CreatedAt, &l.UpdatedAt, &customCategoryID,
+	if err := row.Scan(&l.ID, &l.HouseID, &l.Name, &l.Type, &l.Icon, &l.CreatedAt, &l.UpdatedAt, &customCategoryID,
 		&catID, &catUserID, &catName, &catIcon, &catColor, &catPosition, &catCreatedAt); err != nil {
 		return nil, err
 	}
@@ -98,11 +98,12 @@ func (d *DB) ListListsForUser(ctx context.Context, userID int64, typeFilter stri
 // row. customCategoryID optionally attaches it to one of the caller's
 // CustomCategory "spaces" (nil leaves it unattached) — the caller
 // (internal/handlers) is expected to have already validated that it
-// references a category the requesting user owns.
-func (d *DB) CreateList(ctx context.Context, name, listType string, houseID int64, customCategoryID *int64) (*models.List, error) {
+// references a category the requesting user owns. icon is a freeform
+// display icon (typically an emoji); "" means none was set.
+func (d *DB) CreateList(ctx context.Context, name, listType string, houseID int64, customCategoryID *int64, icon string) (*models.List, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`INSERT INTO lists (name, type, house_id, custom_category_id) VALUES (?, ?, ?, ?)`,
-		name, listType, houseID, customCategoryID)
+		`INSERT INTO lists (name, type, house_id, custom_category_id, icon) VALUES (?, ?, ?, ?, ?)`,
+		name, listType, houseID, customCategoryID, icon)
 	if err != nil {
 		return nil, fmt.Errorf("inserting list: %w", err)
 	}
@@ -128,12 +129,13 @@ func (d *DB) GetList(ctx context.Context, id int64) (*models.List, error) {
 	return l, nil
 }
 
-// UpdateList replaces a list's name, type, and custom category association
-// (nil dissociates it). Returns ErrNotFound if no such list exists.
-func (d *DB) UpdateList(ctx context.Context, id int64, name, listType string, customCategoryID *int64) (*models.List, error) {
+// UpdateList replaces a list's name, type, icon, and custom category
+// association (nil dissociates it). Returns ErrNotFound if no such list
+// exists.
+func (d *DB) UpdateList(ctx context.Context, id int64, name, listType string, customCategoryID *int64, icon string) (*models.List, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`UPDATE lists SET name = ?, type = ?, custom_category_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
-		name, listType, customCategoryID, id)
+		`UPDATE lists SET name = ?, type = ?, custom_category_id = ?, icon = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		name, listType, customCategoryID, icon, id)
 	if err != nil {
 		return nil, fmt.Errorf("updating list %d: %w", id, err)
 	}

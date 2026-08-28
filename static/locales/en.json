@@ -1,6 +1,7 @@
 {
   "common": {
     "deleteList": "Delete {name}",
+    "editList": "Edit {name}",
     "removeMember": "Remove {email}"
   },
   "header": {
@@ -27,10 +28,16 @@
     "todoHeading": "Task Spaces",
     "customHeading": "Notes & Free Lists",
     "createHouseOption": "+ Create a House",
-    "tabLists": "Lists"
+    "tabLists": "Lists",
+    "listTypeShopping": "Shopping",
+    "listTypeRecurring": "Recurring",
+    "listTypeGroceries": "Groceries",
+    "listTypeTodo": "Tasks",
+    "listTypeCustom": "Notes / Free"
   },
   "items": {
     "back": "Back to dashboard",
+    "editList": "Edit list",
     "financeTotal": "Estimated total",
     "financeSpent": "Already spent",
     "financeRemaining": "Remaining to spend",
@@ -94,19 +101,39 @@
     "markDoneAriaLabel": "Mark \"{title}\" as done",
     "openListLabel": "Open \"{list}\""
   },
+  "spaces": {
+    "tabTitle": "Spaces",
+    "title": "Custom Spaces",
+    "subtitle": "Organize your lists by theme, beyond their type.",
+    "newCategoryButton": "New space",
+    "emptyTitle": "No spaces yet",
+    "emptyHint": "Create a space to group your shopping, task and note lists by theme (e.g. Homelab, Vacation...).",
+    "createButton": "Create a custom category",
+    "listCount": "{count} list(s)",
+    "emptyCategory": "No lists in this space yet.",
+    "editAriaLabel": "Edit space \"{name}\"",
+    "deleteAriaLabel": "Delete space \"{name}\""
+  },
   "modals": {
     "close": "Close",
     "newList": {
-      "title": "New list",
+      "titleCreate": "New list",
+      "titleEdit": "Edit list",
       "nameLabel": "Name",
       "namePlaceholder": "E.g. Weekly groceries",
+      "iconLabel": "Icon (emoji, optional)",
+      "iconPlaceholder": "🛒",
       "typeLabel": "Type",
       "typeGroceries": "Groceries",
       "typeShopping": "One-off Purchases",
       "typeRecurring": "Subscriptions & Recurring",
       "typeTodo": "Tasks",
       "typeCustom": "Free List / Notes",
-      "submit": "Create list"
+      "categoryLabel": "Classify into a space",
+      "categoryNone": "None",
+      "categoryCreateOption": "+ Create a new space",
+      "submitCreate": "Create list",
+      "submitEdit": "Save"
     },
     "newHouse": {
       "title": "New House",
@@ -118,6 +145,18 @@
       "title": "House Members",
       "invitePlaceholder": "Email of the person to invite",
       "inviteSubmit": "Invite"
+    },
+    "newCategory": {
+      "titleCreate": "New space",
+      "titleEdit": "Edit space",
+      "nameLabel": "Name",
+      "namePlaceholder": "E.g. Homelab",
+      "iconLabel": "Icon (emoji)",
+      "iconPlaceholder": "🖥️",
+      "colorLabel": "Color",
+      "deleteButton": "Delete space",
+      "submitCreate": "Create space",
+      "submitEdit": "Save"
     },
     "editItem": {
       "title": "Edit item",
@@ -155,6 +194,7 @@
     "listDeleted": "List \"{name}\" deleted",
     "itemDeleted": "\"{title}\" deleted",
     "itemMarkedDone": "\"{title}\" marked as done",
-    "itemMarkedUndone": "\"{title}\" marked as not done"
+    "itemMarkedUndone": "\"{title}\" marked as not done",
+    "categoryDeleted": "Space \"{name}\" deleted"
   }
 }

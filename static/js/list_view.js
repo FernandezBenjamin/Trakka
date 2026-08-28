@@ -11,6 +11,7 @@ const listEls = {
   itemsSection: document.getElementById('items-section'),
   itemsHeading: document.getElementById('items-heading'),
   backButton: document.getElementById('back-button'),
+  editListButton: document.getElementById('edit-list-button'),
   financeTotal: document.getElementById('finance-total'),
   financeSpent: document.getElementById('finance-spent'),
   financeRemaining: document.getElementById('finance-remaining'),
@@ -461,7 +462,9 @@ function renderItems() {
   const list = state.currentList;
   if (!list) return;
 
-  listEls.itemsHeading.textContent = `${list.name} (${typeLabel(list.type)})`;
+  // listIcon is defined in app.js — a list's own icon, falling back to a
+  // fixed icon for its type, same as every list card on the dashboard.
+  listEls.itemsHeading.textContent = `${listIcon(list)} ${list.name} (${typeLabel(list.type)})`;
   applyListTypeVisibility(list.type);
 
   // Items mid-undo-grace-period (see removeItem below) stay in
@@ -776,6 +779,12 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
 listEls.backButton.addEventListener('click', () => {
   hideError();
   showDashboard();
+});
+
+// openListModal is defined in app.js, resolved lazily the same way every
+// other cross-file call in this file already is.
+listEls.editListButton.addEventListener('click', () => {
+  if (state.currentList) openListModal(state.currentList);
 });
 
 // ---------------------------------------------------------------------------

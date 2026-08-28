@@ -84,7 +84,7 @@ func TestListCustomCategoryAssociation(t *testing.T) {
 		t.Fatalf("CreateCustomCategory: %v", err)
 	}
 
-	list, err := d.CreateList(ctx, "Courses de vacances", "shopping", house.ID, &category.ID)
+	list, err := d.CreateList(ctx, "Courses de vacances", "shopping", house.ID, &category.ID, "")
 	if err != nil {
 		t.Fatalf("CreateList: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestListCustomCategoryAssociation(t *testing.T) {
 	}
 
 	// Dissociating via UpdateList (nil) clears both the id and the embed.
-	dissociated, err := d.UpdateList(ctx, list.ID, list.Name, list.Type, nil)
+	dissociated, err := d.UpdateList(ctx, list.ID, list.Name, list.Type, nil, list.Icon)
 	if err != nil {
 		t.Fatalf("UpdateList (dissociate): %v", err)
 	}
@@ -122,7 +122,7 @@ func TestListCustomCategoryAssociation(t *testing.T) {
 
 	// Re-associate, then delete the category: the list must survive with
 	// custom_category_id reset to NULL (ON DELETE SET NULL), not cascade.
-	reassociated, err := d.UpdateList(ctx, list.ID, list.Name, list.Type, &category.ID)
+	reassociated, err := d.UpdateList(ctx, list.ID, list.Name, list.Type, &category.ID, list.Icon)
 	if err != nil {
 		t.Fatalf("UpdateList (re-associate): %v", err)
 	}
