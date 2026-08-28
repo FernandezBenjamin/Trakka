@@ -63,6 +63,11 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("POST /api/v1/houses/{id}/members", app.handleHouseMembersInvite)
 	apiMux.HandleFunc("DELETE /api/v1/houses/{id}/members/{userId}", app.handleHouseMembersRemove)
 
+	apiMux.HandleFunc("GET /api/v1/custom-categories", app.handleCustomCategoriesIndex)
+	apiMux.HandleFunc("POST /api/v1/custom-categories", app.handleCustomCategoriesCreate)
+	apiMux.HandleFunc("PUT /api/v1/custom-categories/{id}", app.handleCustomCategoriesUpdate)
+	apiMux.HandleFunc("DELETE /api/v1/custom-categories/{id}", app.handleCustomCategoriesDelete)
+
 	apiMux.HandleFunc("GET /api/v1/lists", app.handleListsIndex)
 	apiMux.HandleFunc("POST /api/v1/lists", app.handleListsCreate)
 	apiMux.HandleFunc("GET /api/v1/lists/{id}", app.handleListsShow)

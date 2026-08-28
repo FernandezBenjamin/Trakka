@@ -40,9 +40,10 @@ func (app *Application) handleListsIndex(w http.ResponseWriter, r *http.Request)
 
 func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Name    string `json:"name"`
-		Type    string `json:"type"`
-		HouseID int64  `json:"house_id"`
+		Name             string `json:"name"`
+		Type             string `json:"type"`
+		HouseID          int64  `json:"house_id"`
+		CustomCategoryID *int64 `json:"custom_category_id"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -74,13 +75,38 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 	if !app.authorizeHouseAccess(w, r, in.HouseID) {
 		return
 	}
+	if !app.validateCustomCategoryOwnership(w, r, in.CustomCategoryID) {
+		return
+	}
 
-	list, err := app.DB.CreateList(r.Context(), in.Name, in.Type, in.HouseID)
+	list, err := app.DB.CreateList(r.Context(), in.Name, in.Type, in.HouseID, in.CustomCategoryID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, list)
+}
+
+// validateCustomCategoryOwnership writes a 400 and returns false if id is
+// non-nil but doesn't reference a category owned by the caller (or is
+// non-positive). A nil id (meaning "leave unattached"/"dissociate") is
+// always valid and returns true without a lookup.
+func (app *Application) validateCustomCategoryOwnership(w http.ResponseWriter, r *http.Request, id *int64) bool {
+	if id == nil {
+		return true
+	}
+	if *id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid custom_category_id")
+		return false
+	}
+	if _, err := app.DB.GetCustomCategoryForUser(r.Context(), *id, userFromContext(r).ID); errors.Is(err, db.ErrNotFound) {
+		writeError(w, http.StatusBadRequest, "custom_category_id does not reference a category you own")
+		return false
+	} else if err != nil {
+		app.serverError(w, r, err)
+		return false
+	}
+	return true
 }
 
 func (app *Application) handleListsShow(w http.ResponseWriter, r *http.Request) {
@@ -130,8 +156,9 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 	}
 
 	var in struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
+		Name             string `json:"name"`
+		Type             string `json:"type"`
+		CustomCategoryID *int64 `json:"custom_category_id"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -149,8 +176,11 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "type must be one of 'todo', 'shopping', 'groceries', 'recurring_shopping', 'custom'")
 		return
 	}
+	if !app.validateCustomCategoryOwnership(w, r, in.CustomCategoryID) {
+		return
+	}
 
-	list, err := app.DB.UpdateList(r.Context(), id, in.Name, in.Type)
+	list, err := app.DB.UpdateList(r.Context(), id, in.Name, in.Type, in.CustomCategoryID)
 	if errors.Is(err, db.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "list not found")
 		return

@@ -28,7 +28,7 @@ func TestUpdateItemPriceIfMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating house: %v", err)
 	}
-	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID)
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil)
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestUpdateItemImageIfMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating house: %v", err)
 	}
-	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID)
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil)
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestRecurringItemPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating house: %v", err)
 	}
-	list, err := d.CreateList(ctx, "Tâches", "todo", house.ID)
+	list, err := d.CreateList(ctx, "Tâches", "todo", house.ID, nil)
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestUrgentItemPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating house: %v", err)
 	}
-	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID)
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil)
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}

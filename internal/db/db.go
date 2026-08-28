@@ -103,6 +103,18 @@ func Open(path string) (*DB, error) {
 	if err := migrateListsTypeCheck(conn); err != nil {
 		return nil, fmt.Errorf("migrating lists.type constraint: %w", err)
 	}
+	// Must run after migrateListsTypeCheck: that migration rebuilds the
+	// lists table (on a database old enough to still need it) by copying
+	// only a fixed, hard-coded set of columns — if custom_category_id
+	// already existed by that point, the rebuild would silently drop it.
+	// Running this after guarantees the column simply doesn't exist yet
+	// when/if that rebuild happens, so there's nothing for it to lose.
+	if err := addColumnIfMissing(conn, "lists", "custom_category_id", "INTEGER REFERENCES custom_categories(id) ON DELETE SET NULL"); err != nil {
+		return nil, fmt.Errorf("migrating lists table: %w", err)
+	}
+	if _, err := conn.Exec(`CREATE INDEX IF NOT EXISTS idx_lists_custom_category_id ON lists(custom_category_id)`); err != nil {
+		return nil, fmt.Errorf("creating lists.custom_category_id index: %w", err)
+	}
 	if err := ensureDefaultHouse(conn); err != nil {
 		return nil, fmt.Errorf("seeding default house: %w", err)
 	}

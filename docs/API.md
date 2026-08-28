@@ -150,9 +150,53 @@ Removes a member. A user may always remove **themselves** ("leave house") regard
 
 `204` on success. `403` if the caller lacks permission. `404` if the target user isn't a member.
 
+## Custom categories
+
+A custom category ("Space") is a personal, freeform way to organize lists beyond the fixed `type` enum — e.g. "Vacances", "Anniversaire de Léo". Unlike a house, a category belongs to exactly one user (whoever created it), not to every house member; any member of a list's house can see a category attached to it, but only its owner can rename, restyle, reorder, or delete it. See [docs/DATABASE.md](DATABASE.md#custom_categories).
+
+### `GET /api/v1/custom-categories`
+
+Returns the caller's own categories, ordered by `position` then `id`.
+
+```bash
+curl -b cookies.txt http://localhost:8080/api/v1/custom-categories
+```
+
+```json
+[
+  { "id": 1, "user_id": 1, "name": "Vacances", "icon": "🏖️", "color": "#3366ff", "position": 0, "created_at": "..." }
+]
+```
+
+### `POST /api/v1/custom-categories`
+
+```bash
+curl -X POST http://localhost:8080/api/v1/custom-categories \
+  -b cookies.txt -d '{"name": "Vacances", "icon": "🏖️", "color": "#3366ff"}'
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | yes | trimmed; `400` if empty |
+| `icon` | string | no | freeform, trimmed; typically an emoji |
+| `color` | string | no | must be a 3- or 6-digit hex color (`#RGB`/`#RRGGBB`) if given, else `400`; empty is stored as `""` (no color) |
+| `position` | integer | no | defaults to `0`; used for manual ordering |
+
+`201` with the created category, owned by the caller.
+
+### `PUT /api/v1/custom-categories/{id}`
+
+Full replace (same fields/validation as `POST`), scoped to categories the caller owns. `404` if the id doesn't exist **or** belongs to a different user — a category can only ever be found by its owner, so the two cases aren't distinguished.
+
+### `DELETE /api/v1/custom-categories/{id}`
+
+`204` on success, scoped to the caller's own categories the same way `PUT` is (`404` otherwise). Any list attached to the deleted category has its `custom_category_id` reset to `null` (`ON DELETE SET NULL`) — the list itself is untouched.
+
 ## Lists
 
 A list has a `type` of `todo`, `shopping`, `groceries`, `recurring_shopping` or `custom`, and belongs to exactly one house (`house_id`). `shopping` (one-off purchases), `groceries` (day-to-day shopping runs) and `recurring_shopping` (subscriptions/recurring purchases) are all purchase-oriented types stored the same way — the frontend just shows a different subset of the item form's fields depending on which one a list has (see `static/js/list_view.js`'s `applyListTypeVisibility`): `groceries` shows only name/quantity, `shopping` adds URL/price/target month, `recurring_shopping` adds URL/price/recurrence instead of a target month. `custom` is accepted by the API for forward compatibility but has no dedicated item-form behavior yet.
+
+A list can optionally be attached to one of its house members' [custom categories](#custom-categories) via `custom_category_id` — see `POST`/`PUT` below. It's orthogonal to `type`: a `shopping` list and a `todo` list can both belong to the same "Vacances" category.
 
 ### `GET /api/v1/lists`
 
@@ -170,9 +214,14 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists?house_id=1
 
 ```json
 [
-  { "id": 1, "house_id": 1, "name": "Courses", "type": "shopping", "created_at": "...", "updated_at": "..." }
+  { "id": 1, "house_id": 1, "name": "Courses", "type": "shopping", "created_at": "...", "updated_at": "..." },
+  { "id": 2, "house_id": 1, "name": "Courses de vacances", "type": "shopping", "custom_category_id": 1,
+    "custom_category": { "id": 1, "user_id": 1, "name": "Vacances", "icon": "🏖️", "color": "#3366ff", "position": 0, "created_at": "..." },
+    "created_at": "...", "updated_at": "..." }
 ]
 ```
+
+`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories).
 
 ### `POST /api/v1/lists`
 
@@ -186,6 +235,7 @@ curl -X POST http://localhost:8080/api/v1/lists \
 | `name` | string | yes | trimmed; `400` if empty |
 | `type` | string | no | `shopping` (default), `todo`, `groceries`, `recurring_shopping` or `custom`; `400` if anything else |
 | `house_id` | integer | yes | must reference an existing house, else `400` |
+| `custom_category_id` | integer | no | must reference a [custom category](#custom-categories) owned by the caller, else `400`; omitted/`null` leaves the list unattached |
 
 `201` with the created list (no `items` field).
 
@@ -207,7 +257,7 @@ Returns the list **with its items embedded**, ordered by `position` then `id`.
 
 ### `PUT /api/v1/lists/{id}`
 
-Full replace of `name` and `type` (same validation as `POST`). `house_id` cannot be changed via this endpoint. Returns the updated list (no `items`). `404` if not found, `403` if the caller isn't a member of the list's house.
+Full replace of `name`, `type`, and `custom_category_id` (same validation as `POST`; omitting/nulling `custom_category_id` **dissociates** the list from whatever category it had, since this is a full replace). `house_id` cannot be changed via this endpoint. Returns the updated list (no `items`). `404` if not found, `403` if the caller isn't a member of the list's house, `400` if `custom_category_id` is given but doesn't reference a category the caller owns.
 
 ### `DELETE /api/v1/lists/{id}`
 

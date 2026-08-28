@@ -120,6 +120,37 @@ CREATE TABLE IF NOT EXISTS price_alerts (
 CREATE INDEX IF NOT EXISTS idx_price_alerts_item_id ON price_alerts(item_id);
 CREATE INDEX IF NOT EXISTS idx_price_alerts_status ON price_alerts(status);
 
+-- Per-user custom categories ("Spaces") for organizing lists beyond the
+-- fixed lists.type enum — e.g. "Vacances", "Anniversaire de Léo". Owned by a
+-- single user (user_id), unlike houses/lists which are shared: two members
+-- of the same house each keep their own personal set of categories, and a
+-- category attached to a shared list stays only editable/deletable by
+-- whoever created it (see internal/handlers/categories.go's ownership
+-- check). A brand new table, so (like price_alerts/system_settings above)
+-- it needs no addColumnIfMissing guard — CREATE TABLE IF NOT EXISTS alone
+-- is enough for it to appear on an existing /data/trakka.db the same way it
+-- does on a fresh one.
+CREATE TABLE IF NOT EXISTS custom_categories (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    icon       TEXT NOT NULL DEFAULT '',
+    color      TEXT NOT NULL DEFAULT '',
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_categories_user_id ON custom_categories(user_id);
+
+-- lists.custom_category_id is not part of the `lists` CREATE TABLE above —
+-- same reasoning as lists.house_id: it's applied via the
+-- addColumnIfMissing() guard in internal/db/db.go, run after both this
+-- table and migrateListsTypeCheck() exist/have run (see the comment at that
+-- call site for why the ordering matters). ON DELETE SET NULL (rather than
+-- CASCADE, like lists.house_id) is deliberate: deleting a custom category
+-- should just unassign it from any list that used it, not delete the list
+-- itself.
+
 -- Dynamic runtime settings (OIDC configuration, open/closed registration,
 -- instance name) that take priority over their equivalent environment
 -- variable whenever a row exists here — see internal/settings.Resolve.

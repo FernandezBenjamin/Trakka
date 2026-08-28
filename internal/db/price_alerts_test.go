@@ -11,7 +11,7 @@ func setupPriceAlertItem(t *testing.T, ctx context.Context, d *DB, price float64
 	if err != nil {
 		t.Fatalf("creating house: %v", err)
 	}
-	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID)
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil)
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestListItemsForPriceScan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating house: %v", err)
 	}
-	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID)
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil)
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}

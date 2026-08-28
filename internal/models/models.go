@@ -12,13 +12,24 @@ type House struct {
 
 // List represents a shopping or to-do list.
 type List struct {
-	ID        int64   `json:"id"`
-	HouseID   int64   `json:"house_id"`
-	Name      string  `json:"name"`
-	Type      string  `json:"type"`
-	CreatedAt string  `json:"created_at"`
-	UpdatedAt string  `json:"updated_at"`
-	Items     []*Item `json:"items,omitempty"`
+	ID      int64  `json:"id"`
+	HouseID int64  `json:"house_id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	// CustomCategoryID optionally attaches this list to one of its owner's
+	// CustomCategory "spaces" (nil means unattached, the default). Any house
+	// member may associate/dissociate it via POST/PUT /api/v1/lists, but
+	// the id must reference a category owned by the caller making that
+	// request — see internal/handlers.handleListsCreate/handleListsUpdate.
+	CustomCategoryID *int64 `json:"custom_category_id,omitempty"`
+	// CustomCategory is the embedded category row for CustomCategoryID,
+	// populated only by reads that join it in (GET /api/v1/lists and
+	// GET /api/v1/lists/{id}) — nil whenever CustomCategoryID is nil, and
+	// never itself accepted on a create/update request.
+	CustomCategory *CustomCategory `json:"custom_category,omitempty"`
+	CreatedAt      string          `json:"created_at"`
+	UpdatedAt      string          `json:"updated_at"`
+	Items          []*Item         `json:"items,omitempty"`
 }
 
 // Item represents a single entry within a List.
@@ -197,4 +208,27 @@ var ValidPriceAlertStatuses = map[string]bool{
 	"pending":  true,
 	"accepted": true,
 	"rejected": true,
+}
+
+// CustomCategory is a personal "space"/category a user can attach to any
+// list (via List.CustomCategoryID), purely for their own organization
+// (e.g. "Vacances", "Anniversaire de Léo") — orthogonal to the fixed
+// List.Type enum, and not shared the way a house is: it belongs to exactly
+// one user (UserID). Other members of a house the category's list belongs
+// to can still see it (it's embedded in GET /api/v1/lists) but only its
+// owner can rename, restyle, reorder, or delete it — see
+// internal/handlers/categories.go.
+type CustomCategory struct {
+	ID     int64  `json:"id"`
+	UserID int64  `json:"user_id"`
+	Name   string `json:"name"`
+	// Icon is a short freeform string (typically an emoji) the frontend
+	// renders next to the category name; "" means no icon was set.
+	Icon string `json:"icon,omitempty"`
+	// Color is a hex color (validated by internal/validate.Color) used as
+	// an accent color wherever the category is shown; "" means no color
+	// was set.
+	Color     string `json:"color,omitempty"`
+	Position  int    `json:"position"`
+	CreatedAt string `json:"created_at"`
 }
