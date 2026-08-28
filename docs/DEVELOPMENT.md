@@ -32,6 +32,19 @@ go mod tidy                       # sync go.mod/go.sum after adding/removing imp
 
 There is currently no automated test suite (`go test ./...` finds nothing to run).
 
+## Preventing committed secrets
+
+CI (`.github/workflows/ci.yml`'s `security-scan` job) runs [gitleaks](https://github.com/gitleaks/gitleaks) against the full commit history on every push/PR and fails the build if it finds anything that looks like a credential — see [CLAUDE.md](../CLAUDE.md#cicd--sécurité) for the full pipeline design. That's the authoritative gate; nothing gets merged without passing it.
+
+For faster local feedback before you even push, this repo ships an optional pre-commit hook (`.githooks/pre-commit`) that runs `gitleaks protect --staged` against just the staged diff. It isn't enabled by default — git hooks in `.git/hooks` aren't tracked by git, so `.githooks/` is a tracked stand-in you opt into once per clone:
+
+```bash
+go install github.com/zricethezav/gitleaks/v8@v8.28.0   # match GITLEAKS_VERSION in ci.yml
+git config core.hooksPath .githooks
+```
+
+If gitleaks isn't installed, the hook prints a reminder and lets the commit through rather than blocking it — CI still catches anything it would have caught. Make sure `$(go env GOPATH)/bin` is on your `PATH` (or the hook falls back to checking that path directly), since that's where `go install` puts the binary.
+
 ## Manual smoke test
 
 A quick end-to-end check against a running instance. Every `/api/v1/...` call now requires a session, so register/log in first and reuse a cookie jar:

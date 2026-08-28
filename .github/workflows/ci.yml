@@ -58,6 +58,7 @@ env:
   GOVULNCHECK_VERSION: v1.7.0
   GOSEC_VERSION: v2.29.0
   GOLANGCI_LINT_VERSION: v2.13.2
+  GITLEAKS_VERSION: v8.28.0
 
 jobs:
   # -------------------------------------------------------------------------
@@ -137,7 +138,7 @@ jobs:
   # 3) Security scans: native Go vuln scan, Go SAST, dependency CVEs
   # -------------------------------------------------------------------------
   security-scan:
-    name: Security scan (govulncheck, gosec, Trivy deps)
+    name: Security scan (govulncheck, gosec, Trivy deps, gitleaks)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -146,6 +147,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # gitleaks below scans the full commit history, not just the tree
+          # at HEAD — that needs every commit, not the default shallow
+          # (fetch-depth: 1) clone every other job in this workflow uses.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -192,6 +198,24 @@ jobs:
         with:
           sarif_file: trivy-fs-results.sarif
           category: trivy-fs
+
+      - name: Install gitleaks
+        run: go install github.com/zricethezav/gitleaks/v8@${{ env.GITLEAKS_VERSION }}
+
+      - name: "Run gitleaks (secret scan: full git history + working tree)"
+        # Scans every commit reachable from HEAD (not just the files
+        # currently on disk), since a secret removed in a later commit is
+        # still compromised for good — the fetch-depth: 0 checkout above is
+        # what makes that actually possible in CI. --redact keeps the raw
+        # secret value out of both the job log and the uploaded SARIF.
+        run: gitleaks detect --source . --redact --report-format sarif --report-path gitleaks-results.sarif --exit-code 1
+
+      - name: Upload gitleaks SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          sarif_file: gitleaks-results.sarif
+          category: gitleaks
 
   # -------------------------------------------------------------------------
   # 4) Build (multi-arch) -> scan the image -> push to GHCR -> attest
