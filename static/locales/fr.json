@@ -72,7 +72,8 @@
     "totalLabel": "Total prévu sur la période",
     "emptyMonth": "Aucun achat prévu ce mois-ci.",
     "unscheduled": "— Non planifié —",
-    "moveAriaLabel": "Déplacer {title} vers un autre mois"
+    "moveAriaLabel": "Déplacer {title} vers un autre mois",
+    "occurrenceCount": "× {n}"
   },
   "notifications": {
     "button": "Bons plans détectés",

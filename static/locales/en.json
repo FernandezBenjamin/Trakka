@@ -72,7 +72,8 @@
     "totalLabel": "Total planned for the period",
     "emptyMonth": "No purchases planned this month.",
     "unscheduled": "— Unscheduled —",
-    "moveAriaLabel": "Move {title} to a different month"
+    "moveAriaLabel": "Move {title} to a different month",
+    "occurrenceCount": "× {n}"
   },
   "notifications": {
     "button": "Deals detected",
