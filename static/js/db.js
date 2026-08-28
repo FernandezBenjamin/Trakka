@@ -8,12 +8,13 @@
 // same implementation reachable from both places.
 (function () {
   const DB_NAME = 'trakka';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
 
   const STORE_HOUSES = 'houses';
   const STORE_LISTS = 'lists';
   const STORE_ITEMS = 'items';
   const STORE_QUEUE = 'queue';
+  const STORE_CUSTOM_CATEGORIES = 'custom_categories';
 
   let dbPromise = null;
 
@@ -39,10 +40,28 @@
         if (!db.objectStoreNames.contains(STORE_QUEUE)) {
           db.createObjectStore(STORE_QUEUE, { keyPath: 'id', autoIncrement: true });
         }
+        // v3: mirror of GET /api/v1/custom-categories, added so the
+        // "Espaces" tab (static/js/spaces.js) has something to show while
+        // offline — same read-through mirror pattern as houses/lists/items.
+        if (!db.objectStoreNames.contains(STORE_CUSTOM_CATEGORIES)) {
+          db.createObjectStore(STORE_CUSTOM_CATEGORIES, { keyPath: 'id' });
+        }
       };
 
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      request.onerror = () => {
+        // Don't memoize a permanently-rejected promise: every read/write
+        // helper below shares this same cached dbPromise, so a transient
+        // failure here (a browser hiccup, a version-upgrade conflict with
+        // another open tab, ...) would otherwise disable the entire
+        // IndexedDB mirror — and with it every offline fallback in
+        // app.js/list_view.js/planning.js/urgent.js/spaces.js — for the rest
+        // of this page's lifetime. Clearing it lets the next open() call
+        // retry with a fresh request instead of replaying the same failure
+        // forever.
+        dbPromise = null;
+        reject(request.error);
+      };
     });
 
     return dbPromise;
@@ -209,6 +228,35 @@
     return deleteOne(STORE_QUEUE, id);
   }
 
+  // ---- Custom categories ("Spaces") mirror --------------------------------
+  //
+  // Same read-through mirror pattern as houses/lists/items: kept up to date
+  // by the service worker on every successful GET/POST/PUT/DELETE against
+  // /api/v1/custom-categories, so the "Espaces" tab still has something to
+  // show while offline instead of going blank. There is no offline-write
+  // support for categories (unlike lists/items) — see sw.js's
+  // queueOfflineWrite — so this mirror is purely a read fallback.
+
+  function getCustomCategories() {
+    return getAll(STORE_CUSTOM_CATEGORIES);
+  }
+
+  function putCustomCategories(categories) {
+    return putMany(STORE_CUSTOM_CATEGORIES, categories);
+  }
+
+  function getCustomCategory(id) {
+    return getOne(STORE_CUSTOM_CATEGORIES, id);
+  }
+
+  function putCustomCategory(category) {
+    return putOne(STORE_CUSTOM_CATEGORIES, category);
+  }
+
+  function deleteCustomCategory(id) {
+    return deleteOne(STORE_CUSTOM_CATEGORIES, id);
+  }
+
   self.TrakkaDB = {
     getHouses,
     putHouses,
@@ -231,5 +279,10 @@
     getQueue,
     updateQueueEntry,
     dequeue,
+    getCustomCategories,
+    putCustomCategories,
+    getCustomCategory,
+    putCustomCategory,
+    deleteCustomCategory,
   };
 })();

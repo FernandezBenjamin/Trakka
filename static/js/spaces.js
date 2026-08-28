@@ -63,19 +63,34 @@ let categoryCreatedCallback = null;
 const CHEVRON_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 transition-transform group-open:rotate-90" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
 
+// Reads the IndexedDB custom-categories mirror, defaulting to [] whenever
+// the module isn't available or the read itself fails — same shape as
+// app.js's cachedHouses/cachedDashboardLists fallbacks.
+async function cachedCustomCategories() {
+  if (!window.TrakkaDB) return [];
+  try {
+    return await window.TrakkaDB.getCustomCategories();
+  } catch {
+    return [];
+  }
+}
+
 // Fetches the caller's custom categories and updates the "Espaces" tab's
 // highlight dot as a side effect — called at startup (app.js's init), every
 // time the Spaces tab is opened, and before the "new list" modal's category
-// picker is populated, so all three stay in sync with the latest set.
-// Errors are swallowed (falling back to []) rather than shown via the error
-// banner: this is a background/supporting fetch, not the user's primary
-// action — loadSpacesView below surfaces its own error for the tab's main
-// fetch (the house's lists) instead.
+// picker is populated, so all three stay in sync with the latest set. On
+// failure (offline, or a transient server error) falls back to whatever the
+// IndexedDB mirror last saw rather than wiping the tab's highlight dot and
+// the category picker — see the Offline-First requirement in
+// CLAUDE.md/docs/PWA.md. Errors are otherwise swallowed rather than shown
+// via the error banner: this is a background/supporting fetch, not the
+// user's primary action — loadSpacesView below surfaces its own error for
+// the tab's main fetch (the house's lists) instead.
 async function loadCustomCategories() {
   try {
     customCategories = await apiRequest('/custom-categories');
   } catch {
-    customCategories = [];
+    customCategories = await cachedCustomCategories();
   }
   updateSpacesTabBadge();
   return customCategories;
@@ -139,8 +154,15 @@ async function loadSpacesView() {
       categorized.map((list) => apiRequest(`/lists/${list.id}`).catch(() => ({ ...list, items: [] })))
     );
   } catch (err) {
-    showError(err.message);
-    spacesLists = [];
+    // Offline, or a transient server error: fall back to the IndexedDB
+    // mirror (cachedDashboardLists, defined in app.js) instead of emptying
+    // every space — see the Offline-First requirement in
+    // CLAUDE.md/docs/PWA.md. A plain connectivity failure stays silent (the
+    // header's network badge already says "Hors-ligne"); only a genuine
+    // server-side error still raises the banner.
+    const cached = await cachedDashboardLists(state.currentHouseId);
+    spacesLists = cached.filter((list) => list.custom_category_id);
+    if (!isNetworkError(err)) showError(err.message);
   }
   renderSpaces();
 }

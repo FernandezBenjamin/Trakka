@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's/CDN_ASSETS' contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v21';
-const RUNTIME_CACHE = 'trakka-runtime-v21';
+const SHELL_CACHE = 'trakka-shell-v22';
+const RUNTIME_CACHE = 'trakka-runtime-v22';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -247,6 +247,8 @@ async function mirrorReadResponse(url, response) {
     if (Array.isArray(items)) await self.TrakkaDB.putItems(items);
   } else if (url.pathname === '/api/v1/items' && Array.isArray(data)) {
     await self.TrakkaDB.putItems(data);
+  } else if (url.pathname === '/api/v1/custom-categories' && Array.isArray(data)) {
+    await self.TrakkaDB.putCustomCategories(data);
   }
 }
 
@@ -279,6 +281,11 @@ async function offlineReadFallback(url) {
     return new Response(JSON.stringify(items), { status: 200, headers });
   }
 
+  if (url.pathname === '/api/v1/custom-categories') {
+    const categories = await self.TrakkaDB.getCustomCategories();
+    return new Response(JSON.stringify(categories), { status: 200, headers });
+  }
+
   return jsonError(headers, 503, 'hors ligne');
 }
 
@@ -307,6 +314,7 @@ async function mirrorWriteResult(method, url, response) {
   const houseMatch = url.pathname.match(/^\/api\/v1\/houses\/(\d+)$/);
   const listMatch = url.pathname.match(/^\/api\/v1\/lists\/(\d+)$/);
   const itemMatch = url.pathname.match(/^\/api\/v1\/items\/(\d+)$/);
+  const categoryMatch = url.pathname.match(/^\/api\/v1\/custom-categories\/(\d+)$/);
 
   if (url.pathname === '/api/v1/houses' && method === 'POST' && data) {
     await self.TrakkaDB.putHouse(data);
@@ -326,6 +334,12 @@ async function mirrorWriteResult(method, url, response) {
     await self.TrakkaDB.putItem(data);
   } else if (itemMatch && method === 'DELETE') {
     await self.TrakkaDB.deleteItem(Number(itemMatch[1]));
+  } else if (url.pathname === '/api/v1/custom-categories' && method === 'POST' && data) {
+    await self.TrakkaDB.putCustomCategory(data);
+  } else if (categoryMatch && method === 'PUT' && data) {
+    await self.TrakkaDB.putCustomCategory(data);
+  } else if (categoryMatch && method === 'DELETE') {
+    await self.TrakkaDB.deleteCustomCategory(Number(categoryMatch[1]));
   }
 }
 

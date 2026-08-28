@@ -147,24 +147,43 @@ for (const button of planningEls.horizonButtons) {
   });
 }
 
+// Splits a house's purchase-oriented lists (each with its items already
+// attached) into the two buckets this view budgets separately: recurring
+// items (recurrence_rule set — these live mainly in 'recurring_shopping'
+// lists, but a recurring item can exist in any list type) always go through
+// the recurrence projection regardless of target_month, since a recurring
+// cost isn't pinned to a single month; a non-recurring item only counts if
+// it has a target_month. Items with neither simply don't appear in this
+// view. Shared between the live-network path and the IndexedDB cache
+// fallback below so the split can't drift between them.
+function applyPlanningEntries(detailed) {
+  const entries = [];
+  const recurringEntries = [];
+  for (const list of detailed) {
+    for (const item of list.items || []) {
+      if (item.recurrence_rule) {
+        recurringEntries.push({ item, listName: list.name });
+      } else if (item.target_month) {
+        entries.push({ item, listName: list.name });
+      }
+    }
+  }
+  planningEntries = entries;
+  planningRecurringEntries = recurringEntries;
+}
+
 // Fetches every purchase-oriented list in the current house — 'shopping',
 // 'groceries' and 'recurring_shopping' alike (anything that isn't 'todo' or
 // 'custom'; see isPurchaseList in app.js, which this mirrors) — plus each
 // one's items (the same "list_id -> detail" fan-out loadDashboard already
-// does for its badges), then splits items into the two buckets this view
-// budgets separately: recurring items (recurrence_rule set — these live
-// mainly in 'recurring_shopping' lists, but a recurring item can exist in
-// any list type) always go through the recurrence projection regardless of
-// target_month, since a recurring cost isn't pinned to a single month; a
-// non-recurring item only counts if it has a target_month. Items with
-// neither simply don't appear in this view. 'custom' (freeform notes) lists
-// are excluded from the fetch entirely rather than just relying on their
-// items never having a target_month/recurrence_rule set through the UI —
-// this budget view must strictly ignore them even if one somehow carries
-// either field (e.g. set directly through the API). Re-run whenever the
-// planning tab is opened, the house changes, or the offline queue flushes;
-// horizon changes alone just re-filter/re-project the already-loaded
-// result.
+// does for its badges), then hands them to applyPlanningEntries above.
+// 'custom' (freeform notes) lists are excluded from the fetch entirely
+// rather than just relying on their items never having a
+// target_month/recurrence_rule set through the UI — this budget view must
+// strictly ignore them even if one somehow carries either field (e.g. set
+// directly through the API). Re-run whenever the planning tab is opened,
+// the house changes, or the offline queue flushes; horizon changes alone
+// just re-filter/re-project the already-loaded result.
 async function loadPlanningView() {
   if (state.currentHouseId === null) {
     planningEntries = [];
@@ -179,23 +198,17 @@ async function loadPlanningView() {
     const detailed = await Promise.all(
       purchaseLists.map((list) => apiRequest(`/lists/${list.id}`).catch(() => ({ ...list, items: [] })))
     );
-    const entries = [];
-    const recurringEntries = [];
-    for (const list of detailed) {
-      for (const item of list.items || []) {
-        if (item.recurrence_rule) {
-          recurringEntries.push({ item, listName: list.name });
-        } else if (item.target_month) {
-          entries.push({ item, listName: list.name });
-        }
-      }
-    }
-    planningEntries = entries;
-    planningRecurringEntries = recurringEntries;
+    applyPlanningEntries(detailed);
   } catch (err) {
-    showError(err.message);
-    planningEntries = [];
-    planningRecurringEntries = [];
+    // Offline, or a transient server error: fall back to the IndexedDB
+    // mirror (cachedDashboardLists, defined in app.js) instead of emptying
+    // the view — see the Offline-First requirement in CLAUDE.md/docs/PWA.md.
+    // A plain connectivity failure stays silent (the header's network badge
+    // already says "Hors-ligne"); only a genuine server-side error still
+    // raises the banner.
+    const cached = await cachedDashboardLists(state.currentHouseId);
+    applyPlanningEntries(cached.filter((list) => isPurchaseList(list.type)));
+    if (!isNetworkError(err)) showError(err.message);
   }
   renderPlanning();
 }

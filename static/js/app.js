@@ -109,6 +109,30 @@ function isSafeHttpUrl(value) {
 // service worker queued while offline still comes back as a 2xx (202), so
 // no special-casing is needed here for that path.
 async function apiRequest(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+
+  // navigator.onLine is a synchronous, immediate signal — when it's already
+  // false, skip attempting fetch() at all for a read rather than waiting on
+  // one that's guaranteed to fail (which, without a controlling service
+  // worker, can take several seconds to time out rather than reject
+  // instantly). This is what makes a reload while offline paint every
+  // GET-driven view (loadHouses/loadDashboard here, selectList/
+  // refreshCurrentList in list_view.js, and planning.js/urgent.js/
+  // spaces.js's tab loaders) from IndexedDB instantly instead of stalling
+  // first. Never short-circuit a write (POST/PUT/PATCH/DELETE) this way: it
+  // still has to reach the service worker's fetch handler even while
+  // offline, since that's what queues it for later replay (see sw.js's
+  // handleApiWrite/queueOfflineWrite) — skipping fetch() here would silently
+  // drop the write instead of queuing it. navigator.onLine can still say
+  // `true` on a connection that can't actually reach the server (a captive
+  // portal, a down server, ...); that case is unaffected and still runs the
+  // normal fetch()-then-catch path below.
+  if (method === 'GET' && !navigator.onLine) {
+    const err = new Error('Impossible de contacter le serveur. Vérifiez votre connexion.');
+    err.isNetworkError = true;
+    throw err;
+  }
+
   let response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -116,7 +140,16 @@ async function apiRequest(path, options = {}) {
       ...options,
     });
   } catch {
-    throw new Error('Impossible de contacter le serveur. Vérifiez votre connexion.');
+    // fetch() itself failed (no connectivity, DNS failure, ...) rather than
+    // the server answering with a non-2xx status — tagged so read-path
+    // callers (loadDashboard, planning.js/urgent.js/spaces.js's loaders, ...)
+    // can tell "we're offline" apart from a genuine server-side error and
+    // skip the blocking error banner for the former, since the header's
+    // discreet network badge already communicates that on its own. See
+    // isNetworkError below.
+    const err = new Error('Impossible de contacter le serveur. Vérifiez votre connexion.');
+    err.isNetworkError = true;
+    throw err;
   }
 
   // The session cookie is missing or expired: every call in app.js and
@@ -144,6 +177,19 @@ async function apiRequest(path, options = {}) {
   }
 
   return body;
+}
+
+// True for the Error apiRequest throws when fetch() itself failed, as
+// opposed to the server answering with a non-2xx status. A read-path caller
+// (any GET-driven loader: loadDashboard here, and planning.js/urgent.js/
+// spaces.js's loaders) should never surface the blocking error banner for
+// this case while navigating — the header's network dot + "Hors-ligne"
+// label already say so on their own, and popping a banner on top of an
+// already-rendered cached view reads as an intrusive false alarm rather
+// than useful information. A genuine server-side error (5xx, a bug) has no
+// such flag and should still be surfaced.
+function isNetworkError(err) {
+  return Boolean(err && err.isNetworkError);
 }
 
 // ---------------------------------------------------------------------------
@@ -233,11 +279,12 @@ async function loadHouses() {
     // Offline, or a transient server error (non-2xx): fall back to
     // whatever the IndexedDB mirror last saw rather than wiping the
     // dashboard to empty — see the Offline-First requirement in
-    // CLAUDE.md/docs/PWA.md. Only surface the error banner if the cache
-    // has nothing either, since the header's network badge already
-    // communicates "offline" on its own in the common case.
+    // CLAUDE.md/docs/PWA.md. Never surface the banner for a plain
+    // connectivity failure (the header's network badge already covers
+    // that); only a genuine server-side error with nothing cached to show
+    // for it still gets one.
     houses = await cachedHouses();
-    if (houses.length === 0) showError(err.message);
+    if (houses.length === 0 && !isNetworkError(err)) showError(err.message);
   }
 
   state.houses = houses;
@@ -355,7 +402,11 @@ async function loadMembers() {
   try {
     members = await apiRequest(`/houses/${state.currentHouseId}/members`);
   } catch (err) {
-    showError(err.message);
+    // No offline mirror for members — a plain connectivity failure just
+    // leaves the modal empty without a blocking banner (the header's
+    // network badge already covers it); a genuine server-side error still
+    // gets one.
+    if (!isNetworkError(err)) showError(err.message);
     return;
   }
 
@@ -663,11 +714,12 @@ async function loadDashboard() {
   } catch (err) {
     // Offline, or a transient server error: keep the dashboard populated
     // from the local mirror rather than leaving it blank — see the
-    // Offline-First requirement in CLAUDE.md/docs/PWA.md. The banner still
-    // surfaces the underlying error since it doesn't hide the grid, only
-    // supplements the header's discreet network badge.
+    // Offline-First requirement in CLAUDE.md/docs/PWA.md. A plain
+    // connectivity failure stays silent (the header's discreet network
+    // badge already says "Hors-ligne"); only a genuine server-side error
+    // still raises the banner.
     await renderDashboardFromCache();
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
     return;
   }
 
@@ -949,6 +1001,27 @@ async function hydrateFromCache() {
   updateManageMembersButton();
 
   await renderDashboardFromCache();
+
+  // Also warm the custom-categories ("Espaces") mirror here, not just lists/
+  // items, so the "Espaces" tab's highlight dot and the "new list" modal's
+  // category picker are already correct the instant a reload finishes,
+  // rather than waiting on loadCustomCategories()'s own network-first call
+  // further down in init() to fail over to the cache. customCategories/
+  // updateSpacesTabBadge are defined in spaces.js, loaded after this file —
+  // safe to reference here despite that <script> load order because this
+  // only runs after hydrateFromCache has already crossed a real IndexedDB
+  // await (cachedHouses() above), by which point every script tag on the
+  // page has long finished executing and defined its top-level functions —
+  // the same timing guarantee init()'s own later call to
+  // loadCustomCategories() already relies on.
+  if (window.TrakkaDB) {
+    try {
+      customCategories = await window.TrakkaDB.getCustomCategories();
+    } catch {
+      customCategories = [];
+    }
+    updateSpacesTabBadge();
+  }
 }
 
 async function init() {

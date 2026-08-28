@@ -535,7 +535,7 @@ async function refreshCurrentList() {
     if (cached) {
       state.currentList = cached;
       renderItems();
-    } else {
+    } else if (!isNetworkError(err)) {
       showError(err.message);
     }
   }
@@ -551,7 +551,7 @@ async function selectList(id) {
     // mirror instead of failing to open it at all.
     list = await cachedListDetail(id);
     if (!list) {
-      showError(err.message);
+      if (!isNetworkError(err)) showError(err.message);
       return;
     }
   }

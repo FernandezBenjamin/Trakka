@@ -19,12 +19,26 @@ const urgentEls = {
 // than kept in sync incrementally, mirroring planningEntries in planning.js.
 let urgentEntries = [];
 
+// Keeps only the still-pressing items (is_urgent, not done) out of a house's
+// lists, each with its items already attached — shared between the
+// live-network path and the IndexedDB cache fallback below so the filter
+// can't drift between them.
+function extractUrgentEntries(detailedLists) {
+  const entries = [];
+  for (const list of detailedLists) {
+    for (const item of list.items || []) {
+      if (item.is_urgent && !item.done) entries.push({ item, listId: list.id, listName: list.name });
+    }
+  }
+  return entries;
+}
+
 // Fetches every list (shopping and todo) in the current house plus each
-// one's items, then keeps only the ones that are both is_urgent and not
-// done. Re-run whenever the urgent tab is opened (see setActiveTab in
-// planning.js) or refreshUrgentIfActive is called after something that
-// might have changed urgency/done state elsewhere (offline sync
-// completing, a language switch, a house switch).
+// one's items, then hands them to extractUrgentEntries above. Re-run
+// whenever the urgent tab is opened (see setActiveTab in planning.js) or
+// refreshUrgentIfActive is called after something that might have changed
+// urgency/done state elsewhere (offline sync completing, a language switch,
+// a house switch).
 async function loadUrgentView() {
   if (state.currentHouseId === null) {
     urgentEntries = [];
@@ -35,16 +49,17 @@ async function loadUrgentView() {
   try {
     const lists = await apiRequest(`/lists?house_id=${state.currentHouseId}`);
     const detailed = await Promise.all(lists.map((list) => apiRequest(`/lists/${list.id}`).catch(() => ({ ...list, items: [] }))));
-    const entries = [];
-    for (const list of detailed) {
-      for (const item of list.items || []) {
-        if (item.is_urgent && !item.done) entries.push({ item, listId: list.id, listName: list.name });
-      }
-    }
-    urgentEntries = entries;
+    urgentEntries = extractUrgentEntries(detailed);
   } catch (err) {
-    showError(err.message);
-    urgentEntries = [];
+    // Offline, or a transient server error: fall back to the IndexedDB
+    // mirror (cachedDashboardLists, defined in app.js) instead of emptying
+    // the view — see the Offline-First requirement in CLAUDE.md/docs/PWA.md.
+    // A plain connectivity failure stays silent (the header's network badge
+    // already says "Hors-ligne"); only a genuine server-side error still
+    // raises the banner.
+    const cached = await cachedDashboardLists(state.currentHouseId);
+    urgentEntries = extractUrgentEntries(cached);
+    if (!isNetworkError(err)) showError(err.message);
   }
   renderUrgent();
 }
