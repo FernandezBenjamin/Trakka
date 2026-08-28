@@ -95,7 +95,7 @@ New endpoints follow the existing pattern:
 1. If the endpoint needs new data access, add a method to `internal/db/lists.go` or `internal/db/items.go` (or a new file) using a parameterized query, returning `db.ErrNotFound` when nothing matches.
 2. Register the route in `(*handlers.Application).Routes()` (in `internal/handlers/app.go`) using the `"METHOD /path"` mux pattern.
 3. Write the handler in `internal/handlers`; use the `decodeJSON`/`writeJSON`/`writeError`/`pathID` helpers in `internal/handlers/json.go` rather than reimplementing them. Validate any URL field through `internal/validate.URL`.
-4. If the change touches the schema, add idempotent statements to `internal/db/schema.sql` (see [docs/DATABASE.md](DATABASE.md#evolving-the-schema)) — don't edit existing `CREATE TABLE` statements in place.
+4. If the change touches the schema, add a new file at `internal/db/migrations/NNNN_description.sql` (see [docs/DATABASE.md](DATABASE.md#evolving-the-schema)) — no existence guards needed (versioning already ensures it runs once), and don't edit an already-shipped migration file in place.
 
 Full endpoint behavior is documented in [docs/API.md](API.md); the security rules every change must uphold (parameterized SQL, URL scheme validation, security headers, safe DOM rendering) are listed in [CLAUDE.md](../CLAUDE.md#security-rules).
 

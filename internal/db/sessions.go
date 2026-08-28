@@ -11,8 +11,8 @@ import (
 )
 
 // timeFormat matches the strftime('%Y-%m-%dT%H:%M:%fZ', 'now') shape used
-// by every timestamp column in schema.sql, keeping expires_at
-// lexicographically comparable to strftime('now') in SQL.
+// by every timestamp column across internal/db/migrations/, keeping
+// expires_at lexicographically comparable to strftime('now') in SQL.
 const timeFormat = "2006-01-02T15:04:05.000Z"
 
 // CreateSession inserts a new session keyed by tokenHash (the SHA-256 hash

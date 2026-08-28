@@ -33,6 +33,8 @@ const els = {
   networkLabel: document.getElementById('network-label'),
   pendingBadge: document.getElementById('pending-badge'),
   errorBanner: document.getElementById('error-banner'),
+  updateBanner: document.getElementById('update-banner'),
+  updateReloadButton: document.getElementById('update-reload-button'),
   logoLink: document.getElementById('logo-link'),
   listsSection: document.getElementById('lists-section'),
   houseSelect: document.getElementById('house-select'),
@@ -994,9 +996,11 @@ els.createListForm.addEventListener('submit', async (event) => {
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
 
-  navigator.serviceWorker.register('/sw.js').catch((err) => {
-    console.error('Échec de l’enregistrement du service worker :', err);
-  });
+  navigator.serviceWorker.register('/sw.js')
+    .then((registration) => watchForServiceWorkerUpdate(registration))
+    .catch((err) => {
+      console.error('Échec de l’enregistrement du service worker :', err);
+    });
 
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'trakka-sync-complete') {
@@ -1006,6 +1010,41 @@ function registerServiceWorker() {
     }
   });
 }
+
+// Detects a deployed frontend update and surfaces it as a discreet,
+// dismissible-by-inaction banner rather than reloading on the user's
+// behalf: sw.js's install handler already calls self.skipWaiting() and its
+// activate handler calls self.clients.claim(), so the new service worker
+// (and its bumped cache versions) takes over almost immediately regardless
+// — but the *page's own already-loaded JS* stays the old version until an
+// actual reload happens, and forcing that reload automatically could wipe
+// out whatever the user is mid-typing in a form. Reaching 'installed'
+// while navigator.serviceWorker.controller is already set is the standard
+// signal that this is a genuine update (a new worker replacing one already
+// controlling the page), not the very first install on a fresh visit,
+// which has no controller yet and needs no banner.
+function watchForServiceWorkerUpdate(registration) {
+  if (!registration) return;
+
+  registration.addEventListener('updatefound', () => {
+    const installingWorker = registration.installing;
+    if (!installingWorker) return;
+
+    installingWorker.addEventListener('statechange', () => {
+      if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+        showUpdateBanner();
+      }
+    });
+  });
+}
+
+function showUpdateBanner() {
+  els.updateBanner.hidden = false;
+}
+
+els.updateReloadButton?.addEventListener('click', () => {
+  window.location.reload();
+});
 
 window.addEventListener('online', () => {
   updateNetworkStatus();

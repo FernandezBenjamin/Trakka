@@ -24,6 +24,13 @@
     dbPromise = new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
+      // onupgradeneeded only ever *adds* stores/indexes, guarded by
+      // objectStoreNames.contains — it must never drop or recreate an
+      // existing store, since that would wipe whatever offline data/queue
+      // entries a user already has sitting in it. Bumping DB_VERSION and
+      // adding one more guarded block here is the only supported way to
+      // evolve this schema; see the v3 comment below for the pattern to
+      // follow for a new store.
       request.onupgradeneeded = () => {
         const db = request.result;
 
@@ -48,7 +55,34 @@
         }
       };
 
-      request.onsuccess = () => resolve(request.result);
+      // onblocked fires when another tab already holds an open connection
+      // at an older DB_VERSION and never closes it — onupgradeneeded above
+      // then can't run at all until that other connection goes away, so a
+      // deployed update could otherwise leave this tab's IndexedDB mirror
+      // stuck uninitialized indefinitely. The onversionchange handler below
+      // (attached to every connection this tab itself opens) is the other
+      // half of this: it makes an *older* tab close its own connection the
+      // moment a newer one needs to upgrade, so onblocked here should only
+      // ever fire transiently, if at all.
+      request.onblocked = () => {
+        console.warn('IndexedDB : mise à niveau bloquée par un autre onglet encore ouvert sur une version plus ancienne.');
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        // Without this, an older tab keeps its connection open forever,
+        // which is exactly what triggers onblocked (above) in every other
+        // tab whenever a new deployment bumps DB_VERSION. Closing
+        // proactively — and dropping the memoized promise so this tab
+        // re-opens fresh (and blocked-free) the next time it actually needs
+        // the database — lets a multi-tab upgrade complete without asking
+        // the user to manually close every other tab first.
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+        };
+        resolve(db);
+      };
       request.onerror = () => {
         // Don't memoize a permanently-rejected promise: every read/write
         // helper below shares this same cached dbPromise, so a transient

@@ -2,13 +2,15 @@ package db
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"testing"
 )
 
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
-	d, err := Open(filepath.Join(t.TempDir(), "trakka.db"))
+	d, err := Open(filepath.Join(t.TempDir(), "trakka.db"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
 	}

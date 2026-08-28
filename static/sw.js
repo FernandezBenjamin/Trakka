@@ -59,6 +59,14 @@ const SYNC_TAG = 'trakka-sync-queue';
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+// skipWaiting() here is what makes app.js's update banner (see
+// watchForServiceWorkerUpdate in static/js/app.js) meaningful: without it, a
+// newly-installed worker would sit in the 'waiting' state until every tab
+// running the old one closes, so the banner's "Mettre à jour" button
+// wouldn't actually have anything new to switch to yet on click. With it,
+// this worker proceeds straight to activating (below) as soon as it's
+// installed, so a reload after the banner appears really does pick up the
+// new assets.
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
@@ -80,6 +88,13 @@ function precacheCdnAsset(cache, url) {
     .catch(() => {});
 }
 
+// Only ever deletes entries from the Cache Storage API (KNOWN_CACHES,
+// declared above) — never touches IndexedDB, which is a completely
+// separate storage system the browser doesn't tie to cache versioning at
+// all. This is what lets a deployed update evict every stale cached asset
+// on activation without losing the offline mirror/sync queue db.js
+// maintains; see db.js's own onupgradeneeded/onversionchange handling for
+// how *that* store evolves safely across versions instead.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()

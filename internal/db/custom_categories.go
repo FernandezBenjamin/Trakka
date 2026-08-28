@@ -118,9 +118,10 @@ func (d *DB) UpdateCustomCategoryForUser(ctx context.Context, id, userID int64, 
 
 // DeleteCustomCategoryForUser removes a category, scoped to its owner the
 // same way GetCustomCategoryForUser is. Any list referencing it has
-// custom_category_id reset to NULL automatically (ON DELETE SET NULL in
-// schema.sql) rather than being deleted itself. Returns ErrNotFound if no
-// such category exists for that user.
+// custom_category_id reset to NULL automatically (ON DELETE SET NULL, see
+// internal/db/migrations/0007_custom_categories.sql) rather than being
+// deleted itself. Returns ErrNotFound if no such category exists for that
+// user.
 func (d *DB) DeleteCustomCategoryForUser(ctx context.Context, id, userID int64) error {
 	res, err := d.conn.ExecContext(ctx, `DELETE FROM custom_categories WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {

@@ -79,13 +79,17 @@ list. The highlights:
 
 ## Schema changes
 
-The schema (`internal/db/schema.sql`) is applied idempotently on every
-startup and doubles as the migration mechanism — there is no separate
-migration tool. **Never edit an existing `CREATE TABLE` statement in place**;
-add new idempotent `CREATE ... IF NOT EXISTS` statements instead, and see
-[docs/DATABASE.md](docs/DATABASE.md#evolving-the-schema) for the `ALTER
-TABLE` caveat. Existing deployed `/data/trakka.db` files won't be rewritten,
-so a destructive change silently breaks every existing install.
+Trakka uses a versioned migration engine (`internal/db/migrate.go`), tracked
+via SQLite's `PRAGMA user_version` — not a single idempotent `schema.sql`.
+Add a new schema change as a new file at
+`internal/db/migrations/NNNN_description.sql` (embedded automatically); it
+runs at most once per database, ever, so it needs no `IF NOT EXISTS` guards.
+**Never edit an already-shipped migration file in place** — a database that
+already applied it recorded that in `user_version` and will never run it
+again, so the edit would only reach databases that haven't gotten there yet.
+See [docs/DATABASE.md](docs/DATABASE.md#evolving-the-schema) for the full
+mechanism, including the one case (widening a `CHECK` constraint) that has
+to be Go code instead of a `.sql` file.
 
 ## Security
 

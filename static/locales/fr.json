@@ -20,6 +20,10 @@
     "themeDark": "Sombre",
     "themeAuto": "Système"
   },
+  "update": {
+    "available": "Une nouvelle version est disponible.",
+    "reload": "Mettre à jour"
+  },
   "dashboard": {
     "house": "Maison",
     "members": "Membres",

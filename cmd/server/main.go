@@ -40,7 +40,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	database, err := db.Open(cfg.DBPath)
+	database, err := db.Open(cfg.DBPath, logger)
 	if err != nil {
 		logger.Error("opening database", "error", err)
 		os.Exit(1)
