@@ -1,4 +1,16 @@
-## [unreleased]
+## [1.0.1] - 2026-08-29
+
+### 🐛 Bug Fixes
+
+- Fix quantity calculation not working
+- Fix header position for tiny screen like smartphones
+- Fix menu too large with no horizontal scroll
+- Fix menu for items in lists
+- Fix UX design for items because the navigation were not easily usable
+- Fix the scraper because some links doesn't show image or price
+- Fix the price scraper because some prices are not showing
+
+## [1.0.0] - 2026-08-28
 
 ### 🚀 Features
 

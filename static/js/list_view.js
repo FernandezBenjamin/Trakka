@@ -13,17 +13,26 @@ const listEls = {
   backButton: document.getElementById('back-button'),
   editListButton: document.getElementById('edit-list-button'),
   shareListButton: document.getElementById('share-list-button'),
+  financeSummary: document.getElementById('finance-summary'),
   financeTotal: document.getElementById('finance-total'),
+  financeTotalCompact: document.getElementById('finance-total-compact'),
   financeSpent: document.getElementById('finance-spent'),
   financeRemaining: document.getElementById('finance-remaining'),
+  createItemFormAnchor: document.getElementById('create-item-form-anchor'),
   createItemForm: document.getElementById('create-item-form'),
   itemTitle: document.getElementById('item-title'),
+  quickAddToggle: document.getElementById('quick-add-toggle'),
+  quickAddAdvanced: document.getElementById('quick-add-advanced'),
   itemUrl: document.getElementById('item-url'),
   itemQuantity: document.getElementById('item-quantity'),
   itemPrice: document.getElementById('item-price'),
   itemTargetMonth: document.getElementById('item-target-month'),
   itemRecurrence: document.getElementById('item-recurrence'),
   itemUrgent: document.getElementById('item-urgent'),
+  addItemFab: document.getElementById('add-item-fab'),
+  addItemSheet: document.getElementById('add-item-sheet'),
+  addItemSheetBody: document.getElementById('add-item-sheet-body'),
+  closeAddItemSheetButton: document.getElementById('close-add-item-sheet-button'),
   itemsActive: document.getElementById('items-active'),
   itemsDone: document.getElementById('items-done'),
   doneSection: document.getElementById('done-section'),
@@ -38,10 +47,23 @@ const listEls = {
   editItemTargetMonth: document.getElementById('edit-item-target-month'),
   editItemRecurrence: document.getElementById('edit-item-recurrence'),
   editItemUrgent: document.getElementById('edit-item-urgent'),
+  itemActionsSheet: document.getElementById('item-actions-sheet'),
+  itemActionsSheetTitle: document.getElementById('item-actions-sheet-title'),
+  closeItemActionsSheetButton: document.getElementById('close-item-actions-sheet-button'),
+  itemActionsEditButton: document.getElementById('item-actions-edit-button'),
+  itemActionsLinkButton: document.getElementById('item-actions-link-button'),
+  itemActionsUrgentButton: document.getElementById('item-actions-urgent-button'),
+  itemActionsUrgentLabel: document.getElementById('item-actions-urgent-label'),
+  itemActionsDeleteButton: document.getElementById('item-actions-delete-button'),
   imagePreviewModal: document.getElementById('image-preview-modal'),
   imagePreviewImg: document.getElementById('image-preview-img'),
   closeImagePreviewButton: document.getElementById('close-image-preview-button'),
 };
+
+// The item currently open in the item-actions bottom sheet (#item-actions-
+// sheet), or null when it's closed — set by openItemActionsSheet, read by
+// that sheet's own button handlers below.
+let itemActionsSheetItem = null;
 
 // The item currently open in the edit modal, or null when the modal is
 // closed — set by openEditItemModal, read by editItemForm's submit handler.
@@ -51,12 +73,25 @@ const PENCIL_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
   '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>';
 
+// Static, hard-coded icon markup (never interpolates user data, same rule as
+// PENCIL_ICON_SVG/TRASH_ICON_SVG) for the quantity stepper's [-]/[+] buttons.
+const MINUS_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5" aria-hidden="true"><path d="M5 12h14"/></svg>';
+const PLUS_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
+
 // Static, hard-coded icon markup (never interpolates user data, same rule
 // as TRASH_ICON_SVG/PENCIL_ICON_SVG in app.js) — a small "sparkle" used to
 // flag a price that internal/scraper filled in automatically rather than
 // the user having typed it in.
 const AUTO_PRICE_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="currentColor" class="h-3 w-3" aria-hidden="true"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2z"/></svg>';
+
+// Static, hard-coded icon markup (never interpolates user data) for the [⋮]
+// kebab button — the mobile replacement for the ✏️/🗑️ buttons, opening
+// #item-actions-sheet instead (see buildItemRow and openItemActionsSheet).
+const KEBAB_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>';
 
 // True for an item created while offline whose "create" request is still
 // sitting in the service worker's sync queue — see the tempId generation in
@@ -172,23 +207,108 @@ function applyListTypeVisibility(type) {
   for (const el of document.querySelectorAll('[data-item-field="quantity"]')) el.hidden = !visibility.quantity;
   for (const el of document.querySelectorAll('[data-item-field="urgent"]')) el.hidden = !visibility.urgent;
   listEls.itemTitle.placeholder = t(type === 'custom' ? 'items.titlePlaceholderCustom' : 'items.titlePlaceholder');
+
+  // A `custom` list (freeform names/ideas/notes) shows none of url/price/
+  // target-month/recurrence/quantity/urgent — there is nothing left for the
+  // quick-add bar's [⚙️] toggle to reveal, so it's hidden outright rather
+  // than opening onto an empty panel.
+  const advanced = hasAdvancedFields(visibility);
+  listEls.quickAddToggle.hidden = !advanced;
+  if (!advanced) setQuickAddAdvancedExpanded(false);
 }
+
+function hasAdvancedFields(visibility) {
+  return visibility.url || visibility.price || visibility.targetMonth || visibility.recurrence || visibility.quantity || visibility.urgent;
+}
+
+// Expands/collapses the quick-add bar's advanced panel (URL/quantity/price/
+// target month/recurrence/urgent) — collapsed is the default "épuré" state;
+// expanding it is what the [⚙️] toggle and the FAB's add-item sheet do.
+function setQuickAddAdvancedExpanded(expanded) {
+  listEls.quickAddAdvanced.hidden = !expanded;
+  listEls.quickAddToggle.setAttribute('aria-expanded', String(expanded));
+  listEls.quickAddToggle.classList.toggle('bg-sky-500/10', expanded);
+  listEls.quickAddToggle.classList.toggle('text-sky-600', expanded);
+  listEls.quickAddToggle.classList.toggle('dark:text-sky-400', expanded);
+}
+
+listEls.quickAddToggle.addEventListener('click', () => {
+  setQuickAddAdvancedExpanded(listEls.quickAddAdvanced.hidden);
+});
+
+// The FAB (#add-item-fab, mobile only — see its md:hidden class in
+// index.html) opens #create-item-form as a bottom sheet instead of a second,
+// duplicated form: openAddItemSheet/closeAddItemSheet simply relocate the
+// one real <form> (and its already-attached listeners) between its normal
+// inline slot (#create-item-form-anchor) and the sheet's body — plain
+// `appendChild` on an already-attached node moves it rather than cloning it,
+// so nothing about the submit handler below needs to know or care where the
+// form currently lives.
+function openAddItemSheet() {
+  const visibility = fieldVisibilityFor(state.currentList && state.currentList.type);
+  setQuickAddAdvancedExpanded(hasAdvancedFields(visibility));
+  listEls.addItemSheetBody.appendChild(listEls.createItemForm);
+  listEls.addItemSheet.hidden = false;
+  document.body.classList.add('overflow-hidden');
+  listEls.itemTitle.focus();
+}
+
+function closeAddItemSheet() {
+  listEls.createItemFormAnchor.appendChild(listEls.createItemForm);
+  listEls.addItemSheet.hidden = true;
+  document.body.classList.remove('overflow-hidden');
+  setQuickAddAdvancedExpanded(false);
+}
+
+listEls.addItemFab.addEventListener('click', openAddItemSheet);
+listEls.closeAddItemSheetButton.addEventListener('click', closeAddItemSheet);
+listEls.addItemSheet.addEventListener('click', (event) => {
+  if (event.target === listEls.addItemSheet) closeAddItemSheet();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !listEls.addItemSheet.hidden) closeAddItemSheet();
+});
 
 // Recomputes the financial summary bar directly from state.currentList.items
 // — the same array toggleDone/removeItem/create/edit mutate optimistically —
 // so it stays in sync whether the underlying change came from the network,
-// an optimistic local edit, or the offline sync queue.
+// an optimistic local edit, or the offline sync queue. `item.price` is a
+// per-unit price, so every line contributes `price * quantity` — see
+// lineTotal below, also used by buildItemRow's per-item price display so
+// the row-level subtotals and this bar's total always agree.
 function updateFinanceSummary(items) {
   let total = 0;
   let spent = 0;
   for (const item of items) {
-    const price = typeof item.price === 'number' ? item.price : 0;
-    total += price;
-    if (item.done) spent += price;
+    const line = lineTotal(item);
+    total += line;
+    if (item.done) spent += line;
   }
   listEls.financeTotal.textContent = formatEuro(total);
+  listEls.financeTotalCompact.textContent = formatEuro(total);
   listEls.financeSpent.textContent = formatEuro(spent);
   listEls.financeRemaining.textContent = formatEuro(total - spent);
+}
+
+// #finance-summary is a plain <details> (same collapsible idiom as
+// #done-section) so a tap on its header can free up the whole screen on a
+// small phone without needing any bespoke JS toggle logic — only the user's
+// open/closed preference needs persisting, since the element itself already
+// remembers its own state across re-renders (renderItems never rebuilds it).
+const FINANCE_SUMMARY_COLLAPSED_KEY = 'trakka:financeSummaryCollapsed';
+listEls.financeSummary.open = localStorage.getItem(FINANCE_SUMMARY_COLLAPSED_KEY) !== 'true';
+listEls.financeSummary.addEventListener('toggle', () => {
+  localStorage.setItem(FINANCE_SUMMARY_COLLAPSED_KEY, String(!listEls.financeSummary.open));
+});
+
+// Prix Total Article = Prix Unitaire * Quantité. `item.quantity` is always
+// >= 1 server-side (see internal/handlers/items.go), but an optimistic
+// locally-built item or a stale cached one could momentarily lack it, so
+// this falls back to 1 the same way the create-item form already does.
+function lineTotal(item) {
+  if (typeof item.price !== 'number') return 0;
+  const quantity = item.quantity > 0 ? item.quantity : 1;
+  return item.price * quantity;
 }
 
 // recurrenceBadgeLabel turns an item.recurrence_rule value (one of the
@@ -331,7 +451,132 @@ function buildLineMarker(index) {
   return span;
 }
 
-function buildItemRow(item, { showCheckbox = true, index } = {}) {
+// A small inline 🔗 icon-link, appended right after an item's title instead
+// of the old standalone "lien ↗" pill badge — folding it into the title line
+// keeps the row's one-glance hierarchy to "checkbox + thumbnail + title (+
+// price)", with everything else (quantity, badges) pushed down to
+// .item-card__secondary. event.stopPropagation() keeps a tap here from also
+// triggering the title's own "open the actions sheet" handler below.
+function buildInlineLinkIcon(item) {
+  const link = document.createElement('a');
+  link.href = item.url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.className = 'shrink-0 text-sky-500 hover:text-sky-400';
+  link.setAttribute('aria-label', t('items.openLinkAriaLabel', { title: item.title }));
+  link.textContent = '🔗';
+  link.addEventListener('click', (event) => event.stopPropagation());
+  return link;
+}
+
+// The trailing, right-aligned price figure on an item's top row — the "Prix
+// Total Article = Prix Unitaire × Quantité" line subtotal (see lineTotal),
+// the auto-detected-price sparkle badge, and (only once quantity > 1) the
+// per-unit price it was computed from. Falls back to a pending-price badge
+// when there's a url but no price yet (offline-queued, or still being
+// scraped server-side — see isOfflineQueuedItem/priceScrapePending). Returns
+// null when there's nothing price-related to show at all (plain to-do/
+// custom-list items), so buildItemRow can skip appending it entirely.
+function buildPriceBlock(item) {
+  const block = document.createElement('div');
+  block.className = 'item-card__price flex shrink-0 flex-col items-end gap-0.5';
+
+  if (item.price != null) {
+    const priceRow = document.createElement('div');
+    priceRow.className = 'flex items-center gap-1';
+
+    const price = document.createElement('span');
+    price.className = 'text-base font-semibold text-slate-900 dark:text-slate-100';
+    price.textContent = formatEuro(lineTotal(item));
+    priceRow.appendChild(price);
+
+    // Auto-detected prices get a small clickable badge instead of a plain
+    // label — clicking it opens the same edit modal as the actions sheet's
+    // "Modifier" entry, so "modifier en un clic" just reuses the existing
+    // edit flow rather than needing a dedicated inline editor.
+    if (item.price_auto) {
+      const autoBadge = document.createElement('button');
+      autoBadge.type = 'button';
+      autoBadge.title = 'Prix détecté automatiquement — cliquer pour modifier';
+      autoBadge.setAttribute('aria-label', `Prix détecté automatiquement pour ${item.title}, cliquer pour modifier`);
+      autoBadge.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/20';
+      autoBadge.innerHTML = AUTO_PRICE_ICON_SVG;
+      autoBadge.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openEditItemModal(item);
+      });
+      priceRow.appendChild(autoBadge);
+    }
+
+    block.appendChild(priceRow);
+
+    if (item.quantity > 1) {
+      const unitPrice = document.createElement('span');
+      unitPrice.className = 'text-xs text-slate-400 dark:text-slate-500';
+      unitPrice.textContent = `(${formatEuro(item.price)}/u)`;
+      block.appendChild(unitPrice);
+    }
+  } else if (item.url) {
+    if (isOfflineQueuedItem(item)) {
+      block.appendChild(buildPendingPriceBadge('Prix en attente de synchro', 'bg-amber-500/10 text-amber-700 dark:text-amber-300'));
+    } else if (item.priceScrapePending) {
+      block.appendChild(buildPendingPriceBadge('Détection du prix…', 'animate-pulse bg-sky-500/10 text-sky-600 dark:text-sky-300'));
+    }
+  }
+
+  return block.children.length > 0 ? block : null;
+}
+
+// The secondary line shown under an item's title: the compact [-]/N/[+]
+// quantity stepper (when the list type shows quantity at all — see
+// fieldVisibilityFor) plus the month/recurrence/urgent badges. Indented via
+// Tailwind's pl-[3.5rem] to align under the title rather than the checkbox —
+// approximate (it doesn't account for a thumbnail's extra width) but close
+// enough to read as "belongs to the title above it" either way. Returns null
+// when there's nothing to show (a `custom`-list item has none of these),
+// so buildItemRow can skip reserving an empty row for it.
+function buildSecondaryRow(item, { showQuantity }) {
+  const secondary = document.createElement('div');
+  secondary.className = 'item-card__secondary flex flex-wrap items-center gap-2 pl-[3.5rem] text-sm';
+
+  if (showQuantity) {
+    secondary.appendChild(buildQuantityStepper(item));
+  }
+
+  // Only shown once an item has actually been scheduled via the edit
+  // modal's "Mois prévu" field — monthLabel is defined in planning.js,
+  // safe to call here since all script tags finish loading and defining
+  // their top-level functions before any rendering actually runs.
+  if (item.target_month) {
+    const monthBadge = document.createElement('span');
+    monthBadge.className = 'shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300';
+    monthBadge.textContent = monthLabel(item.target_month, 'short');
+    secondary.appendChild(monthBadge);
+  }
+
+  if (item.recurrence_rule) {
+    const recurrenceBadge = buildRecurrenceBadge(item);
+    if (recurrenceBadge) secondary.appendChild(recurrenceBadge);
+  }
+
+  if (item.is_urgent) {
+    secondary.appendChild(buildUrgentBadge());
+  }
+
+  return secondary.children.length > 0 ? secondary : null;
+}
+
+// buildItemRow lays out one card as a top .item-card__row (checkbox/marker +
+// optional thumbnail + title + inline 🔗 icon on the left, the price block,
+// then edit/delete/kebab on the right) plus, only when there's something to
+// show, a .item-card__secondary line underneath it (quantity stepper +
+// badges) — the same shape at every breakpoint, Todoist/Notion-style, rather
+// than the single dense desktop row this used to reflow via CSS `order` on a
+// narrow screen. `.item-card__actions` (✏️/🗑️) and `.item-card__kebab` (⋮,
+// opening #item-actions-sheet) are both always built; base.css's `hidden
+// md:flex`/`flex md:hidden` decide which one is actually visible per
+// breakpoint — see the comment above that block for why.
+function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } = {}) {
   const li = document.createElement('li');
   // An unfinished urgent item gets a distinctive rose border so it stands
   // out at a glance in the (already sorted-to-top, see renderItems) active
@@ -339,8 +584,14 @@ function buildItemRow(item, { showCheckbox = true, index } = {}) {
   // it no longer needs attention.
   li.className =
     item.is_urgent && !item.done
-      ? 'flex items-center gap-3 rounded-xl border-2 border-rose-500/60 bg-rose-500/5 p-3'
-      : 'flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3';
+      ? 'item-card flex flex-col gap-1.5 rounded-2xl border-2 border-rose-500/60 bg-rose-500/5 p-3 shadow-sm'
+      : 'item-card flex flex-col gap-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3 shadow-sm';
+
+  const row = document.createElement('div');
+  row.className = 'item-card__row flex items-center gap-2';
+
+  const lead = document.createElement('div');
+  lead.className = 'item-card__lead flex min-w-0 flex-1 items-center gap-3';
 
   if (showCheckbox) {
     const checkboxLabel = document.createElement('label');
@@ -352,9 +603,9 @@ function buildItemRow(item, { showCheckbox = true, index } = {}) {
     checkbox.setAttribute('aria-label', `Marquer « ${item.title} » comme terminé`);
     checkbox.addEventListener('change', () => toggleDone(item));
     checkboxLabel.appendChild(checkbox);
-    li.appendChild(checkboxLabel);
+    lead.appendChild(checkboxLabel);
   } else {
-    li.appendChild(buildLineMarker(index));
+    lead.appendChild(buildLineMarker(index));
   }
 
   // A thumbnail only ever appears when a product image was actually found
@@ -363,77 +614,40 @@ function buildItemRow(item, { showCheckbox = true, index } = {}) {
   // and shopping items with no matched image just skip straight to the
   // title, unchanged from before this feature existed.
   if (item.image_url && isSafeHttpUrl(item.image_url)) {
-    li.appendChild(buildItemThumbnail(item));
+    lead.appendChild(buildItemThumbnail(item));
   }
 
   const title = document.createElement('span');
-  title.className = item.done ? 'flex-1 text-base text-slate-500 line-through opacity-60' : 'flex-1 text-base text-slate-900 dark:text-slate-100';
-  title.textContent = item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
-
-  li.appendChild(title);
-
-  if (item.price != null) {
-    const priceWrap = document.createElement('span');
-    priceWrap.className = 'flex shrink-0 items-center gap-1';
-
-    const price = document.createElement('span');
-    price.className = 'text-sm font-medium text-slate-600 dark:text-slate-300';
-    price.textContent = formatEuro(item.price);
-    priceWrap.appendChild(price);
-
-    // Auto-detected prices get a small clickable badge instead of a plain
-    // label — clicking it opens the same edit modal as the pencil icon,
-    // so "modifier en un clic" just reuses the existing edit flow rather
-    // than needing a dedicated inline editor.
-    if (item.price_auto) {
-      const autoBadge = document.createElement('button');
-      autoBadge.type = 'button';
-      autoBadge.title = 'Prix détecté automatiquement — cliquer pour modifier';
-      autoBadge.setAttribute('aria-label', `Prix détecté automatiquement pour ${item.title}, cliquer pour modifier`);
-      autoBadge.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/20';
-      autoBadge.innerHTML = AUTO_PRICE_ICON_SVG;
-      autoBadge.addEventListener('click', () => openEditItemModal(item));
-      priceWrap.appendChild(autoBadge);
-    }
-
-    li.appendChild(priceWrap);
-  } else if (item.url) {
-    if (isOfflineQueuedItem(item)) {
-      li.appendChild(buildPendingPriceBadge('Prix en attente de synchro', 'bg-amber-500/10 text-amber-700 dark:text-amber-300'));
-    } else if (item.priceScrapePending) {
-      li.appendChild(buildPendingPriceBadge('Détection du prix…', 'animate-pulse bg-sky-500/10 text-sky-600 dark:text-sky-300'));
-    }
-  }
-
-  // Only shown once an item has actually been scheduled via the edit
-  // modal's "Mois prévu" field — monthLabel is defined in planning.js,
-  // safe to call here since all script tags finish loading and defining
-  // their top-level functions before any rendering actually runs.
-  if (item.target_month) {
-    const monthBadge = document.createElement('span');
-    monthBadge.className = 'shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300';
-    monthBadge.textContent = monthLabel(item.target_month, 'short');
-    li.appendChild(monthBadge);
-  }
-
-  if (item.recurrence_rule) {
-    const recurrenceBadge = buildRecurrenceBadge(item);
-    if (recurrenceBadge) li.appendChild(recurrenceBadge);
-  }
-
-  if (item.is_urgent) {
-    li.appendChild(buildUrgentBadge());
-  }
+  // `truncate` (Tailwind's overflow-hidden/text-overflow-ellipsis/
+  // whitespace-nowrap shorthand) needs a `min-w-0` flex ancestor to actually
+  // clip instead of forcing the row wider — `lead` above provides that — so
+  // a long title on a narrow screen never pushes the price/actions groups
+  // out of the card instead of just eliding. A tap on the title itself opens
+  // the same item-actions sheet as the [⋮] kebab button, the mobile-first
+  // "tap the item" entry point the pencil/trash buttons already cover on
+  // wider screens.
+  title.className = item.done
+    ? 'min-w-0 flex-1 cursor-pointer truncate text-base font-semibold text-slate-500 line-through opacity-60'
+    : 'min-w-0 flex-1 cursor-pointer truncate text-base font-semibold text-slate-900 dark:text-slate-100';
+  // When the stepper below is shown, it's the canonical place quantity is
+  // displayed/edited, so the title stays plain; otherwise (custom lists,
+  // where quantity is hidden entirely) fall back to the old "title × N"
+  // form, still used as a compact read-only summary in urgent.js/planning.js.
+  title.textContent = !showQuantity && item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
+  title.addEventListener('click', () => openItemActionsSheet(item));
+  lead.appendChild(title);
 
   if (item.url && isSafeHttpUrl(item.url)) {
-    const link = document.createElement('a');
-    link.href = item.url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.className = 'rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-600 dark:text-sky-300 hover:bg-sky-500/20';
-    link.textContent = 'lien ↗';
-    li.appendChild(link);
+    lead.appendChild(buildInlineLinkIcon(item));
   }
+
+  row.appendChild(lead);
+
+  const priceBlock = buildPriceBlock(item);
+  if (priceBlock) row.appendChild(priceBlock);
+
+  const actions = document.createElement('div');
+  actions.className = 'item-card__actions hidden shrink-0 items-center gap-1 md:flex';
 
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
@@ -441,7 +655,7 @@ function buildItemRow(item, { showCheckbox = true, index } = {}) {
   editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400';
   editBtn.innerHTML = PENCIL_ICON_SVG;
   editBtn.addEventListener('click', () => openEditItemModal(item));
-  li.appendChild(editBtn);
+  actions.appendChild(editBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
@@ -449,7 +663,22 @@ function buildItemRow(item, { showCheckbox = true, index } = {}) {
   deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
   deleteBtn.innerHTML = TRASH_ICON_SVG;
   deleteBtn.addEventListener('click', () => removeItem(item));
-  li.appendChild(deleteBtn);
+  actions.appendChild(deleteBtn);
+
+  row.appendChild(actions);
+
+  const kebabBtn = document.createElement('button');
+  kebabBtn.type = 'button';
+  kebabBtn.setAttribute('aria-label', t('items.moreActionsAriaLabel', { title: item.title }));
+  kebabBtn.className = 'item-card__kebab flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 md:hidden';
+  kebabBtn.innerHTML = KEBAB_ICON_SVG;
+  kebabBtn.addEventListener('click', () => openItemActionsSheet(item));
+  row.appendChild(kebabBtn);
+
+  li.appendChild(row);
+
+  const secondary = buildSecondaryRow(item, { showQuantity });
+  if (secondary) li.appendChild(secondary);
 
   return li;
 }
@@ -489,7 +718,7 @@ function renderItems() {
     listEls.itemsActive.appendChild(emptyItemsRow('Tout est terminé pour le moment.'));
   } else {
     active.forEach((item, index) => {
-      listEls.itemsActive.appendChild(buildItemRow(item, { showCheckbox: visibility.done, index }));
+      listEls.itemsActive.appendChild(buildItemRow(item, { showCheckbox: visibility.done, index, showQuantity: visibility.quantity }));
     });
   }
 
@@ -500,7 +729,7 @@ function renderItems() {
   // bucket only got there some other way (e.g. the list's type was changed
   // after the item was already completed) — it still needs a way back to
   // active, which only the checkbox provides.
-  for (const item of done) listEls.itemsDone.appendChild(buildItemRow(item, { showCheckbox: true }));
+  for (const item of done) listEls.itemsDone.appendChild(buildItemRow(item, { showCheckbox: true, showQuantity: visibility.quantity }));
   listEls.doneSummaryLabel.textContent = `Terminés (${done.length})`;
   listEls.doneSection.hidden = done.length === 0;
 }
@@ -586,6 +815,136 @@ function showDashboard() {
 // the item object itself (not its id), since an offline-queued item's id
 // can change (temp-item-* -> real id) out from under a still-pending toggle.
 const pendingToggles = new Map();
+
+// Same coalescing idea as pendingToggles above, minus the undo toast — a
+// quantity bump from the [-]/[+] stepper is a lightweight, instantly-
+// committed action, not something a user expects to "undo" the way a
+// done-toggle or delete is. Tracks the last server-confirmed quantity plus
+// an in-flight request id per item, so a slower response from an earlier
+// click can never clobber a value the user has since moved past by
+// clicking again.
+const pendingQuantityUpdates = new Map();
+
+function changeQuantity(item, newQuantity) {
+  if (!Number.isFinite(newQuantity) || newQuantity < 1) return;
+  hideError();
+
+  const pending = pendingQuantityUpdates.get(item);
+  const committedQuantity = pending ? pending.committedQuantity : item.quantity;
+  const requestId = Symbol('quantity-update');
+
+  item.quantity = newQuantity;
+  pendingQuantityUpdates.set(item, { committedQuantity, requestId });
+  renderItems();
+
+  (async () => {
+    try {
+      const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ quantity: newQuantity }) });
+      if (pendingQuantityUpdates.get(item)?.requestId !== requestId) return; // superseded by a newer click
+      Object.assign(item, updated);
+      pendingQuantityUpdates.delete(item);
+    } catch (err) {
+      if (pendingQuantityUpdates.get(item)?.requestId !== requestId) return;
+      item.quantity = committedQuantity;
+      pendingQuantityUpdates.delete(item);
+      showError(err.message);
+    } finally {
+      renderItems();
+    }
+    await refreshPendingBadge();
+  })();
+}
+
+// Same coalescing pattern as pendingQuantityUpdates/changeQuantity above —
+// toggling urgency from the item-actions sheet is a lightweight, instantly-
+// committed action like the quantity stepper, not something that needs an
+// undo toast the way a done-toggle or delete does.
+const pendingUrgentUpdates = new Map();
+
+function toggleUrgent(item) {
+  hideError();
+
+  const pending = pendingUrgentUpdates.get(item);
+  const committedUrgent = pending ? pending.committedUrgent : item.is_urgent;
+  const newUrgent = !item.is_urgent;
+  const requestId = Symbol('urgent-update');
+
+  item.is_urgent = newUrgent;
+  pendingUrgentUpdates.set(item, { committedUrgent, requestId });
+  renderItems();
+
+  (async () => {
+    try {
+      const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ is_urgent: newUrgent }) });
+      if (pendingUrgentUpdates.get(item)?.requestId !== requestId) return; // superseded by a newer toggle
+      Object.assign(item, updated);
+      pendingUrgentUpdates.delete(item);
+    } catch (err) {
+      if (pendingUrgentUpdates.get(item)?.requestId !== requestId) return;
+      item.is_urgent = committedUrgent;
+      pendingUrgentUpdates.delete(item);
+      showError(err.message);
+    } finally {
+      renderItems();
+    }
+    await refreshPendingBadge();
+  })();
+}
+
+// [-]/[+] buttons plus an inline-editable number field, so an item's
+// quantity can be changed directly from the list view without opening the
+// edit modal — wired to changeQuantity above for the optimistic-PATCH-with-
+// rollback behavior. Only rendered when the list's type shows quantity at
+// all (see FIELD_VISIBILITY_BY_TYPE's `quantity` flag) — buildItemRow gates
+// this the same way it already gates the checkbox/line-marker choice.
+function buildQuantityStepper(item) {
+  const quantity = item.quantity > 0 ? item.quantity : 1;
+
+  const wrap = document.createElement('div');
+  wrap.className =
+    'flex shrink-0 items-center gap-0.5 rounded-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-0.5';
+
+  const decrementBtn = document.createElement('button');
+  decrementBtn.type = 'button';
+  decrementBtn.innerHTML = MINUS_ICON_SVG;
+  decrementBtn.disabled = quantity <= 1;
+  decrementBtn.setAttribute('aria-label', `Diminuer la quantité de ${item.title}`);
+  decrementBtn.className =
+    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent';
+  decrementBtn.addEventListener('click', () => changeQuantity(item, quantity - 1));
+
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.inputMode = 'numeric';
+  input.value = String(quantity);
+  input.setAttribute('aria-label', `Quantité de ${item.title}`);
+  input.className =
+    'w-10 shrink-0 rounded border-0 bg-transparent text-center text-sm font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40';
+  input.addEventListener('change', () => {
+    const parsed = Number.parseInt(input.value, 10);
+    if (Number.isFinite(parsed) && parsed >= 1) {
+      changeQuantity(item, parsed);
+    } else {
+      input.value = String(quantity); // reject an invalid/empty value, restore what was there
+    }
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') input.blur(); // commits via the 'change' handler above
+  });
+  input.addEventListener('click', (event) => event.stopPropagation());
+
+  const incrementBtn = document.createElement('button');
+  incrementBtn.type = 'button';
+  incrementBtn.innerHTML = PLUS_ICON_SVG;
+  incrementBtn.setAttribute('aria-label', `Augmenter la quantité de ${item.title}`);
+  incrementBtn.className =
+    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700';
+  incrementBtn.addEventListener('click', () => changeQuantity(item, quantity + 1));
+
+  wrap.append(decrementBtn, input, incrementBtn);
+  return wrap;
+}
 
 function toggleDone(item) {
   hideError();
@@ -757,11 +1116,23 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     done: false,
     position: 0,
   };
+  // Captured before the form/sheet state changes below: an add made from the
+  // FAB's bottom sheet closes it afterward (the "add one item" mobile flow
+  // this sheet exists for — see openAddItemSheet), while an add made from
+  // the always-visible inline quick-add bar just collapses its advanced
+  // panel back to the default "épuré" state for the next entry.
+  const sheetWasOpen = !listEls.addItemSheet.hidden;
+
   state.currentList.items = [...(state.currentList.items || []), optimisticItem];
   renderItems();
   listEls.createItemForm.reset();
   listEls.itemQuantity.value = '1';
-  listEls.itemTitle.focus();
+  if (sheetWasOpen) {
+    closeAddItemSheet();
+  } else {
+    setQuickAddAdvancedExpanded(false);
+    listEls.itemTitle.focus();
+  }
 
   try {
     const created = await apiRequest('/items', { method: 'POST', body: JSON.stringify(payload) });
@@ -833,6 +1204,61 @@ listEls.editItemModal.addEventListener('click', (event) => {
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !listEls.editItemModal.hidden) closeEditItemModal();
+});
+
+// ---------------------------------------------------------------------------
+// Item actions bottom sheet — the mobile-first replacement for the ✏️/🗑️
+// buttons shown directly on a card on wider screens (see buildItemRow):
+// opened by a tap on an item's title or its [⋮] kebab button, it offers
+// Modifier/Ouvrir le lien/Basculer en urgent/Supprimer for whichever item was
+// tapped, tracked in the module-level `itemActionsSheetItem` declared above.
+// ---------------------------------------------------------------------------
+
+function openItemActionsSheet(item) {
+  itemActionsSheetItem = item;
+  listEls.itemActionsSheetTitle.textContent = item.title;
+  listEls.itemActionsLinkButton.hidden = !(item.url && isSafeHttpUrl(item.url));
+  listEls.itemActionsUrgentLabel.textContent = t(item.is_urgent ? 'modals.itemActions.unmarkUrgent' : 'modals.itemActions.markUrgent');
+  listEls.itemActionsSheet.hidden = false;
+  document.body.classList.add('overflow-hidden');
+}
+
+function closeItemActionsSheet() {
+  itemActionsSheetItem = null;
+  listEls.itemActionsSheet.hidden = true;
+  document.body.classList.remove('overflow-hidden');
+}
+
+listEls.closeItemActionsSheetButton.addEventListener('click', closeItemActionsSheet);
+listEls.itemActionsSheet.addEventListener('click', (event) => {
+  if (event.target === listEls.itemActionsSheet) closeItemActionsSheet();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !listEls.itemActionsSheet.hidden) closeItemActionsSheet();
+});
+
+listEls.itemActionsEditButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item) openEditItemModal(item);
+});
+
+listEls.itemActionsLinkButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item && item.url && isSafeHttpUrl(item.url)) window.open(item.url, '_blank', 'noopener,noreferrer');
+});
+
+listEls.itemActionsUrgentButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item) toggleUrgent(item);
+});
+
+listEls.itemActionsDeleteButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item) removeItem(item);
 });
 
 listEls.editItemForm.addEventListener('submit', async (event) => {

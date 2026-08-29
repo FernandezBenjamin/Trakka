@@ -44,9 +44,15 @@
     "back": "Back to dashboard",
     "editList": "Edit list",
     "shareList": "Share list",
+    "financeSummaryLabel": "Budget summary",
     "financeTotal": "Estimated total",
     "financeSpent": "Already spent",
     "financeRemaining": "Remaining to spend",
+    "advancedToggleAriaLabel": "Advanced options",
+    "addFabAriaLabel": "Add an item",
+    "addSheetTitle": "Add an item",
+    "openLinkAriaLabel": "Open {title}'s link",
+    "moreActionsAriaLabel": "More actions for {title}",
     "titlePlaceholder": "Item or task",
     "titlePlaceholderCustom": "Name, idea, note...",
     "urlPlaceholder": "URL (optional)",
@@ -181,6 +187,13 @@
       "deleteButton": "Delete space",
       "submitCreate": "Create space",
       "submitEdit": "Save"
+    },
+    "itemActions": {
+      "edit": "Edit item",
+      "openLink": "Open link",
+      "markUrgent": "Toggle urgent",
+      "unmarkUrgent": "Remove urgent",
+      "delete": "Delete item"
     },
     "editItem": {
       "title": "Edit item",

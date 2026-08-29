@@ -137,19 +137,36 @@ func (s *Service) RevokeSession(ctx context.Context, rawToken string) error {
 	return s.DB.DeleteSessionByHash(ctx, HashToken(rawToken))
 }
 
-// SetSessionCookie writes the session cookie. HttpOnly + SameSite=Strict:
+// SetSessionCookie writes the session cookie. HttpOnly + SameSite=Lax:
 // this cookie is only ever needed on same-origin requests once a session
-// exists, and Strict blocks it from ever being sent cross-site, closing
-// off CSRF against the JSON API without needing a separate token.
+// exists, so Strict was the original choice — but the local-login and OIDC
+// flows both finish with a same-site 302 redirect (finishLogin), and mobile
+// WebKit (notably iOS Safari in "Add to Home Screen" standalone/PWA mode)
+// has a well-documented quirk where a SameSite=Strict cookie set on the
+// response of that redirect is not reliably attached to the very next
+// request, producing a login that appears to succeed (302) immediately
+// followed by a 401 on the first authenticated call. Lax still omits the
+// cookie from any cross-site request that isn't a top-level GET navigation
+// — in particular every fetch()/XHR the frontend issues, including all
+// POST/PUT/PATCH/DELETE mutations — and every GET route this app exposes
+// is a pure read (see internal/handlers/app.go), so there is no
+// state-changing endpoint a top-level cross-site navigation could trigger.
+// CSRF protection against the JSON API is therefore unchanged by this
+// relaxation; only the previously-unnecessary block on same-site
+// redirect-chain delivery is lifted. Also sets Max-Age alongside Expires:
+// older WebKit releases have been inconsistent about honoring
+// Expires-only Set-Cookie headers, and Max-Age is the more reliable of the
+// two on that engine.
 func (s *Service) SetSessionCookie(w http.ResponseWriter, rawToken string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set from CookieSecure (SESSION_COOKIE_SECURE), gosec only recognizes a literal `true`
 		Name:     SessionCookieName,
 		Value:    rawToken,
 		Path:     "/",
 		Expires:  expiresAt,
+		MaxAge:   int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true,
 		Secure:   s.CookieSecure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -162,7 +179,7 @@ func (s *Service) ClearSessionCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   s.CookieSecure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 

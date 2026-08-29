@@ -38,7 +38,7 @@ func (app *Application) checkItemForBetterPrice(ctx context.Context, item *model
 	fetchCtx, cancel := context.WithTimeout(ctx, priceCheckTimeout)
 	defer cancel()
 
-	info, err := scraper.FetchProductInfo(fetchCtx, *item.URL)
+	info, err := scraper.FetchProductInfo(fetchCtx, *item.URL, app.Logger)
 	if err != nil {
 		app.Logger.Debug("price check found nothing", "item_id", item.ID, "url", *item.URL, "error", err)
 		return nil

@@ -44,9 +44,15 @@
     "back": "Retour au tableau de bord",
     "editList": "Modifier la liste",
     "shareList": "Partager la liste",
+    "financeSummaryLabel": "Résumé du budget",
     "financeTotal": "Total estimé",
     "financeSpent": "Déjà dépensé",
     "financeRemaining": "Reste à dépenser",
+    "advancedToggleAriaLabel": "Options avancées",
+    "addFabAriaLabel": "Ajouter un article",
+    "addSheetTitle": "Ajouter un article",
+    "openLinkAriaLabel": "Ouvrir le lien de {title}",
+    "moreActionsAriaLabel": "Plus d'actions pour {title}",
     "titlePlaceholder": "Article ou tâche",
     "titlePlaceholderCustom": "Prénom, idée, note...",
     "urlPlaceholder": "URL (optionnel)",
@@ -181,6 +187,13 @@
       "deleteButton": "Supprimer l'espace",
       "submitCreate": "Créer l'espace",
       "submitEdit": "Enregistrer"
+    },
+    "itemActions": {
+      "edit": "Modifier l'article",
+      "openLink": "Ouvrir le lien",
+      "markUrgent": "Basculer en urgent",
+      "unmarkUrgent": "Retirer l'urgence",
+      "delete": "Supprimer l'article"
     },
     "editItem": {
       "title": "Modifier l'article",

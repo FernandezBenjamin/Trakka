@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's/CDN_ASSETS' contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v23';
-const RUNTIME_CACHE = 'trakka-runtime-v23';
+const SHELL_CACHE = 'trakka-shell-v24';
+const RUNTIME_CACHE = 'trakka-runtime-v24';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -608,6 +608,7 @@ async function flushQueue() {
         const response = await fetch(entry.path, {
           method: entry.method,
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
           body: entry.body != null ? JSON.stringify(entry.body) : undefined,
         });
 

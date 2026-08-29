@@ -129,7 +129,7 @@
         </button>
       </div>
 
-      <div class="mb-6 flex items-center gap-2" role="tablist">
+      <div id="dashboard-tabs" class="mb-6 flex items-center gap-2" role="tablist">
         <button type="button" id="tab-dashboard" role="tab" aria-selected="true" data-i18n="dashboard.tabLists"
                 class="min-h-[44px] rounded-xl border border-sky-500 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-600 dark:text-sky-300">
           Listes
@@ -275,48 +275,74 @@
         </button>
       </div>
 
-      <div id="finance-summary" data-item-field="price" hidden class="mb-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-4 sm:grid-cols-3">
-        <div class="flex flex-col gap-1">
-          <span data-i18n="items.financeTotal" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Total estimé</span>
-          <span id="finance-total" class="text-lg font-semibold text-slate-900 dark:text-slate-100">0,00&nbsp;€</span>
+      <details id="finance-summary" data-item-field="price" hidden open class="group mb-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-4 shadow-sm">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
+          <span class="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+            <span aria-hidden="true">📊</span>
+            <span data-i18n="items.financeSummaryLabel">Résumé du budget</span>
+          </span>
+          <span class="flex items-center gap-2">
+            <span id="finance-total-compact" class="text-base font-semibold text-slate-900 dark:text-slate-100">0,00&nbsp;€</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
+        </summary>
+        <div class="mt-3 grid grid-cols-1 gap-3 border-t border-slate-200 dark:border-slate-700 pt-3 sm:grid-cols-3">
+          <div class="flex flex-col gap-1">
+            <span data-i18n="items.financeTotal" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Total estimé</span>
+            <span id="finance-total" class="text-lg font-semibold text-slate-900 dark:text-slate-100">0,00&nbsp;€</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span data-i18n="items.financeSpent" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Déjà dépensé</span>
+            <span id="finance-spent" class="text-lg font-semibold text-emerald-600 dark:text-emerald-400">0,00&nbsp;€</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span data-i18n="items.financeRemaining" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Reste à dépenser</span>
+            <span id="finance-remaining" class="text-lg font-semibold text-amber-700 dark:text-amber-400">0,00&nbsp;€</span>
+          </div>
         </div>
-        <div class="flex flex-col gap-1">
-          <span data-i18n="items.financeSpent" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Déjà dépensé</span>
-          <span id="finance-spent" class="text-lg font-semibold text-emerald-600 dark:text-emerald-400">0,00&nbsp;€</span>
-        </div>
-        <div class="flex flex-col gap-1">
-          <span data-i18n="items.financeRemaining" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Reste à dépenser</span>
-          <span id="finance-remaining" class="text-lg font-semibold text-amber-700 dark:text-amber-400">0,00&nbsp;€</span>
-        </div>
-      </div>
+      </details>
 
-      <form id="create-item-form" class="mb-4 flex flex-wrap gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3">
-        <input type="text" id="item-title" required maxlength="500" data-i18n-placeholder="items.titlePlaceholder" placeholder="Article ou tâche"
-               class="min-w-[10rem] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <input type="url" id="item-url" data-item-field="url" data-i18n-placeholder="items.urlPlaceholder" placeholder="URL (optionnel)"
-               class="min-w-[8rem] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <input type="number" id="item-quantity" data-item-field="quantity" min="1" value="1" data-i18n-aria-label="items.quantityAriaLabel" aria-label="Quantité"
-               class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <input type="number" id="item-price" data-item-field="price" hidden step="0.01" min="0" data-i18n-placeholder="items.pricePlaceholder" placeholder="Prix € (optionnel)" data-i18n-aria-label="items.priceAriaLabel" aria-label="Prix en euros"
-               class="w-36 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-        <select id="item-target-month" data-item-field="target-month" hidden data-i18n-aria-label="items.targetMonthAriaLabel" aria-label="Mois prévu (optionnel)"
-                class="min-w-[11rem] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
-        <select id="item-recurrence" data-item-field="recurrence" data-i18n-aria-label="items.recurrenceAriaLabel" aria-label="Récurrence"
-                class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-          <option value="" data-i18n="items.recurrenceNone">Ne pas répéter</option>
-          <option value="DAILY" data-i18n="items.recurrenceDaily">Tous les jours</option>
-          <option value="WEEKLY" data-i18n="items.recurrenceWeekly">Toutes les semaines</option>
-          <option value="MONTHLY" data-i18n="items.recurrenceMonthly">Tous les mois</option>
-          <option value="YEARLY" data-i18n="items.recurrenceYearly">Tous les ans</option>
-        </select>
-        <label data-item-field="urgent" class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-          <input type="checkbox" id="item-urgent" data-i18n-aria-label="items.urgentAriaLabel" aria-label="Marquer comme urgent"
-                 class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-500 focus:ring-rose-500/40">
-          <span aria-hidden="true">🚨</span>
-          <span data-i18n="items.urgentLabel">Marquer comme urgent</span>
-        </label>
-        <button type="submit" data-i18n="items.add" class="rounded-xl bg-sky-500 px-5 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-95">Ajouter</button>
-      </form>
+      <div id="create-item-form-anchor" class="mb-4">
+        <form id="create-item-form">
+          <div class="flex items-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-2 shadow-sm">
+            <input type="text" id="item-title" required maxlength="500" data-i18n-placeholder="items.titlePlaceholder" placeholder="Article ou tâche"
+                   class="min-w-0 flex-1 rounded-xl border-0 bg-transparent px-3 py-2.5 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <button type="button" id="quick-add-toggle" aria-expanded="false" aria-controls="quick-add-advanced" data-i18n-aria-label="items.advancedToggleAriaLabel" aria-label="Options avancées"
+                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <button type="submit" data-i18n-aria-label="items.add" aria-label="Ajouter"
+                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white transition hover:bg-sky-400 active:scale-95">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+
+          <div id="quick-add-advanced" hidden class="mt-2 flex flex-wrap gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3">
+            <input type="url" id="item-url" data-item-field="url" data-i18n-placeholder="items.urlPlaceholder" placeholder="URL (optionnel)"
+                   class="min-w-[8rem] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <input type="number" id="item-quantity" data-item-field="quantity" min="1" value="1" data-i18n-aria-label="items.quantityAriaLabel" aria-label="Quantité"
+                   class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <input type="number" id="item-price" data-item-field="price" hidden step="0.01" min="0" data-i18n-placeholder="items.pricePlaceholder" placeholder="Prix € (optionnel)" data-i18n-aria-label="items.priceAriaLabel" aria-label="Prix en euros"
+                   class="w-36 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <select id="item-target-month" data-item-field="target-month" hidden data-i18n-aria-label="items.targetMonthAriaLabel" aria-label="Mois prévu (optionnel)"
+                    class="min-w-[11rem] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
+            <select id="item-recurrence" data-item-field="recurrence" data-i18n-aria-label="items.recurrenceAriaLabel" aria-label="Récurrence"
+                    class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <option value="" data-i18n="items.recurrenceNone">Ne pas répéter</option>
+              <option value="DAILY" data-i18n="items.recurrenceDaily">Tous les jours</option>
+              <option value="WEEKLY" data-i18n="items.recurrenceWeekly">Toutes les semaines</option>
+              <option value="MONTHLY" data-i18n="items.recurrenceMonthly">Tous les mois</option>
+              <option value="YEARLY" data-i18n="items.recurrenceYearly">Tous les ans</option>
+            </select>
+            <label data-item-field="urgent" class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <input type="checkbox" id="item-urgent" data-i18n-aria-label="items.urgentAriaLabel" aria-label="Marquer comme urgent"
+                     class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-500 focus:ring-rose-500/40">
+              <span aria-hidden="true">🚨</span>
+              <span data-i18n="items.urgentLabel">Marquer comme urgent</span>
+            </label>
+          </div>
+        </form>
+      </div>
 
       <ul id="items-active" class="space-y-2"></ul>
 
@@ -327,6 +353,11 @@
         </summary>
         <ul id="items-done" class="mt-2 space-y-2"></ul>
       </details>
+
+      <button type="button" id="add-item-fab" data-i18n-aria-label="items.addFabAriaLabel" aria-label="Ajouter un article"
+              class="fixed z-30 flex h-14 w-14 items-center justify-center rounded-full bg-sky-500 text-white shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 active:scale-95 md:hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
     </section>
 
   </main>
@@ -667,6 +698,62 @@
 
         <button type="submit" data-i18n="modals.editItem.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Bottom sheet opened by the FAB (#add-item-fab, mobile only): #create-item-form
+       is relocated here (and back to #create-item-form-anchor on close) by
+       openAddItemSheet/closeAddItemSheet in list_view.js, rather than duplicated,
+       so there is exactly one form/one set of listeners regardless of where it's
+       currently rendered. -->
+  <div id="add-item-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="add-item-sheet-title" class="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 id="add-item-sheet-title" data-i18n="items.addSheetTitle" class="text-lg font-semibold">Ajouter un article</h2>
+        <button type="button" id="close-add-item-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="add-item-sheet-body"></div>
+    </div>
+  </div>
+
+  <!-- Item actions bottom sheet: opened by a tap on an item's title or its [⋮]
+       kebab button (buildItemRow in list_view.js) as the mobile replacement for
+       the ✏️/🗑️ buttons shown directly on the card on larger screens. Populated
+       per-item by openItemActionsSheet right before it's shown. -->
+  <div id="item-actions-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="item-actions-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 id="item-actions-sheet-title" class="min-w-0 flex-1 truncate text-lg font-semibold"></h2>
+        <button type="button" id="close-item-actions-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex flex-col gap-1">
+        <button type="button" id="item-actions-edit-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">✏️</span>
+          <span data-i18n="modals.itemActions.edit">Modifier l'article</span>
+        </button>
+        <button type="button" id="item-actions-link-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🔗</span>
+          <span data-i18n="modals.itemActions.openLink">Ouvrir le lien</span>
+        </button>
+        <button type="button" id="item-actions-urgent-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🚨</span>
+          <span id="item-actions-urgent-label" data-i18n="modals.itemActions.markUrgent">Basculer en urgent</span>
+        </button>
+        <button type="button" id="item-actions-delete-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-500/10">
+          <span aria-hidden="true">🗑️</span>
+          <span data-i18n="modals.itemActions.delete">Supprimer l'article</span>
+        </button>
+      </div>
     </div>
   </div>
 
