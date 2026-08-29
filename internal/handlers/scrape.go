@@ -79,7 +79,7 @@ func (app *Application) scrapeProductInfo(item *models.Item, previousURL string)
 		ctx, cancel := context.WithTimeout(context.Background(), scrapeTimeout)
 		defer cancel()
 
-		info, err := scraper.FetchProductInfo(ctx, url)
+		info, err := scraper.FetchProductInfo(ctx, url, app.Logger)
 		if err != nil {
 			app.Logger.Debug("automatic product lookup found nothing", "item_id", itemID, "url", url, "error", err)
 			done <- nil

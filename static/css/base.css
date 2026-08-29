@@ -43,3 +43,145 @@ textarea,
 * {
   scrollbar-color: var(--tk-border-strong) transparent;
 }
+
+/* The header is `sticky top-0`, so on a notched/status-bar phone (fullscreen
+   PWA/standalone mode, enabled by index.html's `viewport-fit=cover` meta tag
+   and the `black-translucent` iOS status bar style) its box starts at the
+   very top of the physical screen, under the notch/status bar. Padding-top
+   here pushes the logo/buttons down below `env(safe-area-inset-top)` while
+   the header's own background (already on the <header> element itself, see
+   its Tailwind classes in index.html) still fills the box all the way up to
+   y=0 — so the bar's color reaches the top of the screen instead of leaving
+   a gap, without the notch ever covering interactive content. `env()`'s
+   second argument is a fallback for browsers that don't support env() at
+   all, not for notch-less devices — there it safely evaluates to 0px, so
+   this is a no-op on any phone/browser without a physical notch or inset. */
+header {
+  padding-top: env(safe-area-inset-top, 16px);
+}
+
+/* Mobile nav tabs (#dashboard-tabs: Listes / Espaces / Budget & Prévisions /
+   Urgent / Partagé avec moi) overflow their row on narrow viewports. Below
+   768px this turns the row into a horizontally swipeable, snap-scrolling
+   strip instead of letting Tailwind's `flex` wrap or compress the buttons
+   (which previously either truncated the last tab or pushed the page's own
+   width past the viewport). `overflow-x: hidden` on body is the backstop:
+   without it, the strip's own scroll container can still cause the whole
+   page to shift sideways by a few pixels on some mobile browsers.
+
+   #dashboard-tabs is a normal child of <main class="... px-4 ... sm:px-6">
+   (see index.html), so it already sits inside <main>'s own gutter with no
+   margin of its own. Giving it a *second*, separate padding-left/right on
+   top of that (an earlier version of this rule did exactly that) stacks the
+   two insets instead of replacing one with the other: measured with a
+   Playwright harness reproducing this exact markup, the first tab landed
+   16px (375px viewport) / 24px (700px viewport) to the right of the
+   "Tableau de bord" title and the list cards below it, which are flush with
+   <main>'s own gutter and carry no padding of their own — the visible
+   symptom this rule exists to fix. The standard full-bleed-scroller fix is
+   used instead: cancel <main>'s inherited gutter with a matching negative
+   margin, then reinstate the *same* value as this element's own padding.
+   The two cancel out exactly for the first tab's position (verified with
+   the same harness: tab/title/card left edges now coincide at every width),
+   while the padding still carves out real scrollable breathing room at both
+   ends of the strip — including after a swipe, via `scroll-padding-left`/
+   `-right` below, so a snapped-to tab never sits flush against the
+   container's own edge.
+
+   The gutter value itself (1rem below 640px, 1.5rem from 640px up) mirrors
+   <main>'s actual Tailwind classes (`px-4`/`sm:px-6`) rather than an
+   arbitrary round number, specifically so it can't drift out of sync with
+   the title/cards it has to stay pixel-aligned with. `box-sizing:
+   border-box` is set explicitly (Tailwind's Preflight already sets it
+   globally, but this component's negative-margin-plus-padding math depends
+   on it directly enough to be worth pinning here too) so the padding is
+   carved out of the bled-out width rather than added on top of it, keeping
+   the scrollable strip from ever exceeding 100% of the viewport. */
+body {
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  #dashboard-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    box-sizing: border-box;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.5rem;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding: 0.25rem 1rem 0.5rem;
+    scroll-padding-left: 1rem;
+    scroll-padding-right: 1rem;
+  }
+
+  /* Matches <main>'s own `sm:px-6` breakpoint (Tailwind's default `sm`,
+     640px) so the gutter never drifts from the title/cards above it, even
+     though this block's flex-wrap/scroll-strip behavior only switches on
+     below 768px. */
+  @media (min-width: 640px) {
+    #dashboard-tabs {
+      margin-left: -1.5rem;
+      margin-right: -1.5rem;
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+      scroll-padding-left: 1.5rem;
+      scroll-padding-right: 1.5rem;
+    }
+  }
+
+  /* Firefox */
+  #dashboard-tabs {
+    scrollbar-width: none;
+  }
+
+  /* Chrome / Safari / iOS */
+  #dashboard-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  #dashboard-tabs > button {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+}
+
+/* Item cards (static/js/list_view.js's buildItemRow) use one layout at every
+   breakpoint, Todoist/Notion-style: a top .item-card__row (checkbox/marker +
+   optional thumbnail + title + inline 🔗 link icon, then a trailing price and
+   the edit/delete/kebab controls, all built with Tailwind's own flex/gap/
+   truncate utilities directly in buildItemRow) and, only when there's
+   something to show, a secondary line below it (.item-card__secondary: the
+   quantity stepper plus the month/recurrence/urgent badges) indented to align
+   under the title rather than the checkbox. `.item-card__actions` (✏️/🗑️) and
+   `.item-card__kebab` (⋮, opening #item-actions-sheet) are both always built
+   by buildItemRow; which one is actually visible is a pure CSS/Tailwind
+   concern (`hidden md:flex` / `flex md:hidden` on the two, respectively) —
+   see buildItemRow for why the sheet exists at all on narrow screens where
+   two more 44px tap targets on the card would crowd the price/title. */
+@media (max-width: 768px) {
+  /* Edit/delete/kebab are already 44x44px (Tailwind's h-11 w-11) — this is a
+     defensive floor tied directly to the "safe touch target" requirement,
+     in case that sizing ever changes without this rule being noticed. */
+  .item-card__actions button,
+  .item-card__kebab {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* The FAB (#add-item-fab, shown only below Tailwind's `md` breakpoint — see
+   its `md:hidden` class in index.html) sits above the home-indicator/gesture
+   area on a notched phone in fullscreen PWA mode, the same
+   env(safe-area-inset-*) reasoning as the header's padding-top above. Bottom
+   position only (not left/right, which stay Tailwind's ordinary `right-6`/
+   `bottom-6`-equivalent fixed spacing) needs the inset added in, since only
+   the bottom edge is ever obscured by a device's own chrome here. */
+#add-item-fab {
+  right: 1.5rem;
+  bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}

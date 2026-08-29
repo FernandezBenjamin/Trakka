@@ -312,17 +312,19 @@ function renderPlanning() {
   for (const entry of planningEntries) {
     const month = entry.item.target_month;
     if (!rangeSet.has(month)) continue;
-    // Mirrors updateFinanceSummary in list_view.js: price is treated as a
-    // line total, not multiplied by quantity, so the two totals agree.
-    const amount = typeof entry.item.price === 'number' ? entry.item.price : null;
+    // Mirrors updateFinanceSummary/lineTotal in list_view.js: item.price is
+    // a per-unit price, so the line amount is price * quantity — keeping
+    // this in sync with lineTotal is what makes the two totals agree.
+    const amount = typeof entry.item.price === 'number' ? entry.item.price * (entry.item.quantity > 0 ? entry.item.quantity : 1) : null;
     grouped.get(month).push({ item: entry.item, listName: entry.listName, recurring: false, occurrenceCount: 1, amount });
     if (amount !== null) total += amount;
   }
 
   for (const entry of planningRecurringEntries) {
     const occurrences = projectRecurringOccurrences(entry.item, range);
+    const quantity = entry.item.quantity > 0 ? entry.item.quantity : 1;
     for (const [month, count] of occurrences) {
-      const amount = typeof entry.item.price === 'number' ? entry.item.price * count : null;
+      const amount = typeof entry.item.price === 'number' ? entry.item.price * quantity * count : null;
       grouped.get(month).push({ item: entry.item, listName: entry.listName, recurring: true, occurrenceCount: count, amount });
       if (amount !== null) total += amount;
     }

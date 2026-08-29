@@ -147,6 +147,12 @@ async function apiRequest(path, options = {}) {
   try {
     response = await fetch(`${API_BASE}${path}`, {
       headers: { 'Content-Type': 'application/json' },
+      // Explicit even though 'same-origin' has been the fetch() spec
+      // default since 2017: some embedded/WebKit mobile browsers (notably
+      // iOS Safari's standalone "Add to Home Screen" PWA mode) have been
+      // unreliable about implicit defaults for cookie handling, so this is
+      // spelled out rather than relied on implicitly.
+      credentials: 'same-origin',
       ...options,
     });
   } catch {
@@ -531,15 +537,25 @@ function listIcon(list) {
 }
 
 // Shopping cards show which sites their items link to (up to 3 domains,
-// deduplicated, with a "+N" overflow badge) — a quick sourcing overview.
+// deduplicated, with a "+N" overflow badge) plus a running estimated total
+// (the sum of every priced item's price * quantity — see lineTotal in
+// list_view.js, the same per-unit-price convention this mirrors) — a quick
+// sourcing + budget overview without opening the list.
 function urlBadges(items) {
   const domains = [];
+  let total = 0;
+  let hasPrice = false;
   for (const item of items) {
-    if (!item.url) continue;
-    try {
-      domains.push(new URL(item.url).hostname.replace(/^www\./, ''));
-    } catch {
-      // malformed URL slipped through some other path; skip it silently
+    if (item.url) {
+      try {
+        domains.push(new URL(item.url).hostname.replace(/^www\./, ''));
+      } catch {
+        // malformed URL slipped through some other path; skip it silently
+      }
+    }
+    if (typeof item.price === 'number') {
+      hasPrice = true;
+      total += item.price * (item.quantity > 0 ? item.quantity : 1);
     }
   }
   const unique = [...new Set(domains)];
@@ -549,6 +565,13 @@ function urlBadges(items) {
   }
   if (unique.length > 3) {
     frag.appendChild(badge(`+${unique.length - 3}`, 'slate'));
+  }
+  // formatEuro is defined in list_view.js, loaded after this file — safe to
+  // call here since this only ever runs at render time, well after every
+  // script has finished loading (same deferred-call pattern buildItemRow
+  // already uses for monthLabel/buildRecurrenceBadge from planning.js).
+  if (hasPrice) {
+    frag.appendChild(badge(formatEuro(total), 'emerald'));
   }
   return frag;
 }
