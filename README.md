@@ -52,6 +52,7 @@ DB_PATH=./trakka.db STATIC_DIR=./static ./trakka
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Docker/Podman deployment, configuration, rootless notes
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — local dev setup, building, project layout
 - [docs/PWA.md](docs/PWA.md) — offline support: service worker, IndexedDB sync queue, iOS/Android specifics
+- [docs/INSTALLATION.md](docs/INSTALLATION.md) — step-by-step guide to installing Trakka as an app on iOS/iPadOS and Android
 
 ## Tech stack
 

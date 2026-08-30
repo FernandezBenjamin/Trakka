@@ -685,6 +685,91 @@
 
         <button type="submit" data-i18n="modals.userSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
       </form>
+
+      <button type="button" id="install-help-button"
+              class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+        <span aria-hidden="true">📱</span>
+        <span data-i18n="modals.userSettings.installHelpButton">Comment installer l'application sur mon téléphone ?</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="install-help-modal" hidden class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="install-help-modal-title" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 id="install-help-modal-title" data-i18n="modals.installHelp.title" class="text-lg font-semibold">Installer Trakka sur votre téléphone</h2>
+        <button type="button" id="close-install-help-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <p data-i18n="modals.installHelp.intro" class="mb-4 text-sm text-slate-600 dark:text-slate-300">Trakka s'installe comme une application, directement depuis votre navigateur — sans passer par un store.</p>
+
+      <div id="install-help-tabs" class="mb-4 flex gap-2" role="tablist">
+        <button type="button" id="install-help-tab-ios" role="tab" aria-selected="true" data-i18n="modals.installHelp.iosTab"
+                class="min-h-[44px] flex-1 rounded-xl border border-sky-500 bg-sky-500/10 px-3 py-2 text-sm font-medium text-sky-600 dark:text-sky-300">
+          iOS (iPhone/iPad)
+        </button>
+        <button type="button" id="install-help-tab-android" role="tab" aria-selected="false" data-i18n="modals.installHelp.androidTab"
+                class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+          Android
+        </button>
+      </div>
+
+      <ol id="install-help-steps-ios" class="space-y-3">
+        <li class="flex items-start gap-3">
+          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </span>
+          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step1">Ouvrez ce lien dans Safari.</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </span>
+          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step2">Appuyez sur l'icône de partage (le carré avec une flèche vers le haut) dans la barre d'outils.</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </span>
+          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step3">Faites défiler les options et sélectionnez « Sur l'écran d'accueil ».</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </span>
+          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step4">Vérifiez le nom proposé, puis appuyez sur « Ajouter ».</span>
+        </li>
+      </ol>
+
+      <ol id="install-help-steps-android" hidden class="space-y-3">
+        <li class="flex items-start gap-3">
+          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </span>
+          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step1">Ouvrez ce lien dans Chrome (ou votre navigateur mobile).</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+          </span>
+          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step2">Appuyez sur le menu à 3 points en haut à droite.</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </span>
+          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step3">Sélectionnez « Installer l'application » ou « Ajouter à l'écran d'accueil ».</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </span>
+          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step4">Confirmez l'installation.</span>
+        </li>
+      </ol>
     </div>
   </div>
 
@@ -908,5 +993,6 @@
   <script src="/js/notifications.js"></script>
   <script src="/js/admin.js"></script>
   <script src="/js/settings.js"></script>
+  <script src="/js/install-help.js"></script>
 </body>
 </html>
