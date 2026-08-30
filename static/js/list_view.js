@@ -859,6 +859,13 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
   const secondary = buildSecondaryRow(item, { showQuantity });
   if (secondary) li.appendChild(secondary);
 
+  // attachItemSwipeGestures is defined in gestures.js — swipe right to
+  // toggle done (only when this list type actually shows the checkbox at
+  // all), swipe left to delete, both reusing toggleDone/removeItem exactly
+  // as the checkbox/trash button above already do. Touch-only and a no-op
+  // on a device with no touchscreen — see that file's own header comment.
+  attachItemSwipeGestures(li, item, { canToggleDone: showCheckbox });
+
   return li;
 }
 
