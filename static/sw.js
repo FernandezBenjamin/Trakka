@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's/CDN_ASSETS' contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v32';
-const RUNTIME_CACHE = 'trakka-runtime-v32';
+const SHELL_CACHE = 'trakka-shell-v34';
+const RUNTIME_CACHE = 'trakka-runtime-v34';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -261,10 +261,27 @@ async function mirrorReadResponse(url, response) {
   // has no offline support in the first place (see shares.js's
   // loadSharedView). Skip it entirely rather than either.
   const isSharedWithMe = url.pathname === '/api/v1/lists' && url.searchParams.get('shared_with_me') === 'true';
+  // Same reasoning as isSharedWithMe, applied to CLAUDE.md's "pinned house
+  // spaces" feature: ?pinned_house_spaces=true also returns lists from
+  // Houses the caller belongs to but that aren't necessarily the currently
+  // selected one — mirroring them into the plain lists store under their
+  // *other* House's house_id would be correct on its own, but this query has
+  // no offline support in the first place (see shares.js's
+  // loadPinnedHouseSpaceLists), so it's skipped the same way.
+  const isPinnedHouseSpaces = url.pathname === '/api/v1/lists' && url.searchParams.get('pinned_house_spaces') === 'true';
+  // Same reasoning as isSharedWithMe above, applied to Spaces: a category
+  // shared with the caller (rather than owned by them) belongs to whoever
+  // actually owns it, not to any of the caller's own custom_category_id
+  // associations — mirroring it into the plain custom_categories mirror
+  // would pollute it with a row the caller can't rename/delete and that
+  // has no offline support in the first place (see spaces.js's
+  // loadSharedCustomCategories). Skip it entirely rather than either.
+  const isSharedCategoriesQuery =
+    url.pathname === '/api/v1/custom-categories' && url.searchParams.get('shared_with_me') === 'true';
 
   if (url.pathname === '/api/v1/houses' && Array.isArray(data)) {
     await self.TrakkaDB.putHouses(data);
-  } else if (url.pathname === '/api/v1/lists' && !isSharedWithMe && Array.isArray(data)) {
+  } else if (url.pathname === '/api/v1/lists' && !isSharedWithMe && !isPinnedHouseSpaces && Array.isArray(data)) {
     await self.TrakkaDB.putLists(data.map(withoutItems));
   } else if (listMatch && data && typeof data === 'object') {
     const { items, ...list } = data;
@@ -272,7 +289,7 @@ async function mirrorReadResponse(url, response) {
     if (Array.isArray(items)) await self.TrakkaDB.putItems(items);
   } else if (url.pathname === '/api/v1/items' && Array.isArray(data)) {
     await self.TrakkaDB.putItems(data);
-  } else if (url.pathname === '/api/v1/custom-categories' && Array.isArray(data)) {
+  } else if (url.pathname === '/api/v1/custom-categories' && !isSharedCategoriesQuery && Array.isArray(data)) {
     await self.TrakkaDB.putCustomCategories(data);
   }
 }
@@ -290,6 +307,16 @@ async function offlineReadFallback(url) {
     // above) — answer with an empty list rather than falling through to the
     // general lists mirror below, which would incorrectly surface the
     // caller's own House-scoped lists in the "Partagé avec moi" tab.
+    return new Response(JSON.stringify([]), { status: 200, headers });
+  }
+
+  if (url.pathname === '/api/v1/lists' && url.searchParams.get('pinned_house_spaces') === 'true') {
+    // Same reasoning as the shared_with_me case just above, applied to
+    // CLAUDE.md's "pinned house spaces" feature — no offline mirror, so an
+    // empty list rather than falling through to the general lists mirror
+    // below (which has no notion of "only the ones reached via a pinned
+    // House Space" and would return every one of the caller's own
+    // House-scoped lists instead).
     return new Response(JSON.stringify([]), { status: 200, headers });
   }
 
@@ -312,6 +339,14 @@ async function offlineReadFallback(url) {
     const listId = decodeId(url.searchParams.get('list_id'));
     const items = listId != null ? await self.TrakkaDB.getItemsByList(listId) : [];
     return new Response(JSON.stringify(items), { status: 200, headers });
+  }
+
+  if (url.pathname === '/api/v1/custom-categories' && url.searchParams.get('shared_with_me') === 'true') {
+    // No offline mirror for Spaces shared with the caller (see
+    // mirrorReadResponse above) — answer with an empty list rather than
+    // falling through to the general categories mirror below, which would
+    // incorrectly surface the caller's own categories as "shared with me".
+    return new Response(JSON.stringify([]), { status: 200, headers });
   }
 
   if (url.pathname === '/api/v1/custom-categories') {

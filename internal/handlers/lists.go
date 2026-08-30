@@ -15,9 +15,28 @@ import (
 // list_shares/space_shares grant (see db.ListSharedListsForUser) rather than
 // the caller's own House-scoped lists — house_id/type filters don't apply
 // to that mode, mirroring how ?house_id= itself is optional below.
+// ?pinned_house_spaces=true is a third, equally exclusive mode: every List
+// the caller reaches purely through a space_house_pins pin on one of its
+// Houses' own Spaces (db.ListPinnedHouseSpaceLists) — deliberately not
+// folded into ?shared_with_me=true's own query, since
+// ListSharedListsForUser's House-membership exclusion would filter every
+// one of these rows straight back out (see that method's own comment). This
+// is what lets a pinned House Space's lists show up on the caller's
+// dashboard even while a *different* House they also belong to is the one
+// currently selected — see the "Pinning shared lists (and shared Spaces)"
+// bullet in CLAUDE.md.
 func (app *Application) handleListsIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("shared_with_me") == "true" {
 		lists, err := app.DB.ListSharedListsForUser(r.Context(), userFromContext(r).ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, lists)
+		return
+	}
+	if r.URL.Query().Get("pinned_house_spaces") == "true" {
+		lists, err := app.DB.ListPinnedHouseSpaceLists(r.Context(), userFromContext(r).ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return

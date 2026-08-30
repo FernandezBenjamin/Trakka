@@ -705,6 +705,7 @@ function badge(text, palette) {
     emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
     violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-300',
     orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-300',
+    amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-300',
   };
   const span = document.createElement('span');
   span.className = `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors[palette] || colors.slate}`;
@@ -830,12 +831,24 @@ function buildListCard(list, badgesFragment) {
   typeRow.className = 'mb-2 flex flex-wrap items-center gap-1.5 empty:hidden';
   const typeBadgeEl = typeBadge(list.type);
   if (typeBadgeEl) typeRow.appendChild(typeBadgeEl);
-  // list.access_source is only ever set by db.ListSharedListsForUser (see
-  // shares.js's "Partagé avec moi" tab) — the 👥 indicator CLAUDE.md's
-  // sharing feature asks for, so a list someone else shared with you is
-  // recognizable at a glance among your own.
+  // list.access_source is set by db.ListSharedListsForUser (see shares.js's
+  // "Partagé avec moi" tab: 'list_share'/'space_share') and
+  // db.ListPinnedHouseSpaceLists ('house_member', see the "pinned house
+  // spaces" bullet in CLAUDE.md) — the 👥 indicator CLAUDE.md's sharing
+  // feature asks for, so a list reached some way other than the currently
+  // selected House's own ordinary membership is recognizable at a glance
+  // among your own.
   if (list.access_source) {
     typeRow.appendChild(badge(`👥 ${t('shares.sharedBadge')}`, 'violet'));
+  }
+  // is_pinned_to_dashboard only ever comes from db.ListSharedListsForUser
+  // (see loadPinnedSharedLists/loadSharedView in shares.js) — a clear visual
+  // cue that this card is pinned, independent of the pin button's own
+  // active/inactive icon color, since a card can show up in either the
+  // dashboard grids or the "Partagé avec moi" tab and this badge should read
+  // the same way in both places.
+  if (list.is_pinned_to_dashboard) {
+    typeRow.appendChild(badge(`📌 ${t('shares.pinnedBadge')}`, 'amber'));
   }
 
   const titleRow = document.createElement('div');
@@ -898,24 +911,58 @@ function buildListCard(list, badgesFragment) {
     deleteBtn.innerHTML = TRASH_ICON_SVG;
     deleteBtn.addEventListener('click', () => removeList(list));
     actions.appendChild(deleteBtn);
-  } else if (list.access_source === 'list_share') {
-    // Pinning is only offered for a list shared *directly* (a list_shares
-    // row the recipient themselves holds) — one reached only via a shared
-    // Space has no such row for PATCH /api/v1/lists/{id}/share/pin to flip,
-    // see handleListSharePin/SetListSharePinned. This is the recipient's
-    // own action (CLAUDE.md's "Pinning shared lists" feature): pinning
-    // makes the card also show up on their own dashboard grids, alongside
-    // their House's own lists, without needing House membership.
+  } else if (list.access_source === 'list_share' || list.access_source === 'space_share' || list.access_source === 'house_member') {
+    // Pinning is offered for a list shared *directly* (a list_shares row
+    // the recipient themselves holds), one reached only via a shared Space
+    // (space_shares — PATCH /api/v1/lists/{id}/share/pin's backend,
+    // db.SetListSharePinned, auto-creates the list_shares row that carries
+    // the flag in that case, scoped to exactly the permission the Space
+    // already grants), and one reached via a Space merely visible through
+    // House membership rather than an explicit share (space_house_pins,
+    // access_source 'house_member' — see the "pinned house spaces" bullet
+    // in CLAUDE.md; this card only ever shows up here because the caller
+    // pinned it, so this button always reads as "unpin" in practice, but
+    // stays a plain toggle for consistency with the other two sources).
+    // This is the recipient/viewer's own action: pinning makes the card
+    // also show up on their own dashboard grids even while a different
+    // House is currently selected. Note: if the list's parent Space is
+    // *itself* pinned as a whole (see spaces.js's shared-space kebab menu),
+    // this per-list toggle can't override that — db.ListSharedListsForUser/
+    // db.ListPinnedHouseSpaceLists OR the relevant sources together, so
+    // unpinning one list here while its Space stays pinned leaves the card
+    // on the dashboard regardless, by design (the Space-level pin is the
+    // "master" pin for everything reachable through it).
+    //
+    // Direct icon toggle on wider screens (hidden md:flex) plus a [⋮] kebab
+    // opening #list-card-actions-sheet on narrow ones (flex md:hidden) —
+    // the same responsive split buildItemRow's .item-card__actions/
+    // .item-card__kebab already use in list_view.js, for the same reason: a
+    // bare icon button is less discoverable/labeled than the same action
+    // spelled out as text in a sheet once screen space is tight.
+    const pinned = !!list.is_pinned_to_dashboard;
+
     const pinBtn = document.createElement('button');
     pinBtn.type = 'button';
-    const pinned = !!list.is_pinned_to_dashboard;
     pinBtn.setAttribute('aria-label', t(pinned ? 'common.unpinList' : 'common.pinList', { name: list.name }));
     pinBtn.className =
-      'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 ' +
+      'hidden md:flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 ' +
       (pinned ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500');
     pinBtn.innerHTML = PIN_ICON_SVG;
     pinBtn.addEventListener('click', () => toggleListPin(list));
     actions.appendChild(pinBtn);
+
+    const kebabBtn = document.createElement('button');
+    kebabBtn.type = 'button';
+    kebabBtn.setAttribute('aria-label', t('common.listActionsAriaLabel', { name: list.name }));
+    kebabBtn.className =
+      'flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700';
+    // KEBAB_ICON_SVG is defined in list_view.js, loaded after this file —
+    // safe because it's only read here at click-time/render-time, well
+    // after every script tag has finished loading (see PENCIL_ICON_SVG's
+    // use just above for the same already-established cross-file pattern).
+    kebabBtn.innerHTML = KEBAB_ICON_SVG;
+    kebabBtn.addEventListener('click', () => openListCardActionsSheet(list));
+    actions.appendChild(kebabBtn);
   }
 
   row.append(openBtn, actions);
@@ -1035,14 +1082,36 @@ async function loadDashboard() {
   // Alongside the current House's own lists, the dashboard also shows any
   // list shared directly with the caller that they've chosen to pin (see
   // buildListCard's 📌 button, toggleListPin, and loadPinnedSharedLists in
-  // shares.js) — CLAUDE.md's "Pinning shared lists" feature. No offline
-  // mirror for these (same "requires connectivity" scoping as the rest of
-  // the sharing feature), so they simply don't appear while offline; a
-  // best-effort failure here must never block the rest of the dashboard
-  // from rendering.
-  const pinnedShared = await loadPinnedSharedLists().catch(() => []);
+  // shares.js) — CLAUDE.md's "Pinning shared lists" feature — and any list
+  // the caller reaches purely by pinning a Space visible to them through
+  // House membership (loadPinnedHouseSpaceLists, access_source
+  // 'house_member' — CLAUDE.md's "pinned house spaces" feature), which lets
+  // a list from a *different* House the caller also belongs to show up here
+  // without switching the house selector away from the currently selected
+  // one. No offline mirror for either (same "requires connectivity" scoping
+  // as the rest of the sharing feature), so neither appears while offline;
+  // a best-effort failure in either must never block the rest of the
+  // dashboard from rendering.
+  const [pinnedShared, pinnedHouseSpace] = await Promise.all([
+    loadPinnedSharedLists().catch(() => []),
+    loadPinnedHouseSpaceLists().catch(() => []),
+  ]);
 
-  renderDashboardGrids([...detailed, ...pinnedShared]);
+  // A house_member-sourced list is, in the common single-House case,
+  // already present in `detailed` above (it belongs to a House the caller
+  // is an ordinary member of — pinning just means "show it even when a
+  // *different* House is selected", not "duplicate the card") — dedupe by
+  // id, keeping detailed's own copy (fetched with the currently selected
+  // House's own context) over the pinned-lists ones.
+  const seenListIds = new Set(detailed.map((list) => list.id));
+  const extra = [];
+  for (const list of [...pinnedShared, ...pinnedHouseSpace]) {
+    if (seenListIds.has(list.id)) continue;
+    seenListIds.add(list.id);
+    extra.push(list);
+  }
+
+  renderDashboardGrids([...detailed, ...extra]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1122,27 +1191,93 @@ function removeList(list) {
   });
 }
 
-// Pins or unpins a directly-shared list on the caller's own dashboard (see
-// buildListCard's pin button above and PATCH /api/v1/lists/{id}/share/pin).
-// Unlike removeList this isn't optimistic/undo-able — it's a quick,
-// infrequent toggle, so it follows shares.js's simpler
-// await-then-refresh pattern (see revokeShare) rather than the
-// coalesced-optimistic pattern item quantity/urgent toggles use for
-// rapid-fire clicks. refreshVisibleView() (defined above) re-renders
-// whichever of the dashboard grids/"Partagé avec moi" tab is currently on
-// screen, since pinning can change what either one shows.
+// Pins or unpins a directly-shared list (or one reached via a House-visible
+// Space — access_source 'house_member', see the "pinned house spaces"
+// bullet in CLAUDE.md) on the caller's own dashboard (see buildListCard's
+// pin button above and PATCH /api/v1/lists/{id}/share/pin). Unlike
+// removeList this isn't optimistic/undo-able — it's a quick, infrequent
+// toggle, so it follows shares.js's simpler await-then-refresh pattern (see
+// revokeShare) rather than the coalesced-optimistic pattern item quantity/
+// urgent toggles use for rapid-fire clicks. refreshVisibleView() (defined
+// above) re-renders whichever tab is currently on screen; loadDashboard()
+// is also re-run whenever that wasn't the dashboard already (isDashboardTabActive,
+// defined in planning.js — avoids fetching it twice when it was) so the
+// dashboard's own underlying data is fresh the instant the user next looks
+// at it, without waiting on some unrelated future refresh. A toast confirms
+// the action the same way house-rename's TrakkaToast.success does, since
+// there's otherwise no visible feedback for a card that may not even be on
+// screen right now (e.g. pinned from the "Partagé avec moi" tab).
 async function toggleListPin(list) {
   hideError();
+  const pinning = !list.is_pinned_to_dashboard;
   try {
     await apiRequest(`/lists/${list.id}/share/pin`, {
       method: 'PATCH',
-      body: JSON.stringify({ pinned: !list.is_pinned_to_dashboard }),
+      body: JSON.stringify({ pinned: pinning }),
     });
     await refreshVisibleView();
+    if (!isDashboardTabActive()) await loadDashboard();
+    TrakkaToast.success(t(pinning ? 'shares.pinnedToast' : 'shares.unpinnedToast', { name: list.name }));
   } catch (err) {
     showError(err.message);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Shared-list card actions bottom sheet — the mobile-first replacement for
+// the 📌 pin/unpin icon button shown directly on a shared list's card on
+// wider screens (see buildListCard's list_share branch above, and
+// #item-actions-sheet in list_view.js for the identical pattern this
+// mirrors). Currently offers only the pin/unpin toggle, since that's the
+// only action a shared list's card exposes at all — any future
+// shared-list-card action should be added here too rather than growing a
+// second sheet.
+// ---------------------------------------------------------------------------
+
+const listCardActionsEls = {
+  sheet: document.getElementById('list-card-actions-sheet'),
+  title: document.getElementById('list-card-actions-sheet-title'),
+  closeButton: document.getElementById('close-list-card-actions-sheet-button'),
+  pinButton: document.getElementById('list-card-actions-pin-button'),
+  pinIcon: document.getElementById('list-card-actions-pin-icon'),
+  pinLabel: document.getElementById('list-card-actions-pin-label'),
+};
+
+// The list currently open in the sheet, or null when it's closed — set by
+// openListCardActionsSheet, read by the pin button's own click handler below
+// (the same "track the acted-on item at module scope" pattern
+// itemActionsSheetItem uses in list_view.js).
+let listCardActionsSheetList = null;
+
+function openListCardActionsSheet(list) {
+  listCardActionsSheetList = list;
+  listCardActionsEls.title.textContent = list.name;
+  const pinned = !!list.is_pinned_to_dashboard;
+  listCardActionsEls.pinIcon.textContent = pinned ? '📍' : '📌';
+  listCardActionsEls.pinLabel.textContent = t(pinned ? 'modals.listActions.unpin' : 'modals.listActions.pin');
+  listCardActionsEls.sheet.hidden = false;
+  document.body.classList.add('overflow-hidden');
+}
+
+function closeListCardActionsSheet() {
+  listCardActionsSheetList = null;
+  listCardActionsEls.sheet.hidden = true;
+  document.body.classList.remove('overflow-hidden');
+}
+
+listCardActionsEls.closeButton.addEventListener('click', closeListCardActionsSheet);
+listCardActionsEls.sheet.addEventListener('click', (event) => {
+  if (event.target === listCardActionsEls.sheet) closeListCardActionsSheet();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !listCardActionsEls.sheet.hidden) closeListCardActionsSheet();
+});
+
+listCardActionsEls.pinButton.addEventListener('click', () => {
+  const list = listCardActionsSheetList;
+  closeListCardActionsSheet();
+  if (list) toggleListPin(list);
+});
 
 // ---------------------------------------------------------------------------
 // "New/edit list" modal — one shared modal for both, mirroring

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -117,5 +118,144 @@ func TestHandleListSharePinDoesNotRequireHouseMembership(t *testing.T) {
 
 	if ownerRec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for the House owner (no list_shares row of their own), got %d: %s", ownerRec.Code, ownerRec.Body.String())
+	}
+}
+
+// TestHandleSpaceSharePinDoesNotRequireOwnership is the Space-level
+// equivalent of TestHandleListSharePinDoesNotRequireHouseMembership: the
+// recipient of a Space share (not its owner) must be able to pin it, and
+// the Space's own owner — who by definition holds no space_shares row on
+// their own category — must get a 404 rather than being let through some
+// ownership-based shortcut.
+func TestHandleSpaceSharePinDoesNotRequireOwnership(t *testing.T) {
+	app := newTestApplication(t)
+	ctx := context.Background()
+
+	owner := mustCreateTestUser(t, app, "owner@example.com")
+	recipient := mustCreateTestUser(t, app, "recipient@example.com")
+
+	category, err := app.DB.CreateCustomCategory(ctx, owner.ID, "Vacances", "🏖️", "", 0)
+	if err != nil {
+		t.Fatalf("creating category: %v", err)
+	}
+	if _, err := app.DB.CreateOrUpdateSpaceShare(ctx, category.ID, recipient.ID, "read"); err != nil {
+		t.Fatalf("sharing space with recipient: %v", err)
+	}
+
+	categoryIDStr := strconv.FormatInt(category.ID, 10)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/custom-categories/"+categoryIDStr+"/share/pin", strings.NewReader(`{"pinned":true}`))
+	req.SetPathValue("id", categoryIDStr)
+	req = req.WithContext(context.WithValue(req.Context(), userContextKey, recipient))
+	rec := httptest.NewRecorder()
+
+	app.handleSpaceSharePin(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 pinning a space shared with the recipient, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var share models.SpaceShare
+	if err := json.Unmarshal(rec.Body.Bytes(), &share); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if !share.IsPinnedToDashboard {
+		t.Fatalf("expected the response to reflect the pinned state, got %+v", share)
+	}
+
+	ownerReq := httptest.NewRequest(http.MethodPatch, "/api/v1/custom-categories/"+categoryIDStr+"/share/pin", strings.NewReader(`{"pinned":true}`))
+	ownerReq.SetPathValue("id", categoryIDStr)
+	ownerReq = ownerReq.WithContext(context.WithValue(ownerReq.Context(), userContextKey, owner))
+	ownerRec := httptest.NewRecorder()
+
+	app.handleSpaceSharePin(ownerRec, ownerReq)
+
+	if ownerRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for the Space's own owner (no space_shares row of their own), got %d: %s", ownerRec.Code, ownerRec.Body.String())
+	}
+}
+
+// TestHandleSpaceSharePinFallsBackToHouseMembership is a regression guard
+// for the second half of this session's bug report: a fellow House member
+// with no space_shares row at all — nobody explicitly shared the Space with
+// them, they can just see it because a fellow member tagged one of the
+// House's own lists with it — must still be able to pin it via this
+// endpoint. handleSpaceSharePin must fall back to SetSpaceHousePinned once
+// SetSpaceSharePinned reports ErrNotFound, and the response in that case is
+// a models.SpacePinStatus (not a models.SpaceShare, since there's no
+// space_shares row to return). A genuine stranger — no House relationship,
+// no share — must still get a 404.
+func TestHandleSpaceSharePinFallsBackToHouseMembership(t *testing.T) {
+	app := newTestApplication(t)
+	ctx := context.Background()
+
+	owner := mustCreateTestUser(t, app, "owner@example.com")
+	fellowMember := mustCreateTestUser(t, app, "fellow@example.com")
+	stranger := mustCreateTestUser(t, app, "stranger@example.com")
+
+	house, err := app.DB.CreateHouseWithOwner(ctx, "Maison Principale", owner.ID)
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+	if _, err := app.DB.AddHouseMember(ctx, house.ID, fellowMember.ID, "member"); err != nil {
+		t.Fatalf("AddHouseMember: %v", err)
+	}
+	category, err := app.DB.CreateCustomCategory(ctx, owner.ID, "Vacances", "🏖️", "", 0)
+	if err != nil {
+		t.Fatalf("creating category: %v", err)
+	}
+	if _, err := app.DB.CreateList(ctx, "Courses vacances", "shopping", house.ID, &category.ID, ""); err != nil {
+		t.Fatalf("creating list: %v", err)
+	}
+
+	// Sanity check: the fellow member really has no space_shares row —
+	// otherwise this test would prove nothing about the fallback path.
+	if _, err := app.DB.GetSpaceShare(ctx, category.ID, fellowMember.ID); !errors.Is(err, db.ErrNotFound) {
+		t.Fatalf("test setup bug: expected no pre-existing space_shares row, got %v", err)
+	}
+
+	categoryIDStr := strconv.FormatInt(category.ID, 10)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/custom-categories/"+categoryIDStr+"/share/pin", strings.NewReader(`{"pinned":true}`))
+	req.SetPathValue("id", categoryIDStr)
+	req = req.WithContext(context.WithValue(req.Context(), userContextKey, fellowMember))
+	rec := httptest.NewRecorder()
+
+	app.handleSpaceSharePin(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 pinning a House-visible space via the fallback path, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var status models.SpacePinStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if !status.IsPinnedToDashboard || status.AccessSource != "house_member" || status.CustomCategoryID != category.ID {
+		t.Fatalf("expected a pinned house_member SpacePinStatus for the category, got %+v", status)
+	}
+
+	strangerReq := httptest.NewRequest(http.MethodPatch, "/api/v1/custom-categories/"+categoryIDStr+"/share/pin", strings.NewReader(`{"pinned":true}`))
+	strangerReq.SetPathValue("id", categoryIDStr)
+	strangerReq = strangerReq.WithContext(context.WithValue(strangerReq.Context(), userContextKey, stranger))
+	strangerRec := httptest.NewRecorder()
+
+	app.handleSpaceSharePin(strangerRec, strangerReq)
+
+	if strangerRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for a stranger with no House relationship or share, got %d: %s", strangerRec.Code, strangerRec.Body.String())
+	}
+
+	// The category's own owner is also a House member of `house` (they
+	// created both), which would make them pass spaceAccessibleViaHouse's
+	// House-membership check if it didn't specifically exclude the
+	// category's own owner — this asserts that exclusion actually holds
+	// through the full handler, not just the db-layer unit test.
+	ownerReq := httptest.NewRequest(http.MethodPatch, "/api/v1/custom-categories/"+categoryIDStr+"/share/pin", strings.NewReader(`{"pinned":true}`))
+	ownerReq.SetPathValue("id", categoryIDStr)
+	ownerReq = ownerReq.WithContext(context.WithValue(ownerReq.Context(), userContextKey, owner))
+	ownerRec := httptest.NewRecorder()
+
+	app.handleSpaceSharePin(ownerRec, ownerReq)
+
+	if ownerRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for the category's own owner even though they're a House member where it's used, got %d: %s", ownerRec.Code, ownerRec.Body.String())
 	}
 }

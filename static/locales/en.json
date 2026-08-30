@@ -5,6 +5,7 @@
     "shareList": "Share {name}",
     "pinList": "Pin {name} to dashboard",
     "unpinList": "Unpin {name} from dashboard",
+    "listActionsAriaLabel": "More actions for {name}",
     "removeMember": "Remove {email}"
   },
   "header": {
@@ -135,7 +136,13 @@
     "emptyCategory": "No lists in this space yet.",
     "editAriaLabel": "Edit space \"{name}\"",
     "shareAriaLabel": "Share space \"{name}\"",
-    "deleteAriaLabel": "Delete space \"{name}\""
+    "deleteAriaLabel": "Delete space \"{name}\"",
+    "sharedSectionTitle": "Spaces shared with me",
+    "houseSectionTitle": "House spaces",
+    "houseBadge": "House space",
+    "actionsAriaLabel": "More actions for space \"{name}\"",
+    "pinnedToast": "Space \"{name}\" pinned to the dashboard",
+    "unpinnedToast": "Space \"{name}\" removed from the dashboard"
   },
   "shares": {
     "tabTitle": "Shared with me",
@@ -143,7 +150,10 @@
     "sharedTitle": "Shared with me",
     "sharedSubtitle": "Lists another user shared directly with you, or through one of their spaces.",
     "sharedEmptyTitle": "Nothing has been shared with you yet",
-    "sharedEmptyHint": "When someone shares a list or a space with you, it shows up here."
+    "sharedEmptyHint": "When someone shares a list or a space with you, it shows up here.",
+    "pinnedBadge": "Pinned",
+    "pinnedToast": "\"{name}\" pinned to the dashboard",
+    "unpinnedToast": "\"{name}\" removed from the dashboard"
   },
   "modals": {
     "close": "Close",
@@ -206,6 +216,12 @@
       "markUrgent": "Toggle urgent",
       "unmarkUrgent": "Remove urgent",
       "delete": "Delete item"
+    },
+    "listActions": {
+      "pin": "Pin to dashboard",
+      "unpin": "Unpin from dashboard",
+      "pinSpace": "Pin the space to my dashboard",
+      "unpinSpace": "Unpin the space from my dashboard"
     },
     "editItem": {
       "title": "Edit item",

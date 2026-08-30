@@ -51,6 +51,10 @@ let planningEntries = [];
 // the same reason as planningEntries above.
 let planningRecurringEntries = [];
 
+function isDashboardTabActive() {
+  return activeTab === 'dashboard' && state.currentListId === null;
+}
+
 function isPlanningTabActive() {
   return activeTab === 'planning';
 }
@@ -121,11 +125,19 @@ function setActiveTab(tab) {
   setTabButtonState(planningEls.tabUrgent, tab === 'urgent');
   setTabButtonState(planningEls.tabSpaces, tab === 'spaces');
   setTabButtonState(planningEls.tabShared, tab === 'shared');
+  // loadDashboard/loadUrgentView/loadSpacesView/loadSharedView are defined
+  // in app.js/urgent.js/spaces.js/shares.js, all loaded after this file —
+  // safe to call here since this only ever runs from a click, well after
+  // every script has finished loading and defined its top-level functions.
+  // The dashboard tab used to be the only one of the five that DIDN'T
+  // refetch on switch (showDashboard(), used by the logo link, already
+  // called loadDashboard() itself, but clicking the tab button directly
+  // skipped it) — so switching back to it after pinning a list/space from
+  // another tab could show stale data until a full reload. Refetching here
+  // too, the same way every other tab already does, is what makes pinning
+  // (and any other change made elsewhere) show up immediately.
+  if (tab === 'dashboard') loadDashboard();
   if (tab === 'planning') loadPlanningView();
-  // loadUrgentView/loadSpacesView/loadSharedView are defined in urgent.js/
-  // spaces.js/shares.js, all loaded after this file — safe to call here
-  // since this only ever runs from a click, well after every script has
-  // finished loading and defined its top-level functions.
   if (tab === 'urgent') loadUrgentView();
   if (tab === 'spaces') loadSpacesView();
   if (tab === 'shared') loadSharedView();

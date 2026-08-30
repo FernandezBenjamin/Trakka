@@ -179,6 +179,23 @@ curl -b cookies.txt http://localhost:8080/api/v1/custom-categories
 ]
 ```
 
+`?shared_with_me=true` switches to a different, mutually exclusive mode — mirroring `GET /api/v1/lists`'s own — returning every Space the caller doesn't own but can still see instead of their own categories: either because the owner shared it directly (`access_source: "space_share"`) or because the caller is simply a member of a House that uses it on at least one of its lists, with no share involved at all (`access_source: "house_member"` — see [Pinning a House-visible Space](#patch-apiv1custom-categoriesidsharepin)):
+
+```bash
+curl -b cookies.txt http://localhost:8080/api/v1/custom-categories?shared_with_me=true
+```
+
+```json
+[
+  { "id": 2, "user_id": 7, "name": "Homelab", "icon": "🖥️", "color": "", "position": 0, "created_at": "...",
+    "access_source": "space_share", "access_permission": "write", "is_pinned_to_dashboard": false },
+  { "id": 3, "user_id": 9, "name": "Bricolage", "icon": "🔨", "color": "", "position": 0, "created_at": "...",
+    "access_source": "house_member", "access_permission": "write", "is_pinned_to_dashboard": false }
+]
+```
+
+`access_source`/`access_permission`/`is_pinned_to_dashboard` are only present in this mode — see [Sharing](#sharing) and [Pinning a shared Space](#patch-apiv1custom-categoriesidsharepin). `access_permission` is always `"write"` for `access_source: "house_member"` (House membership has always implied full read/write access — see `db.AccessLevelForList`), and reflects the actual granted permission for `"space_share"`.
+
 ### `POST /api/v1/custom-categories`
 
 ```bash
@@ -219,12 +236,14 @@ Query parameters:
 - `type` (optional) — filter to `todo`, `shopping`, `groceries`, `recurring_shopping` or `custom`. `400` if any other value is given.
 - `house_id` (optional) — filter to lists belonging to that house. `400` if not a positive integer; `403` if the caller isn't a member of that house.
 - `shared_with_me` (optional) — when `"true"`, switches to a different, mutually exclusive mode: instead of the caller's own house-scoped lists, returns every list reachable only via a [List or Space share](#sharing) (see `access_source`/`access_permission` below), excluding any whose house they're already a plain member of. `type`/`house_id` don't apply in this mode.
+- `pinned_house_spaces` (optional) — when `"true"`, a third mutually exclusive mode: every list the caller reaches purely by pinning a Space that's merely *visible* to them through House membership rather than an explicit share (`access_source: "house_member"` — see [Pinning a House-visible Space](#patch-apiv1custom-categoriesidsharepin)). Deliberately not folded into `?shared_with_me=true`'s own query: every row this mode returns already belongs to a House the caller is a member of, which `?shared_with_me=true`'s own exclusion (above) would filter straight back out. This is what lets a pinned House Space's lists show up on the caller's dashboard even while a *different* House they also belong to is the one currently selected. `type`/`house_id` don't apply in this mode either.
 
 ```bash
 curl -b cookies.txt http://localhost:8080/api/v1/lists
 curl -b cookies.txt http://localhost:8080/api/v1/lists?type=shopping
 curl -b cookies.txt http://localhost:8080/api/v1/lists?house_id=1
 curl -b cookies.txt http://localhost:8080/api/v1/lists?shared_with_me=true
+curl -b cookies.txt http://localhost:8080/api/v1/lists?pinned_house_spaces=true
 ```
 
 ```json
@@ -236,7 +255,7 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists?shared_with_me=true
 ]
 ```
 
-`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission`/`is_pinned_to_dashboard` are only present in the `?shared_with_me=true` mode above — see [Sharing](#sharing). The dashboard itself is a client-side merge of two separate calls: the plain `?house_id=` listing above, plus `?shared_with_me=true` filtered down to entries with `is_pinned_to_dashboard: true` (see [Pinning a shared list](#patch-apiv1listsidsharepin) and `static/js/shares.js`'s `loadPinnedSharedLists`) — there's no server-side "give me my house's lists plus my pinned shares in one call" mode.
+`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission`/`is_pinned_to_dashboard` are only present in the `?shared_with_me=true`/`?pinned_house_spaces=true` modes above (never on this endpoint's own default, house-scoped listing) — see [Sharing](#sharing). `access_source` is `"list_share"`/`"space_share"` from `?shared_with_me=true`, or `"house_member"` from `?pinned_house_spaces=true`. For a list reached via `access_source: "space_share"` or `"house_member"`, `is_pinned_to_dashboard` reflects either that list's own individual pin ([`PATCH /api/v1/lists/{id}/share/pin`](#patch-apiv1listsidsharepin)) or the parent Space's own pin as a whole ([`PATCH /api/v1/custom-categories/{id}/share/pin`](#patch-apiv1custom-categoriesidsharepin)) — whichever says pinned wins; for `"house_member"` specifically every returned row is pinned by construction (`?pinned_house_spaces=true` never returns an unpinned one). The dashboard itself is a client-side merge of three calls, deduplicated by list id (a `house_member`-sourced list may already be present in the plain `?house_id=` listing if it happens to belong to the currently selected House): the plain `?house_id=` listing above, `?shared_with_me=true` filtered down to entries with `is_pinned_to_dashboard: true`, and `?pinned_house_spaces=true` in full (see `static/js/app.js`'s `loadDashboard` and `static/js/shares.js`'s `loadPinnedSharedLists`/`loadPinnedHouseSpaceLists`) — there's no server-side "give me my house's lists plus my pinned shares in one call" mode.
 
 ### `POST /api/v1/lists`
 
@@ -301,6 +320,8 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists/1/share
 ]
 ```
 
+(A Space's roster carries the same `is_pinned_to_dashboard` field, reflecting whether *that specific recipient* has pinned the whole Space — it's per-share, not a property of the Space itself.)
+
 ### `POST /api/v1/custom-categories/{id}/share` · `POST /api/v1/lists/{id}/share`
 
 Grants (or updates the permission of, if one already exists) a share, looked up by the recipient's email — there's no email-sending infrastructure in this project, so an email with no account fails clearly rather than creating a ghost row, mirroring `POST /api/v1/houses/{id}/members`.
@@ -319,7 +340,9 @@ curl -X POST http://localhost:8080/api/v1/lists/1/share \
 
 ### `PATCH /api/v1/lists/{id}/share/pin`
 
-Lets the *recipient* of a direct List share choose whether it shows up pinned on their own dashboard, alongside their own house's lists, instead of only in the "Partagé avec moi" tab. Unlike every other endpoint in this section, the caller here is the share's recipient, not someone managing the list's house — there is no equivalent endpoint for Spaces, and pinning a list reached only through a shared Space (no `list_shares` row of its own) isn't possible.
+Lets the *recipient* of a share choose whether this list shows up pinned on their own dashboard, alongside their own house's lists, instead of only in the "Partagé avec moi" tab. Unlike every other endpoint in this section, the caller here is the share's recipient, not someone managing the list's house.
+
+Works both for a list shared directly (an existing `list_shares` row) **and** one reached only through a shared Space: in the latter case, there's no `list_shares` row to flip yet, so this auto-creates one — scoped to exactly the permission the Space already grants for this list, so the new row can never itself change the caller's actual access level (see `db.AccessLevelForList`, which already takes the higher of the two sources). This lets one list from an otherwise-unpinned shared Space be pinned individually without pinning the whole Space (see below).
 
 ```bash
 curl -X PATCH http://localhost:8080/api/v1/lists/1/share/pin -d '{"pinned": true}'
@@ -329,7 +352,28 @@ curl -X PATCH http://localhost:8080/api/v1/lists/1/share/pin -d '{"pinned": true
 |---|---|---|---|
 | `pinned` | boolean | yes | `400` if omitted |
 
-`200` with the updated share (same shape as the `POST` above, `is_pinned_to_dashboard` reflecting the new state). `404` if the caller holds no `list_shares` row for this list — this covers both "never shared with them" and "only reachable via a Space", the same "don't distinguish nonexistent from unauthorized" convention this section's other `404`s already follow.
+`200` with the updated share (same shape as the `POST` above, `is_pinned_to_dashboard` reflecting the new state). `404` if the caller has neither a `list_shares` row nor any Space-based access to this list at all.
+
+Note: if the list's parent Space is *itself* pinned as a whole (see below), this list keeps showing up pinned regardless of this endpoint's own state for it — `GET /api/v1/lists?shared_with_me=true` ORs the two sources together, and there is currently no way to pin a Space while excluding one specific list from it.
+
+### `PATCH /api/v1/custom-categories/{id}/share/pin`
+
+The Space-level equivalent of the List endpoint above: lets a viewer who can see a Space without owning it choose to pin the whole Space, which does two things at once — the Space itself starts showing up in the viewer's own `GET /api/v1/custom-categories?shared_with_me=true` listing (and their "Espaces" tab), and **every list reachable through it** — present at pin time, no per-list action needed — starts coming back pinned too (from `GET /api/v1/lists?shared_with_me=true` for a `space_share`-sourced Space, or `GET /api/v1/lists?pinned_house_spaces=true` for a `house_member`-sourced one), so they all show up on the recipient's dashboard in one action.
+
+There are two ways a caller can be entitled to pin, tried in order:
+
+1. **An explicit `space_shares` grant** (the Space's owner shared it with this caller directly) — flips `space_shares.is_pinned_to_dashboard`. `200` with the updated Space share (same shape as the roster's own rows above).
+2. **House-membership-based access** (nobody shared anything; the caller is simply a member of a House that uses this Space on at least one of its lists) — tried only if (1) finds no `space_shares` row for this caller at all. Records the preference in a separate `space_house_pins` table (see [docs/DATABASE.md](DATABASE.md#space_shares-and-list_shares)), since there's no `space_shares` row to flip a flag on. `200` with a smaller response shape instead: `{ "custom_category_id": 1, "is_pinned_to_dashboard": true, "access_source": "house_member" }`.
+
+```bash
+curl -X PATCH http://localhost:8080/api/v1/custom-categories/1/share/pin -d '{"pinned": true}'
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `pinned` | boolean | yes | `400` if omitted |
+
+`404` only if *neither* path recognizes the caller — including the category's own owner, who has no `space_shares` row on their own Space, and is explicitly excluded from the House-membership fallback too even though they're typically also a House member of wherever their own Space is used (`db.spaceAccessibleViaHouse` filters out the category's own owner) — there's nothing to pin on a Space you already own and always see.
 
 ### `DELETE /api/v1/custom-categories/{id}/share/{userId}` · `DELETE /api/v1/lists/{id}/share/{userId}`
 

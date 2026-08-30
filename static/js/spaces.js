@@ -32,6 +32,12 @@ const spacesEls = {
   colorPresetButtons: document.querySelectorAll('#category-form [data-color-preset]'),
   deleteCategoryButton: document.getElementById('delete-category-button'),
   categorySubmitButton: document.getElementById('category-submit-button'),
+  spaceCardActionsSheet: document.getElementById('space-card-actions-sheet'),
+  spaceCardActionsSheetTitle: document.getElementById('space-card-actions-sheet-title'),
+  closeSpaceCardActionsSheetButton: document.getElementById('close-space-card-actions-sheet-button'),
+  spaceCardActionsPinButton: document.getElementById('space-card-actions-pin-button'),
+  spaceCardActionsPinIcon: document.getElementById('space-card-actions-pin-icon'),
+  spaceCardActionsPinLabel: document.getElementById('space-card-actions-pin-label'),
 };
 
 // Sentinel option value for the "new list" modal's category <select>,
@@ -50,6 +56,27 @@ let customCategories = [];
 // pattern urgent.js/planning.js use) so buildListCard's item count and
 // per-type badge are accurate — re-fetched on every loadSpacesView() call.
 let spacesLists = [];
+
+// Every Space shared directly with the caller (space_shares, regardless of
+// pin state — see loadSharedCustomCategories), and every list reachable
+// through one of them (regardless of which House it belongs to, since the
+// whole point is a Space someone else owns) — both re-fetched on every
+// loadSpacesView() call, the same "small per-user dataset" reasoning
+// customCategories/spacesLists above already use. A category the caller
+// merely owns never appears here; a category shared with them never
+// appears in customCategories — the two arrays are always disjoint.
+let sharedCategories = [];
+let sharedCategoryLists = [];
+
+// Every list reachable purely through a House-visible Space the caller has
+// pinned (access_source 'house_member' — CLAUDE.md's "pinned house spaces"
+// feature), which may belong to a *different* House than the one currently
+// selected — see buildSharedCategorySection's house_member branch, which
+// combines this with spacesLists above to show such a Space's full
+// contents rather than only whatever happens to also be in the currently
+// selected House. Re-fetched on every loadSpacesView() call, same reasoning
+// as spacesLists/sharedCategoryLists.
+let houseSpaceLists = [];
 
 // The category currently open in the modal for editing, or null when the
 // modal is in "create" mode — set by openCategoryModal, read by
@@ -97,8 +124,26 @@ async function loadCustomCategories() {
   return customCategories;
 }
 
+// Fetches every Space shared directly with the caller (?shared_with_me=true
+// — see db.ListSpacesSharedWithUser), the Space-level equivalent of
+// shares.js's loadPinnedSharedLists/loadSharedView. No offline mirror for
+// this (same "requires connectivity" scoping the rest of the sharing
+// feature already uses), so a plain connectivity failure just means the
+// "Espaces partagés avec moi" section is temporarily empty rather than a
+// blocking error — swallowed rather than surfaced via the error banner,
+// same as loadCustomCategories' own background-fetch reasoning above.
+async function loadSharedCustomCategories() {
+  try {
+    sharedCategories = await apiRequest('/custom-categories?shared_with_me=true');
+  } catch {
+    sharedCategories = [];
+  }
+  updateSpacesTabBadge();
+  return sharedCategories;
+}
+
 function updateSpacesTabBadge() {
-  spacesEls.tabBadge.hidden = customCategories.length === 0;
+  spacesEls.tabBadge.hidden = customCategories.length === 0 && sharedCategories.length === 0;
 }
 
 // Fills a <select> (either #list-category in the "new list" modal, or a
@@ -141,9 +186,12 @@ function isSpacesTabActive() {
 
 async function loadSpacesView() {
   await loadCustomCategories();
+  await loadSharedCustomCategories();
+  await loadSharedCategoryLists();
 
   if (state.currentHouseId === null) {
     spacesLists = [];
+    houseSpaceLists = [];
     renderSpaces();
     return;
   }
@@ -165,7 +213,59 @@ async function loadSpacesView() {
     spacesLists = cached.filter((list) => list.custom_category_id);
     if (!isNetworkError(err)) showError(err.message);
   }
+
+  // loadPinnedHouseSpaceLists is defined in shares.js (same cross-file
+  // resolution pattern as openShareModal/badgeFnForType elsewhere in this
+  // file) — best-effort, same "requires connectivity, no offline mirror"
+  // scoping as loadSharedCategoryLists above.
+  houseSpaceLists = await loadPinnedHouseSpaceLists().catch(() => []);
+
   renderSpaces();
+}
+
+// Fetches every list reachable via ?shared_with_me=true and keeps only the
+// ones belonging to a Space actually in sharedCategories — a list shared
+// *individually* (list_shares) that happens to sit in one of the owner's
+// other, unshared categories must not be grouped under a "shared space"
+// section here, since the caller has no access to that whole Space, only to
+// this one list (it already shows up in the "Partagé avec moi" tab
+// instead). Best-effort, same "requires connectivity, no offline mirror"
+// scoping as loadSharedCustomCategories above.
+async function loadSharedCategoryLists() {
+  if (sharedCategories.length === 0) {
+    sharedCategoryLists = [];
+    return;
+  }
+  try {
+    const stubs = await apiRequest('/lists?shared_with_me=true');
+    const sharedCategoryIds = new Set(sharedCategories.map((category) => category.id));
+    const categorized = stubs.filter((stub) => stub.custom_category_id && sharedCategoryIds.has(stub.custom_category_id));
+    sharedCategoryLists = await Promise.all(
+      categorized.map((stub) =>
+        apiRequest(`/lists/${stub.id}`)
+          .then((detailed) => ({ ...detailed, access_source: stub.access_source, access_permission: stub.access_permission }))
+          .catch(() => stub)
+      )
+    );
+  } catch {
+    sharedCategoryLists = [];
+  }
+}
+
+// Merges one or more list arrays, keeping the first occurrence of each id —
+// used by buildSharedCategorySection's house_member branch to combine
+// spacesLists/houseSpaceLists without showing the same list twice should a
+// pinned House Space happen to also tag a list already visible through the
+// currently selected House.
+function dedupeListsById(lists) {
+  const seen = new Set();
+  const result = [];
+  for (const list of lists) {
+    if (seen.has(list.id)) continue;
+    seen.add(list.id);
+    result.push(list);
+  }
+  return result;
 }
 
 // Called after anything that might have changed the current house's
@@ -188,11 +288,44 @@ function badgeFnForType(type) {
 
 function renderSpaces() {
   const sorted = [...customCategories].sort((a, b) => a.position - b.position || a.id - b.id);
+  // The empty state is about the caller's *own* spaces specifically (its
+  // "+ Créer" button only makes sense for a category the caller could
+  // actually own) — a Space someone else shared with them doesn't count
+  // toward it, so it stays showing even when sharedCategories has entries.
   spacesEls.spacesEmpty.hidden = sorted.length > 0;
   spacesEls.spacesList.replaceChildren();
   for (const category of sorted) {
     spacesEls.spacesList.appendChild(buildCategorySection(category));
   }
+
+  // sharedCategories mixes two AccessSources (see
+  // db.ListSpacesVisibleToUser): 'space_share' (the owner explicitly shared
+  // it) and 'house_member' (nobody shared anything — the caller just
+  // happens to be a member of a House that uses it, see the "pinned house
+  // spaces" bullet in CLAUDE.md) — rendered as two separate headed sections
+  // rather than one, so it's clear at a glance which is which.
+  const explicitlyShared = sharedCategories.filter((category) => category.access_source === 'space_share');
+  const houseVisible = sharedCategories.filter((category) => category.access_source === 'house_member');
+
+  if (explicitlyShared.length > 0) {
+    spacesEls.spacesList.appendChild(buildSharedSectionHeading(t('spaces.sharedSectionTitle')));
+    for (const category of explicitlyShared) {
+      spacesEls.spacesList.appendChild(buildSharedCategorySection(category));
+    }
+  }
+  if (houseVisible.length > 0) {
+    spacesEls.spacesList.appendChild(buildSharedSectionHeading(t('spaces.houseSectionTitle')));
+    for (const category of houseVisible) {
+      spacesEls.spacesList.appendChild(buildSharedCategorySection(category));
+    }
+  }
+}
+
+function buildSharedSectionHeading(text) {
+  const heading = document.createElement('h2');
+  heading.className = 'mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400';
+  heading.textContent = text;
+  return heading;
 }
 
 function buildCategorySection(category) {
@@ -298,6 +431,186 @@ function buildCategorySection(category) {
   details.appendChild(body);
 
   return details;
+}
+
+// The Space-level counterpart of buildCategorySection above, for a Space
+// the caller doesn't own but can still see — either because the owner
+// shared it directly (space_shares) or because the caller is simply a
+// member of a House that uses it (space_house_pins, AccessSource
+// 'house_member' — see the "pinned house spaces" bullet in CLAUDE.md): no
+// edit/delete (only the owner may rename/delete a Space — see
+// authorizeSpaceOwner), a 👥 "Partagé"/🏠 "De la Maison" badge depending on
+// AccessSource (reusing the same 👥 badge buildListCard already shows on a
+// shared list card) and, when pinned, a 📌 "Épinglée" one, and a [⋮] kebab
+// opening #space-card-actions-sheet instead of icon buttons — there's only
+// ever one action here, so a kebab+sheet needs no responsive desktop/mobile
+// split the way buildListCard's pin control does.
+function buildSharedCategorySection(category) {
+  // A 'house_member' category's lists don't come from sharedCategoryLists —
+  // that's sourced from GET /lists?shared_with_me=true, whose own
+  // House-membership exclusion (see db.ListSharedListsForUser's own
+  // comment) means it never returns a list from a House the caller already
+  // belongs to, which is exactly where a house-visible Space's lists live.
+  // spacesLists (the currently selected House's own categorized lists) plus
+  // houseSpaceLists (any *other* House's lists reachable because this
+  // Space is pinned — see loadSpacesView) cover it instead.
+  const lists =
+    category.access_source === 'house_member'
+      ? dedupeListsById([...spacesLists, ...houseSpaceLists]).filter((list) => list.custom_category_id === category.id)
+      : sharedCategoryLists.filter((list) => list.custom_category_id === category.id);
+
+  const details = document.createElement('details');
+  details.open = true;
+  details.className = 'group rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-4';
+
+  const summary = document.createElement('summary');
+  summary.className =
+    'flex cursor-pointer list-none items-center justify-between gap-2 marker:hidden [&::-webkit-details-marker]:hidden';
+
+  const heading = document.createElement('div');
+  heading.className = 'flex min-w-0 flex-wrap items-center gap-2';
+
+  const chevron = document.createElement('span');
+  chevron.className = 'flex shrink-0 items-center';
+  chevron.innerHTML = CHEVRON_ICON_SVG; // static markup, no interpolated data — safe, see TRASH_ICON_SVG's comment in app.js
+  heading.appendChild(chevron);
+
+  const iconSpan = document.createElement('span');
+  iconSpan.setAttribute('aria-hidden', 'true');
+  iconSpan.className = 'text-xl leading-none';
+  iconSpan.textContent = category.icon || '📁';
+  heading.appendChild(iconSpan);
+
+  const name = document.createElement('h2');
+  name.className = 'truncate text-base font-semibold text-slate-900 dark:text-slate-100';
+  name.textContent = category.name;
+  heading.appendChild(name);
+
+  if (category.access_source === 'house_member') {
+    heading.appendChild(badge(`🏠 ${t('spaces.houseBadge')}`, 'sky'));
+  } else {
+    heading.appendChild(badge(`👥 ${t('shares.sharedBadge')}`, 'violet'));
+  }
+  if (category.is_pinned_to_dashboard) {
+    heading.appendChild(badge(`📌 ${t('shares.pinnedBadge')}`, 'amber'));
+  }
+
+  const count = document.createElement('span');
+  count.className =
+    'shrink-0 rounded-full bg-slate-200/60 dark:bg-slate-700/50 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300';
+  count.textContent = t('spaces.listCount', { count: lists.length });
+  heading.appendChild(count);
+
+  summary.appendChild(heading);
+
+  const kebabBtn = document.createElement('button');
+  kebabBtn.type = 'button';
+  kebabBtn.setAttribute('aria-label', t('spaces.actionsAriaLabel', { name: category.name }));
+  kebabBtn.className =
+    'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200';
+  // KEBAB_ICON_SVG is defined in list_view.js, loaded after this file —
+  // safe because it's only read here at click time, well after every
+  // script tag has finished loading (see buildListCard's own use of it in
+  // app.js for the same already-established cross-file pattern).
+  kebabBtn.innerHTML = KEBAB_ICON_SVG;
+  kebabBtn.addEventListener('click', (event) => {
+    event.preventDefault(); // inside a <summary> — don't also toggle the <details>
+    openSpaceCardActionsSheet(category);
+  });
+  summary.appendChild(kebabBtn);
+
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'mt-4';
+  if (lists.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'text-sm text-slate-500';
+    empty.textContent = t('spaces.emptyCategory');
+    body.appendChild(empty);
+  } else {
+    const grid = document.createElement('ul');
+    grid.className = 'grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3';
+    for (const list of lists) grid.appendChild(buildListCard(list, badgeFnForType(list.type)(list.items || [])));
+    body.appendChild(grid);
+  }
+  details.appendChild(body);
+
+  return details;
+}
+
+// ---------------------------------------------------------------------------
+// Shared-space actions bottom sheet ([⋮] on a card built by
+// buildSharedCategorySection above) — currently offers only the pin/unpin
+// toggle, mirroring app.js's #list-card-actions-sheet almost exactly.
+// ---------------------------------------------------------------------------
+
+// The category currently open in the sheet, or null when it's closed — set
+// by openSpaceCardActionsSheet, read by the pin button's own click handler
+// below (same module-scope-tracked-target pattern as
+// listCardActionsSheetList in app.js).
+let spaceCardActionsSheetCategory = null;
+
+function openSpaceCardActionsSheet(category) {
+  spaceCardActionsSheetCategory = category;
+  spacesEls.spaceCardActionsSheetTitle.textContent = category.name;
+  const pinned = !!category.is_pinned_to_dashboard;
+  spacesEls.spaceCardActionsPinIcon.textContent = pinned ? '📍' : '📌';
+  spacesEls.spaceCardActionsPinLabel.textContent = t(pinned ? 'modals.listActions.unpinSpace' : 'modals.listActions.pinSpace');
+  spacesEls.spaceCardActionsSheet.hidden = false;
+  document.body.classList.add('overflow-hidden');
+}
+
+function closeSpaceCardActionsSheet() {
+  spaceCardActionsSheetCategory = null;
+  spacesEls.spaceCardActionsSheet.hidden = true;
+  document.body.classList.remove('overflow-hidden');
+}
+
+spacesEls.closeSpaceCardActionsSheetButton.addEventListener('click', closeSpaceCardActionsSheet);
+spacesEls.spaceCardActionsSheet.addEventListener('click', (event) => {
+  if (event.target === spacesEls.spaceCardActionsSheet) closeSpaceCardActionsSheet();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !spacesEls.spaceCardActionsSheet.hidden) closeSpaceCardActionsSheet();
+});
+
+spacesEls.spaceCardActionsPinButton.addEventListener('click', () => {
+  const category = spaceCardActionsSheetCategory;
+  closeSpaceCardActionsSheet();
+  if (category) toggleSpacePin(category);
+});
+
+// Pins or unpins a whole Space — one shared explicitly with the caller
+// (space_shares) or merely visible to them through House membership
+// (space_house_pins, see the "pinned house spaces" bullet in CLAUDE.md) —
+// via PATCH /api/v1/custom-categories/{id}/share/pin. Every list reachable
+// through it picks up the same pinned state automatically (see
+// db.ListSharedListsForUser's space_share branch and
+// db.ListPinnedHouseSpaceLists for the house_member one), so unlike
+// app.js's toggleListPin there is nothing per-list to also update here.
+// refreshSpacesIfActive() re-renders this tab in place; loadDashboard() is
+// also re-run so a newly-pinned Space's lists show up there immediately too
+// without waiting for the next unrelated dashboard refresh — this function
+// is only ever called while the Spaces tab is the active one (see
+// buildSharedCategorySection/openSpaceCardActionsSheet), so unlike
+// toggleListPin there's no "already handled by refreshVisibleView" case to
+// avoid double-fetching. A toast confirms the action, mirroring
+// toggleListPin's own.
+async function toggleSpacePin(category) {
+  hideError();
+  const pinning = !category.is_pinned_to_dashboard;
+  try {
+    await apiRequest(`/custom-categories/${category.id}/share/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned: pinning }),
+    });
+    await refreshSpacesIfActive();
+    await loadDashboard();
+    TrakkaToast.success(t(pinning ? 'spaces.pinnedToast' : 'spaces.unpinnedToast', { name: category.name }));
+  } catch (err) {
+    showError(err.message);
+  }
 }
 
 // Deletion is deferred behind a 5s undo grace period, mirroring removeList
