@@ -5,6 +5,7 @@
     "shareList": "Partager {name}",
     "pinList": "Épingler {name} au tableau de bord",
     "unpinList": "Retirer {name} du tableau de bord",
+    "listActionsAriaLabel": "Plus d'actions pour {name}",
     "removeMember": "Retirer {email}"
   },
   "header": {
@@ -135,7 +136,13 @@
     "emptyCategory": "Aucune liste dans cet espace pour le moment.",
     "editAriaLabel": "Modifier l'espace « {name} »",
     "shareAriaLabel": "Partager l'espace « {name} »",
-    "deleteAriaLabel": "Supprimer l'espace « {name} »"
+    "deleteAriaLabel": "Supprimer l'espace « {name} »",
+    "sharedSectionTitle": "Espaces partagés avec moi",
+    "houseSectionTitle": "Espaces de la Maison",
+    "houseBadge": "De la Maison",
+    "actionsAriaLabel": "Plus d'actions pour l'espace « {name} »",
+    "pinnedToast": "Espace « {name} » épinglé sur le tableau de bord",
+    "unpinnedToast": "Espace « {name} » retiré du tableau de bord"
   },
   "shares": {
     "tabTitle": "Partagé avec moi",
@@ -143,7 +150,10 @@
     "sharedTitle": "Partagé avec moi",
     "sharedSubtitle": "Listes qu'un autre utilisateur vous a partagées directement, ou via un de ses espaces.",
     "sharedEmptyTitle": "Rien n'a été partagé avec vous pour le moment",
-    "sharedEmptyHint": "Quand quelqu'un partage une liste ou un espace avec vous, il apparaît ici."
+    "sharedEmptyHint": "Quand quelqu'un partage une liste ou un espace avec vous, il apparaît ici.",
+    "pinnedBadge": "Épinglée",
+    "pinnedToast": "« {name} » épinglée sur le tableau de bord",
+    "unpinnedToast": "« {name} » retirée du tableau de bord"
   },
   "modals": {
     "close": "Fermer",
@@ -206,6 +216,12 @@
       "markUrgent": "Basculer en urgent",
       "unmarkUrgent": "Retirer l'urgence",
       "delete": "Supprimer l'article"
+    },
+    "listActions": {
+      "pin": "Épingler sur le tableau de bord",
+      "unpin": "Retirer du tableau de bord",
+      "pinSpace": "Épingler l'espace sur mon tableau de bord",
+      "unpinSpace": "Retirer l'espace de mon tableau de bord"
     },
     "editItem": {
       "title": "Modifier l'article",

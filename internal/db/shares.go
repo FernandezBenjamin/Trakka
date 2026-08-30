@@ -11,9 +11,11 @@ import (
 
 func scanSpaceShare(row rowScanner) (*models.SpaceShare, error) {
 	s := &models.SpaceShare{}
-	if err := row.Scan(&s.ID, &s.CustomCategoryID, &s.SharedWithUserID, &s.Permission, &s.CreatedAt); err != nil {
+	var pinned int
+	if err := row.Scan(&s.ID, &s.CustomCategoryID, &s.SharedWithUserID, &s.Permission, &s.CreatedAt, &pinned); err != nil {
 		return nil, err
 	}
+	s.IsPinnedToDashboard = pinned != 0
 	return s, nil
 }
 
@@ -50,7 +52,7 @@ func (d *DB) CreateOrUpdateSpaceShare(ctx context.Context, categoryID, sharedWit
 // sharedWithUserID has no share for categoryID.
 func (d *DB) GetSpaceShare(ctx context.Context, categoryID, sharedWithUserID int64) (*models.SpaceShare, error) {
 	row := d.conn.QueryRowContext(ctx,
-		`SELECT id, custom_category_id, shared_with_user_id, permission, created_at
+		`SELECT id, custom_category_id, shared_with_user_id, permission, created_at, is_pinned_to_dashboard
 		 FROM space_shares WHERE custom_category_id = ? AND shared_with_user_id = ?`,
 		categoryID, sharedWithUserID)
 	s, err := scanSpaceShare(row)
@@ -68,7 +70,7 @@ func (d *DB) GetSpaceShare(ctx context.Context, categoryID, sharedWithUserID int
 // ListHouseMembers.
 func (d *DB) ListSpaceShares(ctx context.Context, categoryID int64) ([]*models.SpaceShare, error) {
 	rows, err := d.conn.QueryContext(ctx,
-		`SELECT ss.id, ss.custom_category_id, ss.shared_with_user_id, ss.permission, ss.created_at, u.email, u.display_name
+		`SELECT ss.id, ss.custom_category_id, ss.shared_with_user_id, ss.permission, ss.created_at, ss.is_pinned_to_dashboard, u.email, u.display_name
 		 FROM space_shares ss JOIN users u ON u.id = ss.shared_with_user_id
 		 WHERE ss.custom_category_id = ? ORDER BY ss.created_at ASC`, categoryID)
 	if err != nil {
@@ -79,9 +81,11 @@ func (d *DB) ListSpaceShares(ctx context.Context, categoryID int64) ([]*models.S
 	shares := []*models.SpaceShare{}
 	for rows.Next() {
 		s := &models.SpaceShare{}
-		if err := rows.Scan(&s.ID, &s.CustomCategoryID, &s.SharedWithUserID, &s.Permission, &s.CreatedAt, &s.Email, &s.DisplayName); err != nil {
+		var pinned int
+		if err := rows.Scan(&s.ID, &s.CustomCategoryID, &s.SharedWithUserID, &s.Permission, &s.CreatedAt, &pinned, &s.Email, &s.DisplayName); err != nil {
 			return nil, fmt.Errorf("scanning space share row: %w", err)
 		}
+		s.IsPinnedToDashboard = pinned != 0
 		shares = append(shares, s)
 	}
 	if err := rows.Err(); err != nil {
@@ -106,6 +110,33 @@ func (d *DB) RevokeSpaceShare(ctx context.Context, categoryID, sharedWithUserID 
 		return ErrNotFound
 	}
 	return nil
+}
+
+// SetSpaceSharePinned lets the recipient of a Space share
+// (sharedWithUserID) choose whether the whole Space — and every list
+// reachable through it — shows up pinned on their own dashboard/Espaces
+// tab, the Space-level equivalent of SetListSharePinned. Unlike a List
+// (which can be reached indirectly, with no list_shares row of its own,
+// via a shared Space), a Space itself has exactly one access path —
+// space_shares — so there is no auto-create fallback to speak of here: a
+// space_shares row always already exists if the recipient has any access
+// to the Space at all. Returns ErrNotFound if sharedWithUserID has no
+// space_shares row for categoryID.
+func (d *DB) SetSpaceSharePinned(ctx context.Context, categoryID, sharedWithUserID int64, pinned bool) (*models.SpaceShare, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE space_shares SET is_pinned_to_dashboard = ? WHERE custom_category_id = ? AND shared_with_user_id = ?`,
+		boolToInt(pinned), categoryID, sharedWithUserID)
+	if err != nil {
+		return nil, fmt.Errorf("updating space share pin: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected for space share pin update: %w", err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetSpaceShare(ctx, categoryID, sharedWithUserID)
 }
 
 // CreateOrUpdateListShare grants sharedWithUserID `permission` access to
@@ -167,14 +198,46 @@ func (d *DB) ListListShares(ctx context.Context, listID int64) ([]*models.ListSh
 	return shares, nil
 }
 
-// SetListSharePinned lets the recipient of a direct List share
-// (sharedWithUserID) choose whether it shows up pinned on their own
-// dashboard, alongside their House's own lists, rather than only in the
-// "Partagé avec moi" tab — see handlers.handleListSharePin. This only ever
-// touches a list_shares row the recipient themselves already holds; a list
-// reached solely via a shared Space has no such row and can't be pinned
-// this way. Returns ErrNotFound if sharedWithUserID has no list_shares row
-// for listID.
+// spaceSharePermissionForList reports the permission userID holds on
+// listID purely via a space_shares grant on the list's parent Space (if
+// any) — used by SetListSharePinned below to let a list reached *only*
+// through a shared Space still be individually pinned. The join's ON
+// condition naturally yields no rows when the list has no
+// CustomCategoryID at all, so callers don't need a separate nil check.
+// Returns ok=false (not an error) when there's no such grant.
+func (d *DB) spaceSharePermissionForList(ctx context.Context, listID, userID int64) (permission string, ok bool, err error) {
+	err = d.conn.QueryRowContext(ctx, `
+		SELECT ss.permission
+		FROM lists l
+		JOIN space_shares ss ON ss.custom_category_id = l.custom_category_id
+		WHERE l.id = ? AND ss.shared_with_user_id = ?`,
+		listID, userID,
+	).Scan(&permission)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("querying space share permission for list %d: %w", listID, err)
+	}
+	return permission, true, nil
+}
+
+// SetListSharePinned lets the recipient of a List share (sharedWithUserID)
+// choose whether it shows up pinned on their own dashboard, alongside
+// their House's own lists, rather than only in the "Partagé avec moi" tab
+// — see handlers.handleListSharePin. If the recipient already holds a
+// list_shares row for listID (the ordinary case: the list was shared with
+// them directly), this simply flips its flag. If they don't — because the
+// list is reachable only through a Space that was shared with them
+// (space_shares) — this auto-creates the list_shares row that carries the
+// flag, scoped to exactly the permission the Space already grants for this
+// list (via spaceSharePermissionForList) so the insert can never itself
+// change the recipient's actual access level: AccessLevelForList already
+// takes the higher of the list_shares/space_shares sources, which after
+// this insert simply agree. The ON CONFLICT clause makes this safe against
+// two concurrent pin requests both finding no row above. Returns
+// ErrNotFound only if sharedWithUserID has neither a list_shares row nor
+// space-based access to listID at all.
 func (d *DB) SetListSharePinned(ctx context.Context, listID, sharedWithUserID int64, pinned bool) (*models.ListShare, error) {
 	res, err := d.conn.ExecContext(ctx,
 		`UPDATE list_shares SET is_pinned_to_dashboard = ? WHERE list_id = ? AND shared_with_user_id = ?`,
@@ -186,8 +249,24 @@ func (d *DB) SetListSharePinned(ctx context.Context, listID, sharedWithUserID in
 	if err != nil {
 		return nil, fmt.Errorf("reading rows affected for list share pin update: %w", err)
 	}
-	if n == 0 {
+	if n > 0 {
+		return d.GetListShare(ctx, listID, sharedWithUserID)
+	}
+
+	permission, ok, err := d.spaceSharePermissionForList(ctx, listID, sharedWithUserID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, ErrNotFound
+	}
+
+	if _, err := d.conn.ExecContext(ctx, `
+		INSERT INTO list_shares (list_id, shared_with_user_id, permission, is_pinned_to_dashboard)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT (list_id, shared_with_user_id) DO UPDATE SET is_pinned_to_dashboard = excluded.is_pinned_to_dashboard
+	`, listID, sharedWithUserID, permission, boolToInt(pinned)); err != nil {
+		return nil, fmt.Errorf("auto-creating list share for space-based pin: %w", err)
 	}
 	return d.GetListShare(ctx, listID, sharedWithUserID)
 }
@@ -267,9 +346,16 @@ func (d *DB) AccessLevelForList(ctx context.Context, userID int64, list *models.
 // noise) — this is what backs the frontend's "Partagé avec moi" tab. Each
 // result has AccessSource/AccessPermission populated; a List reachable both
 // directly and via its Space keeps the higher ("write") permission and is
-// only returned once. IsPinnedToDashboard is also populated (from the
-// list_shares row's own flag when reached that way, always false via a bare
-// space_share) — see handlers.handleListSharePin and the dashboard-merge
+// only returned once. IsPinnedToDashboard is also populated — from the
+// list_shares row's own flag when reached that way (including one
+// auto-created by SetListSharePinned for a list pinned individually despite
+// having no direct share), or from the *Space's own* pin flag
+// (space_shares.is_pinned_to_dashboard) when reached via a space_share, so
+// pinning a whole Space (handlers.handleSpaceSharePin) surfaces every list
+// reachable through it as pinned without touching list_shares at all. A
+// list reachable both ways keeps whichever source says pinned (the same
+// "OR", not "AND", the permission dedup below already uses) — see
+// handlers.handleListSharePin/handleSpaceSharePin and the dashboard-merge
 // logic in static/js/shares.js.
 //
 // The query's only House-related condition is that NOT IN exclusion — it
@@ -297,7 +383,7 @@ func (d *DB) ListSharedListsForUser(ctx context.Context, userID int64) ([]*model
 			SELECT ls.list_id AS list_id, ls.permission AS permission, 'list_share' AS source, ls.is_pinned_to_dashboard AS pinned
 			FROM list_shares ls WHERE ls.shared_with_user_id = ?
 			UNION ALL
-			SELECT l.id AS list_id, ss.permission AS permission, 'space_share' AS source, 0 AS pinned
+			SELECT l.id AS list_id, ss.permission AS permission, 'space_share' AS source, ss.is_pinned_to_dashboard AS pinned
 			FROM space_shares ss JOIN lists l ON l.custom_category_id = ss.custom_category_id
 			WHERE ss.shared_with_user_id = ?
 		) shared ON shared.list_id = lists.id
@@ -358,6 +444,202 @@ func (d *DB) ListSharedListsForUser(ctx context.Context, userID int64) ([]*model
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating shared list rows: %w", err)
+	}
+	return lists, nil
+}
+
+// spaceAccessibleViaHouse reports whether userID can see categoryID purely
+// through House membership as someone *other than its owner* — i.e. at
+// least one List tagged with custom_category_id = categoryID belongs to a
+// House userID is a member of, and userID doesn't own categoryID.
+// Excluding the owner mirrors ListSpacesVisibleToUser's own
+// `cc.user_id != ?` filter (the owner already sees their own Space in "Mes
+// espaces" unconditionally — it has nothing to do with this "visible to
+// someone else" access path) and matters here specifically because an
+// owner is, in the ordinary case, also a House member of wherever their own
+// Space is actually used: without this check, SetSpaceHousePinned would let
+// an owner "pin" their own Space via this fallback (harmless in practice,
+// since ListSpacesVisibleToUser's own owner exclusion means the resulting
+// space_house_pins row could never surface anywhere), which is confusing
+// and not what this access path is for. This is what lets a House member
+// other than a Space's owner (and without an explicit share) discover and
+// pin a Space that's actually in use within one of their own Houses — see
+// SetSpaceHousePinned and ListSpacesVisibleToUser.
+func (d *DB) spaceAccessibleViaHouse(ctx context.Context, categoryID, userID int64) (bool, error) {
+	var exists int
+	err := d.conn.QueryRowContext(ctx, `
+		SELECT 1
+		FROM lists l
+		JOIN house_members hm ON hm.house_id = l.house_id
+		JOIN custom_categories cc ON cc.id = l.custom_category_id
+		WHERE l.custom_category_id = ? AND hm.user_id = ? AND cc.user_id != ?
+		LIMIT 1`, categoryID, userID, userID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("checking house-based access to category %d for user %d: %w", categoryID, userID, err)
+	}
+	return true, nil
+}
+
+// SetSpaceHousePinned lets a House member who can only see categoryID
+// through House membership (see spaceAccessibleViaHouse) pin or unpin it on
+// their own dashboard — the House-membership equivalent of
+// SetSpaceSharePinned, for a user who was never granted a space_shares row
+// at all. Pinning inserts a row into space_house_pins (ON CONFLICT is a
+// no-op, since presence alone means pinned, the same "safe against two
+// concurrent pin requests" reasoning SetListSharePinned's own ON CONFLICT
+// upsert already relies on); unpinning deletes it outright rather than
+// flipping a flag, since the table carries nothing else. Returns
+// ErrNotFound if categoryID isn't actually visible to userID through any
+// House they belong to — callers (handleSpaceSharePin) should try
+// SetSpaceSharePinned first and only fall back to this for the ErrNotFound
+// case, since an explicit space_shares grant should always win if one
+// exists.
+func (d *DB) SetSpaceHousePinned(ctx context.Context, categoryID, userID int64, pinned bool) (bool, error) {
+	accessible, err := d.spaceAccessibleViaHouse(ctx, categoryID, userID)
+	if err != nil {
+		return false, err
+	}
+	if !accessible {
+		return false, ErrNotFound
+	}
+
+	if pinned {
+		if _, err := d.conn.ExecContext(ctx, `
+			INSERT INTO space_house_pins (custom_category_id, user_id) VALUES (?, ?)
+			ON CONFLICT (custom_category_id, user_id) DO NOTHING`, categoryID, userID); err != nil {
+			return false, fmt.Errorf("pinning space %d for user %d via house access: %w", categoryID, userID, err)
+		}
+		return true, nil
+	}
+	if _, err := d.conn.ExecContext(ctx,
+		`DELETE FROM space_house_pins WHERE custom_category_id = ? AND user_id = ?`, categoryID, userID); err != nil {
+		return false, fmt.Errorf("unpinning space %d for user %d via house access: %w", categoryID, userID, err)
+	}
+	return false, nil
+}
+
+// ListSpacesVisibleToUser returns every Space (custom_categories row) the
+// caller doesn't own but can still see — either because its owner shared it
+// directly (space_shares) or because at least one of its tagged lists
+// belongs to a House the caller is a member of (spaceAccessibleViaHouse) —
+// backing GET /api/v1/custom-categories?shared_with_me=true. Each result
+// carries the owner's own UserID/Name/Icon/Color/Position exactly as any
+// other read of a CustomCategory would, plus AccessSource/
+// AccessPermission/IsPinnedToDashboard populated from whichever source
+// applies (mirroring how ListSharedListsForUser populates the same three
+// fields on a List). A category reachable through both sources at once
+// (the owner shared it with a user who also happens to be a fellow House
+// member — legal, if redundant, since handleSpaceShareCreate places no
+// House-membership restriction on who a Space may be shared with, unlike
+// handleListShareCreate) keeps the higher permission and stays pinned if
+// either source says so, "space_share" preferred as the more specific
+// AccessSource — the same "OR"/"higher wins" dedup ListSharedListsForUser
+// already uses for Lists.
+func (d *DB) ListSpacesVisibleToUser(ctx context.Context, userID int64) ([]*models.CustomCategory, error) {
+	rows, err := d.conn.QueryContext(ctx, `
+		SELECT cc.id, cc.user_id, cc.name, cc.icon, cc.color, cc.position, cc.created_at,
+		       src.permission, src.source, src.pinned
+		FROM custom_categories cc
+		JOIN (
+			SELECT ss.custom_category_id AS category_id, ss.permission AS permission,
+			       'space_share' AS source, ss.is_pinned_to_dashboard AS pinned
+			FROM space_shares ss WHERE ss.shared_with_user_id = ?
+			UNION ALL
+			SELECT DISTINCT l.custom_category_id AS category_id, 'write' AS permission,
+			       'house_member' AS source,
+			       CASE WHEN shp.id IS NOT NULL THEN 1 ELSE 0 END AS pinned
+			FROM lists l
+			JOIN house_members hm ON hm.house_id = l.house_id
+			LEFT JOIN space_house_pins shp ON shp.custom_category_id = l.custom_category_id AND shp.user_id = ?
+			WHERE hm.user_id = ? AND l.custom_category_id IS NOT NULL
+		) src ON src.category_id = cc.id
+		WHERE cc.user_id != ?
+		ORDER BY cc.created_at DESC`, userID, userID, userID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("querying spaces visible to user %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	categories := []*models.CustomCategory{}
+	indexByID := map[int64]int{}
+	for rows.Next() {
+		c := &models.CustomCategory{}
+		var permission, source string
+		var pinned int
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.Icon, &c.Color, &c.Position, &c.CreatedAt, &permission, &source, &pinned); err != nil {
+			return nil, fmt.Errorf("scanning visible space row: %w", err)
+		}
+		c.AccessSource = source
+		c.AccessPermission = permission
+		c.IsPinnedToDashboard = pinned != 0
+
+		if idx, ok := indexByID[c.ID]; ok {
+			existing := categories[idx]
+			if existing.AccessSource != "space_share" && c.AccessSource == "space_share" {
+				existing.AccessSource = c.AccessSource
+				existing.AccessPermission = c.AccessPermission
+			} else if c.AccessPermission == "write" {
+				existing.AccessPermission = "write"
+			}
+			if c.IsPinnedToDashboard {
+				existing.IsPinnedToDashboard = true
+			}
+			continue
+		}
+		indexByID[c.ID] = len(categories)
+		categories = append(categories, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating visible space rows: %w", err)
+	}
+	return categories, nil
+}
+
+// ListPinnedHouseSpaceLists returns every List reachable by userID purely
+// through a space_house_pins pin (see SetSpaceHousePinned) — the
+// House-membership-access equivalent of the space_share branch
+// ListSharedListsForUser already unions in for an explicitly shared Space.
+// It can't simply be added as a third branch there: every row this method
+// returns already satisfies ListSharedListsForUser's own
+// "house_id NOT IN (houses the caller belongs to)" exclusion by definition
+// (spaceAccessibleViaHouse requires exactly the opposite), so unioning it in
+// would just be filtered straight back out. Backing
+// GET /api/v1/lists?pinned_house_spaces=true, this is what lets a pinned
+// House Space's lists show up on the caller's dashboard even while a
+// *different* House they also belong to is the currently selected one — see
+// the "Pinning shared lists (and shared Spaces)" bullet in CLAUDE.md. The
+// join back through house_members is redundant with space_house_pins having
+// required it at pin time, but kept anyway as defense in depth: a pin row
+// surviving a since-revoked House membership (there's no ON DELETE trigger
+// tying the two together) must never leak a list from a House the caller no
+// longer belongs to.
+func (d *DB) ListPinnedHouseSpaceLists(ctx context.Context, userID int64) ([]*models.List, error) {
+	query := listSelect + `
+		JOIN house_members hm ON hm.house_id = lists.house_id AND hm.user_id = ?
+		JOIN space_house_pins shp ON shp.custom_category_id = lists.custom_category_id AND shp.user_id = ?
+		ORDER BY lists.created_at DESC`
+	rows, err := d.conn.QueryContext(ctx, query, userID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("querying pinned house-space lists for user %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	lists := []*models.List{}
+	for rows.Next() {
+		l, err := scanListRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning pinned house-space list row: %w", err)
+		}
+		l.AccessSource = "house_member"
+		l.AccessPermission = "write"
+		l.IsPinnedToDashboard = true
+		lists = append(lists, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating pinned house-space list rows: %w", err)
 	}
 	return lists, nil
 }

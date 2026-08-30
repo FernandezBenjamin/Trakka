@@ -826,6 +826,62 @@
     </div>
   </div>
 
+  <!-- Shared-list card actions bottom sheet: opened by a tap on a
+       directly-shared list card's [⋮] kebab button (buildListCard in app.js)
+       as the mobile replacement for the 📌 pin/unpin button shown directly
+       on the card on larger screens (see .item-card__actions/.item-card__kebab
+       in base.css for the same hidden md:flex / flex md:hidden pattern
+       applied here). Only offers the pin/unpin toggle since that's the only
+       action a shared list's card exposes at all (managing/editing/deleting
+       it requires actual House membership — see buildListCard's
+       access_source branch). Populated per-list by
+       openListCardActionsSheet right before it's shown. -->
+  <div id="list-card-actions-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="list-card-actions-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 id="list-card-actions-sheet-title" class="min-w-0 flex-1 truncate text-lg font-semibold"></h2>
+        <button type="button" id="close-list-card-actions-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex flex-col gap-1">
+        <button type="button" id="list-card-actions-pin-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span id="list-card-actions-pin-icon" aria-hidden="true">📌</span>
+          <span id="list-card-actions-pin-label" data-i18n="modals.listActions.pin">Épingler sur le tableau de bord</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shared-space actions bottom sheet: opened by a tap on a Space shared
+       with the caller's own [⋮] kebab button (buildSharedCategorySection in
+       spaces.js, "Espaces partagés avec moi" section) — the Space-level
+       equivalent of #list-card-actions-sheet above. Only offers the
+       pin/unpin toggle, since sharing/renaming/deleting a Space stays the
+       owning user's call alone (a shared-space section never shows those
+       controls at all). Populated per-category by
+       openSpaceCardActionsSheet right before it's shown. -->
+  <div id="space-card-actions-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="space-card-actions-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 id="space-card-actions-sheet-title" class="min-w-0 flex-1 truncate text-lg font-semibold"></h2>
+        <button type="button" id="close-space-card-actions-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex flex-col gap-1">
+        <button type="button" id="space-card-actions-pin-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span id="space-card-actions-pin-icon" aria-hidden="true">📌</span>
+          <span id="space-card-actions-pin-label" data-i18n="modals.listActions.pinSpace">Épingler l'espace sur mon tableau de bord</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div id="image-preview-modal" hidden class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 dark:bg-slate-950/80 p-4">
     <div role="dialog" aria-modal="true" data-i18n-aria-label="modals.imagePreview.ariaLabel" aria-label="Aperçu de l'image de l'article" class="relative max-h-full max-w-full">
       <button type="button" id="close-image-preview-button" data-i18n-aria-label="modals.imagePreview.close" aria-label="Fermer l'aperçu"

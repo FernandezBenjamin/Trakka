@@ -74,6 +74,7 @@ func (app *Application) Routes() http.Handler {
 	// root, so there's only ever one URL naming a given category.
 	apiMux.HandleFunc("GET /api/v1/custom-categories/{id}/share", app.handleSpaceShareIndex)
 	apiMux.HandleFunc("POST /api/v1/custom-categories/{id}/share", app.handleSpaceShareCreate)
+	apiMux.HandleFunc("PATCH /api/v1/custom-categories/{id}/share/pin", app.handleSpaceSharePin)
 	apiMux.HandleFunc("DELETE /api/v1/custom-categories/{id}/share/{userId}", app.handleSpaceShareRevoke)
 
 	apiMux.HandleFunc("GET /api/v1/lists", app.handleListsIndex)

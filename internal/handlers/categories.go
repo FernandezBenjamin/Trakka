@@ -11,8 +11,28 @@ import (
 
 // handleCustomCategoriesIndex lists the caller's own custom categories —
 // unlike houses/lists, a category has no shared "membership": it's always
-// scoped to the authenticated user, never to a house.
+// scoped to the authenticated user, never to a house. ?shared_with_me=true
+// switches to a different, mutually exclusive mode mirroring
+// handleListsIndex's own: every Space the caller doesn't own but can still
+// see (db.ListSpacesVisibleToUser) — either via an explicit space_shares
+// grant, or simply because they're a member of a House that uses the Space
+// on at least one of its lists (AccessSource "house_member" — see
+// db.spaceAccessibleViaHouse) — rather than the caller's own categories.
+// This is what lets a Space someone shared with the caller, or a Space
+// merely visible through shared House membership (and, once pinned via
+// PATCH /api/v1/custom-categories/{id}/share/pin, its lists), show up in
+// their own "Espaces" tab at all.
 func (app *Application) handleCustomCategoriesIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("shared_with_me") == "true" {
+		categories, err := app.DB.ListSpacesVisibleToUser(r.Context(), userFromContext(r).ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, categories)
+		return
+	}
+
 	categories, err := app.DB.ListCustomCategoriesForUser(r.Context(), userFromContext(r).ID)
 	if err != nil {
 		app.serverError(w, r, err)

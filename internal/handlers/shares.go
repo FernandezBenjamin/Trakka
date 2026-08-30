@@ -120,6 +120,69 @@ func (app *Application) handleSpaceShareRevoke(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleSpaceSharePin lets any viewer who can see a Space without owning it
+// pin or unpin the whole thing, so it shows up in their own "Espaces" tab
+// and every list reachable through it shows up pinned on their own
+// dashboard too — see db.ListSpacesVisibleToUser and the space_share/
+// house_member branches of db.ListSharedListsForUser/
+// db.ListPinnedHouseSpaceLists, which derive each such list's own pinned
+// flag from this same row, so pinning a Space needs no per-list action.
+// Mirrors handleListSharePin's authorization shape exactly: the caller here
+// is the viewer, never the Space's owner, so this is deliberately NOT gated
+// behind authorizeSpaceOwner. There are two ways a viewer can be entitled to
+// pin, tried in order: an explicit space_shares grant first
+// (SetSpaceSharePinned, unchanged from before this comment), and — only if
+// that comes back ErrNotFound, meaning nobody explicitly shared anything
+// with this caller — House-membership-based access instead
+// (SetSpaceHousePinned, "does at least one of this Space's tagged lists
+// belong to a House the caller is a member of"). Either path surfaces
+// ErrNotFound as a 404 rather than a 403, matching this file's existing
+// "don't distinguish nonexistent from unauthorized" convention; only when
+// *neither* path recognizes the caller does this endpoint actually 404.
+func (app *Application) handleSpaceSharePin(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+
+	var in struct {
+		Pinned *bool `json:"pinned"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.Pinned == nil {
+		writeError(w, http.StatusBadRequest, "pinned is required")
+		return
+	}
+
+	userID := userFromContext(r).ID
+
+	share, err := app.DB.SetSpaceSharePinned(r.Context(), id, userID, *in.Pinned)
+	if err == nil {
+		writeJSON(w, http.StatusOK, share)
+		return
+	}
+	if !errors.Is(err, db.ErrNotFound) {
+		app.serverError(w, r, err)
+		return
+	}
+
+	pinned, err := app.DB.SetSpaceHousePinned(r.Context(), id, userID, *in.Pinned)
+	if errors.Is(err, db.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "space not found or not accessible")
+		return
+	} else if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, models.SpacePinStatus{
+		CustomCategoryID:    id,
+		IsPinnedToDashboard: pinned,
+		AccessSource:        "house_member",
+	})
+}
+
 // handleListShareIndex lists everyone a List has been shared with. Scoped
 // to actual House membership (not authorizeListAccess) — see
 // handleListShareCreate for why: only a list's real House can manage who
@@ -236,9 +299,14 @@ func (app *Application) handleListShareCreate(w http.ResponseWriter, r *http.Req
 // the first place — so gating this endpoint behind House membership would
 // make it unusable for the exact audience it exists for. See
 // TestHandleListSharePinDoesNotRequireHouseMembership for a regression
-// test covering precisely this. Scoped to a direct List share only — a
-// list reached solely via a shared Space has no list_shares row of its
-// own to pin.
+// test covering precisely this. Not scoped to a direct List share only any
+// more: a list reached solely via a shared Space can also be pinned this
+// way — db.SetListSharePinned auto-creates the list_shares row that carries
+// the flag in that case (see its own comment) — so the "not a member of
+// this house" bug report this test guards against can no longer resurface
+// via that path either, and a Space can additionally be pinned as a whole
+// via handleSpaceSharePin below, which covers every list reachable through
+// it in one action instead.
 func (app *Application) handleListSharePin(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {

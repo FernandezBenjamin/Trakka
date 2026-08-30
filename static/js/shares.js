@@ -188,6 +188,42 @@ async function loadPinnedSharedLists() {
   );
 }
 
+// The House-membership equivalent of loadPinnedSharedLists above: every
+// list the caller reaches purely because they pinned a Space that's used
+// within one of their own Houses (access_source 'house_member' — see
+// db.ListPinnedHouseSpaceLists and the "pinned house spaces" bullet in
+// CLAUDE.md), regardless of which House is currently selected on the
+// dashboard. Every row GET /lists?pinned_house_spaces=true returns is
+// already pinned by construction (unlike ?shared_with_me=true, there's no
+// unpinned majority to filter out here) — but, like every other /lists
+// collection endpoint, it doesn't embed each list's items (only
+// GET /lists/{id} does — see handleListsShow), so this still needs the
+// same per-list fan-out loadPinnedSharedLists uses for accurate badges/item
+// counts on the resulting cards.
+async function loadPinnedHouseSpaceLists() {
+  const stubs = await apiRequest('/lists?pinned_house_spaces=true');
+  if (stubs.length === 0) return [];
+
+  // GET /lists/{id} doesn't itself know about access_source/
+  // access_permission/is_pinned_to_dashboard (only the
+  // ?pinned_house_spaces=true/?shared_with_me=true collection queries do —
+  // see loadPinnedSharedLists's identical comment above), so those three
+  // fields are carried over from the stub onto the detailed result rather
+  // than lost.
+  return Promise.all(
+    stubs.map((stub) =>
+      apiRequest(`/lists/${stub.id}`)
+        .then((detailed) => ({
+          ...detailed,
+          access_source: stub.access_source,
+          access_permission: stub.access_permission,
+          is_pinned_to_dashboard: stub.is_pinned_to_dashboard,
+        }))
+        .catch(() => stub)
+    )
+  );
+}
+
 // ---------------------------------------------------------------------------
 // "Partagé avec moi" tab: every List reachable via a direct share or a
 // shared Space, regardless of which House it actually belongs to.

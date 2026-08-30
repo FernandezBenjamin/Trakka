@@ -51,12 +51,18 @@ type List struct {
 	// IsPinnedToDashboard is a response-only field, populated only by
 	// db.ListSharedListsForUser (never GetList/ListListsForUser's ordinary
 	// House-scoped read), reporting whether the requesting user has chosen —
-	// via PATCH /api/v1/lists/{id}/share/pin — to have this shared list show
-	// up alongside their own House's lists on the dashboard, rather than
-	// only in the "Partagé avec moi" tab. Always false wherever AccessSource
-	// is empty; only ever true when AccessSource is "list_share", since a
-	// list reached solely via a shared Space has no list_shares row of its
-	// own to carry the flag.
+	// via PATCH /api/v1/lists/{id}/share/pin, or PATCH
+	// /api/v1/custom-categories/{id}/share/pin on the list's parent Space —
+	// to have this shared list show up alongside their own House's lists on
+	// the dashboard, rather than only in the "Partagé avec moi" tab. Always
+	// false wherever AccessSource is empty. True either when a list_shares
+	// row for this list is itself pinned (AccessSource "list_share", or
+	// "space_share" for a list individually pinned via the auto-created
+	// list_shares row SetListSharePinned creates on demand — see its
+	// comment), or when AccessSource is "space_share" and the list's parent
+	// Space itself is pinned as a whole (space_shares.is_pinned_to_dashboard)
+	// — pinning a whole Space is what lets every list reachable through it
+	// show up pinned without pinning each one individually.
 	IsPinnedToDashboard bool `json:"is_pinned_to_dashboard,omitempty"`
 }
 
@@ -263,6 +269,47 @@ type CustomCategory struct {
 	Color     string `json:"color,omitempty"`
 	Position  int    `json:"position"`
 	CreatedAt string `json:"created_at"`
+	// AccessSource is the Space-level equivalent of List.AccessSource:
+	// populated exclusively by db.ListSpacesVisibleToUser to say how the
+	// requesting user can see a Space they don't own — "space_share" (the
+	// owner granted them a space_shares row directly) or "house_member"
+	// (nobody shared anything; at least one of the Space's tagged lists
+	// belongs to a House the requesting user is a member of — see
+	// db.spaceAccessibleViaHouse). Empty on every other read, including a
+	// category the caller owns.
+	AccessSource string `json:"access_source,omitempty"`
+	// AccessPermission is a response-only field (never persisted) populated
+	// exclusively by db.ListSpacesVisibleToUser to say what level of access
+	// ("read" or "write") the requesting user holds on this Space — mirrors
+	// the space_shares grant's own permission for AccessSource
+	// "space_share", or is always "write" for AccessSource "house_member"
+	// (House membership has always implied full read/write access, see
+	// db.AccessLevelForList) — empty on every other read (a category the
+	// caller owns has no "access permission" distinct from ownership).
+	AccessPermission string `json:"access_permission,omitempty"`
+	// IsPinnedToDashboard is the Space-level equivalent of
+	// List.IsPinnedToDashboard: whether the viewer has chosen to have this
+	// Space (and every list reachable through it) show up on their own
+	// dashboard/Espaces tab — via PATCH
+	// /api/v1/custom-categories/{id}/share/pin (handleSpaceSharePin), which
+	// records the choice in space_shares.is_pinned_to_dashboard for an
+	// AccessSource "space_share" recipient, or in a dedicated
+	// space_house_pins row for an AccessSource "house_member" one (see
+	// db.SetSpaceHousePinned) since there's no space_shares row to flip a
+	// flag on in that case. Populated only by db.ListSpacesVisibleToUser;
+	// always false for a category the caller owns themselves.
+	IsPinnedToDashboard bool `json:"is_pinned_to_dashboard,omitempty"`
+}
+
+// SpacePinStatus is handleSpaceSharePin's response when a Space is pinned or
+// unpinned through House-membership-based access (db.SetSpaceHousePinned)
+// rather than an explicit space_shares grant — there's no SpaceShare row to
+// return in that case (no Permission, no CreatedAt, no roster entry to
+// speak of), just the resulting pin state and how the caller reached it.
+type SpacePinStatus struct {
+	CustomCategoryID    int64  `json:"custom_category_id"`
+	IsPinnedToDashboard bool   `json:"is_pinned_to_dashboard"`
+	AccessSource        string `json:"access_source"`
 }
 
 // SpaceShare grants one other user ("SharedWithUserID") read or write
@@ -281,6 +328,12 @@ type SpaceShare struct {
 	// only (mirrors HouseMember.Email/DisplayName above).
 	Email       string `json:"email,omitempty"`
 	DisplayName string `json:"display_name,omitempty"`
+	// IsPinnedToDashboard records whether the recipient (SharedWithUserID)
+	// has chosen to have this whole Space — and every list reachable
+	// through it — show up pinned on their own dashboard/Espaces tab; see
+	// PATCH /api/v1/custom-categories/{id}/share/pin (handleSpaceSharePin)
+	// and CustomCategory.IsPinnedToDashboard above.
+	IsPinnedToDashboard bool `json:"is_pinned_to_dashboard"`
 }
 
 // ListShare grants one other user ("SharedWithUserID") read or write access
