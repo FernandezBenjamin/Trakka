@@ -156,6 +156,39 @@ sharesEls.shareForm.addEventListener('submit', async (event) => {
 });
 
 // ---------------------------------------------------------------------------
+// Pinning a shared list to the dashboard (CLAUDE.md's "Pinning shared
+// lists" feature): a recipient can flag a directly-shared list (via the 📌
+// button buildListCard shows on it — see app.js's toggleListPin) so it also
+// shows up on their own dashboard grids, not just the "Partagé avec moi"
+// tab below.
+// ---------------------------------------------------------------------------
+
+// Fetches every shared list the caller has pinned, each merged with its own
+// item detail the same way loadSharedView does below — called from
+// app.js's loadDashboard on every dashboard load/house-switch. No offline
+// mirror (same "requires connectivity" scoping as loadShareRoster/
+// loadSharedView), so a plain connectivity failure here just means these
+// cards are temporarily absent rather than a blocking error — the caller
+// already treats a rejected promise as "show none".
+async function loadPinnedSharedLists() {
+  const stubs = (await apiRequest('/lists?shared_with_me=true')).filter((stub) => stub.is_pinned_to_dashboard);
+  if (stubs.length === 0) return [];
+
+  return Promise.all(
+    stubs.map((stub) =>
+      apiRequest(`/lists/${stub.id}`)
+        .then((detailed) => ({
+          ...detailed,
+          access_source: stub.access_source,
+          access_permission: stub.access_permission,
+          is_pinned_to_dashboard: stub.is_pinned_to_dashboard,
+        }))
+        .catch(() => stub)
+    )
+  );
+}
+
+// ---------------------------------------------------------------------------
 // "Partagé avec moi" tab: every List reachable via a direct share or a
 // shared Space, regardless of which House it actually belongs to.
 // ---------------------------------------------------------------------------
@@ -187,13 +220,20 @@ async function loadSharedView() {
   // as the plain ?house_id= listing — fetch each one's detail in parallel
   // for accurate item counts/badges, the same per-list fan-out pattern
   // planning.js/urgent.js/spaces.js already use. GET /lists/{id} doesn't
-  // itself know about access_source/access_permission (only
-  // db.ListSharedListsForUser does), so those two fields are carried over
-  // from the stub onto the detailed result rather than lost.
+  // itself know about access_source/access_permission/is_pinned_to_dashboard
+  // (only db.ListSharedListsForUser does), so those three fields are
+  // carried over from the stub onto the detailed result rather than lost —
+  // is_pinned_to_dashboard is what lets buildListCard's 📌 button here
+  // reflect the right pinned/unpinned state.
   sharedLists = await Promise.all(
     stubs.map((stub) =>
       apiRequest(`/lists/${stub.id}`)
-        .then((detailed) => ({ ...detailed, access_source: stub.access_source, access_permission: stub.access_permission }))
+        .then((detailed) => ({
+          ...detailed,
+          access_source: stub.access_source,
+          access_permission: stub.access_permission,
+          is_pinned_to_dashboard: stub.is_pinned_to_dashboard,
+        }))
         .catch(() => stub)
     )
   );

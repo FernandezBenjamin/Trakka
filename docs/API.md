@@ -236,7 +236,7 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists?shared_with_me=true
 ]
 ```
 
-`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission` are only present in the `?shared_with_me=true` mode above — see [Sharing](#sharing).
+`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission`/`is_pinned_to_dashboard` are only present in the `?shared_with_me=true` mode above — see [Sharing](#sharing). The dashboard itself is a client-side merge of two separate calls: the plain `?house_id=` listing above, plus `?shared_with_me=true` filtered down to entries with `is_pinned_to_dashboard: true` (see [Pinning a shared list](#patch-apiv1listsidsharepin) and `static/js/shares.js`'s `loadPinnedSharedLists`) — there's no server-side "give me my house's lists plus my pinned shares in one call" mode.
 
 ### `POST /api/v1/lists`
 
@@ -297,7 +297,7 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists/1/share
 
 ```json
 [
-  { "id": 1, "list_id": 1, "shared_with_user_id": 2, "permission": "read", "created_at": "...", "email": "bob@example.com", "display_name": "Bob" }
+  { "id": 1, "list_id": 1, "shared_with_user_id": 2, "permission": "read", "is_pinned_to_dashboard": false, "created_at": "...", "email": "bob@example.com", "display_name": "Bob" }
 ]
 ```
 
@@ -316,6 +316,20 @@ curl -X POST http://localhost:8080/api/v1/lists/1/share \
 | `permission` | string | yes | `"read"` or `"write"`, else `400` |
 
 `400` if sharing with yourself, or (List only) if the recipient is already a member of the list's house. `404`/`403` access rules match the `GET` above. `201` with the created/updated share.
+
+### `PATCH /api/v1/lists/{id}/share/pin`
+
+Lets the *recipient* of a direct List share choose whether it shows up pinned on their own dashboard, alongside their own house's lists, instead of only in the "Partagé avec moi" tab. Unlike every other endpoint in this section, the caller here is the share's recipient, not someone managing the list's house — there is no equivalent endpoint for Spaces, and pinning a list reached only through a shared Space (no `list_shares` row of its own) isn't possible.
+
+```bash
+curl -X PATCH http://localhost:8080/api/v1/lists/1/share/pin -d '{"pinned": true}'
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `pinned` | boolean | yes | `400` if omitted |
+
+`200` with the updated share (same shape as the `POST` above, `is_pinned_to_dashboard` reflecting the new state). `404` if the caller holds no `list_shares` row for this list — this covers both "never shared with them" and "only reachable via a Space", the same "don't distinguish nonexistent from unauthorized" convention this section's other `404`s already follow.
 
 ### `DELETE /api/v1/custom-categories/{id}/share/{userId}` · `DELETE /api/v1/lists/{id}/share/{userId}`
 

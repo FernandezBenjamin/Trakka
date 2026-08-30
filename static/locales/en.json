@@ -3,6 +3,8 @@
     "deleteList": "Delete {name}",
     "editList": "Edit {name}",
     "shareList": "Share {name}",
+    "pinList": "Pin {name} to dashboard",
+    "unpinList": "Unpin {name} from dashboard",
     "removeMember": "Remove {email}"
   },
   "header": {

@@ -48,6 +48,16 @@ type List struct {
 	// requesting user actually holds via that share. Always empty wherever
 	// AccessSource is.
 	AccessPermission string `json:"access_permission,omitempty"`
+	// IsPinnedToDashboard is a response-only field, populated only by
+	// db.ListSharedListsForUser (never GetList/ListListsForUser's ordinary
+	// House-scoped read), reporting whether the requesting user has chosen —
+	// via PATCH /api/v1/lists/{id}/share/pin — to have this shared list show
+	// up alongside their own House's lists on the dashboard, rather than
+	// only in the "Partagé avec moi" tab. Always false wherever AccessSource
+	// is empty; only ever true when AccessSource is "list_share", since a
+	// list reached solely via a shared Space has no list_shares row of its
+	// own to carry the flag.
+	IsPinnedToDashboard bool `json:"is_pinned_to_dashboard,omitempty"`
 }
 
 // Item represents a single entry within a List.
@@ -289,6 +299,11 @@ type ListShare struct {
 	// only (mirrors HouseMember.Email/DisplayName above).
 	Email       string `json:"email,omitempty"`
 	DisplayName string `json:"display_name,omitempty"`
+	// IsPinnedToDashboard records whether the recipient (SharedWithUserID)
+	// has chosen to have this shared list show up on their own dashboard —
+	// see PATCH /api/v1/lists/{id}/share/pin (handleListSharePin) and
+	// List.IsPinnedToDashboard above.
+	IsPinnedToDashboard bool `json:"is_pinned_to_dashboard"`
 }
 
 // ValidSharePermissions enumerates the allowed values for

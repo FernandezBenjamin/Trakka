@@ -221,6 +221,52 @@ func (app *Application) handleListShareCreate(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusCreated, share)
 }
 
+// handleListSharePin lets a share *recipient* pin or unpin a list directly
+// shared with them, so it shows up alongside their own House's lists on the
+// dashboard instead of only in the "Partagé avec moi" tab. Unlike every
+// other handler in this file, the caller here is the recipient, not
+// whoever manages the list's House — authorization is simply "does the
+// caller hold a list_shares row for this list" (enforced by
+// SetListSharePinned's own WHERE clause, surfaced as ErrNotFound rather
+// than a 403 to match this file's existing "don't distinguish nonexistent
+// from unauthorized" convention), not authorizeHouseAccess/
+// authorizeListAccess. This is deliberate, not an oversight: a share
+// recipient is, in the ordinary case, NOT a member of the list's House at
+// all — that's exactly why the list had to be shared with them directly in
+// the first place — so gating this endpoint behind House membership would
+// make it unusable for the exact audience it exists for. See
+// TestHandleListSharePinDoesNotRequireHouseMembership for a regression
+// test covering precisely this. Scoped to a direct List share only — a
+// list reached solely via a shared Space has no list_shares row of its
+// own to pin.
+func (app *Application) handleListSharePin(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+
+	var in struct {
+		Pinned *bool `json:"pinned"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.Pinned == nil {
+		writeError(w, http.StatusBadRequest, "pinned is required")
+		return
+	}
+
+	share, err := app.DB.SetListSharePinned(r.Context(), id, userFromContext(r).ID, *in.Pinned)
+	if errors.Is(err, db.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "list share not found")
+		return
+	} else if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, share)
+}
+
 func (app *Application) handleListShareRevoke(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {

@@ -183,6 +183,14 @@ const SHARE_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
   '<path d="M16 11a4 4 0 1 0-4-4"/><path d="M8 21v-2a4 4 0 0 1 4-4h1"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>';
 
+// Same static-markup-only safety rule as TRASH_ICON_SVG above. Used for the
+// 📌 pin/unpin button buildListCard shows on a card reached via a direct
+// List share (list.access_source === 'list_share') — see toggleListPin and
+// the "Pinning shared lists" feature in CLAUDE.md.
+const PIN_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
+  '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+
 function showError(message) {
   els.errorBanner.textContent = message;
   els.errorBanner.hidden = false;
@@ -404,6 +412,34 @@ async function loadHouses() {
 
   els.houseSelect.value = state.currentHouseId !== null ? String(state.currentHouseId) : CREATE_HOUSE_OPTION_VALUE;
   updateManageMembersButton();
+}
+
+// Tracks whether loadHouses() has resolved at least once for this page
+// load, and the in-flight promise while it hasn't. state.currentHouseId is
+// only ever authoritative once loadHouses() has validated it against a
+// live GET /api/v1/houses (see loadHouses above) — before that it's either
+// null or whatever hydrateFromCache() derived from the IndexedDB mirror, a
+// value that can be stale (e.g. left over from a different account that
+// was previously signed in on this same browser) and isn't guaranteed to
+// still belong to the current session. Several independent triggers can
+// fire a house-scoped fetch — the initial load itself, a language switch,
+// the tab regaining visibility, the 'online' event, and a
+// trakka-sync-complete message from the service worker — and any of them
+// firing before the first loadHouses() has resolved would hit the backend
+// with a house_id the caller doesn't actually have access to yet, which
+// correctly 403s but surfaces as a spurious "not a member of this house"
+// error banner. ensureHousesLoaded() is the single choke point every
+// house-scoped loader (loadDashboard below, notifications.js's
+// loadNotifications) awaits first, so none of them can ever run ahead of
+// the one authoritative resolution regardless of which trigger fires it.
+let housesLoadedOnce = false;
+let housesLoadingPromise = null;
+
+async function ensureHousesLoaded() {
+  if (housesLoadedOnce) return;
+  if (!housesLoadingPromise) housesLoadingPromise = loadHouses();
+  await housesLoadingPromise;
+  housesLoadedOnce = true;
 }
 
 function selectHouse(houseId) {
@@ -781,6 +817,24 @@ function buildListCard(list, badgesFragment) {
     deleteBtn.innerHTML = TRASH_ICON_SVG;
     deleteBtn.addEventListener('click', () => removeList(list));
     actions.appendChild(deleteBtn);
+  } else if (list.access_source === 'list_share') {
+    // Pinning is only offered for a list shared *directly* (a list_shares
+    // row the recipient themselves holds) — one reached only via a shared
+    // Space has no such row for PATCH /api/v1/lists/{id}/share/pin to flip,
+    // see handleListSharePin/SetListSharePinned. This is the recipient's
+    // own action (CLAUDE.md's "Pinning shared lists" feature): pinning
+    // makes the card also show up on their own dashboard grids, alongside
+    // their House's own lists, without needing House membership.
+    const pinBtn = document.createElement('button');
+    pinBtn.type = 'button';
+    const pinned = !!list.is_pinned_to_dashboard;
+    pinBtn.setAttribute('aria-label', t(pinned ? 'common.unpinList' : 'common.pinList', { name: list.name }));
+    pinBtn.className =
+      'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 ' +
+      (pinned ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500');
+    pinBtn.innerHTML = PIN_ICON_SVG;
+    pinBtn.addEventListener('click', () => toggleListPin(list));
+    actions.appendChild(pinBtn);
   }
 
   row.append(openBtn, actions);
@@ -853,6 +907,11 @@ async function renderDashboardFromCache() {
 }
 
 async function loadDashboard() {
+  // See ensureHousesLoaded's own comment above: this guarantees
+  // state.currentHouseId is never used for a network request until it's
+  // been validated against a live GET /api/v1/houses, no matter which of
+  // the several independent triggers called loadDashboard first.
+  await ensureHousesLoaded();
   if (state.currentHouseId === null) {
     renderDashboardGrids([]);
     return;
@@ -892,7 +951,17 @@ async function loadDashboard() {
     )
   );
 
-  renderDashboardGrids(detailed);
+  // Alongside the current House's own lists, the dashboard also shows any
+  // list shared directly with the caller that they've chosen to pin (see
+  // buildListCard's 📌 button, toggleListPin, and loadPinnedSharedLists in
+  // shares.js) — CLAUDE.md's "Pinning shared lists" feature. No offline
+  // mirror for these (same "requires connectivity" scoping as the rest of
+  // the sharing feature), so they simply don't appear while offline; a
+  // best-effort failure here must never block the rest of the dashboard
+  // from rendering.
+  const pinnedShared = await loadPinnedSharedLists().catch(() => []);
+
+  renderDashboardGrids([...detailed, ...pinnedShared]);
 }
 
 // ---------------------------------------------------------------------------
@@ -970,6 +1039,28 @@ function removeList(list) {
       await refreshPendingBadge();
     },
   });
+}
+
+// Pins or unpins a directly-shared list on the caller's own dashboard (see
+// buildListCard's pin button above and PATCH /api/v1/lists/{id}/share/pin).
+// Unlike removeList this isn't optimistic/undo-able — it's a quick,
+// infrequent toggle, so it follows shares.js's simpler
+// await-then-refresh pattern (see revokeShare) rather than the
+// coalesced-optimistic pattern item quantity/urgent toggles use for
+// rapid-fire clicks. refreshVisibleView() (defined above) re-renders
+// whichever of the dashboard grids/"Partagé avec moi" tab is currently on
+// screen, since pinning can change what either one shows.
+async function toggleListPin(list) {
+  hideError();
+  try {
+    await apiRequest(`/lists/${list.id}/share/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned: !list.is_pinned_to_dashboard }),
+    });
+    await refreshVisibleView();
+  } catch (err) {
+    showError(err.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1241,7 +1332,7 @@ async function init() {
   // Stale-while-revalidate: now refresh from the network. Both calls fall
   // back to the cache again on their own if this fails, so it's safe to
   // run unconditionally regardless of whether the /me check above worked.
-  await loadHouses();
+  await ensureHousesLoaded();
   await loadDashboard();
   // loadNotifications is defined in notifications.js, resolved lazily the
   // same way every other cross-file call in this function already is.

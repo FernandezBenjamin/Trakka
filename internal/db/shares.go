@@ -19,9 +19,11 @@ func scanSpaceShare(row rowScanner) (*models.SpaceShare, error) {
 
 func scanListShare(row rowScanner) (*models.ListShare, error) {
 	s := &models.ListShare{}
-	if err := row.Scan(&s.ID, &s.ListID, &s.SharedWithUserID, &s.Permission, &s.CreatedAt); err != nil {
+	var pinned int
+	if err := row.Scan(&s.ID, &s.ListID, &s.SharedWithUserID, &s.Permission, &s.CreatedAt, &pinned); err != nil {
 		return nil, err
 	}
+	s.IsPinnedToDashboard = pinned != 0
 	return s, nil
 }
 
@@ -124,7 +126,7 @@ func (d *DB) CreateOrUpdateListShare(ctx context.Context, listID, sharedWithUser
 // sharedWithUserID has no share for listID.
 func (d *DB) GetListShare(ctx context.Context, listID, sharedWithUserID int64) (*models.ListShare, error) {
 	row := d.conn.QueryRowContext(ctx,
-		`SELECT id, list_id, shared_with_user_id, permission, created_at
+		`SELECT id, list_id, shared_with_user_id, permission, created_at, is_pinned_to_dashboard
 		 FROM list_shares WHERE list_id = ? AND shared_with_user_id = ?`,
 		listID, sharedWithUserID)
 	s, err := scanListShare(row)
@@ -141,7 +143,7 @@ func (d *DB) GetListShare(ctx context.Context, listID, sharedWithUserID int64) (
 // email/display name — mirrors ListSpaceShares.
 func (d *DB) ListListShares(ctx context.Context, listID int64) ([]*models.ListShare, error) {
 	rows, err := d.conn.QueryContext(ctx,
-		`SELECT ls.id, ls.list_id, ls.shared_with_user_id, ls.permission, ls.created_at, u.email, u.display_name
+		`SELECT ls.id, ls.list_id, ls.shared_with_user_id, ls.permission, ls.created_at, ls.is_pinned_to_dashboard, u.email, u.display_name
 		 FROM list_shares ls JOIN users u ON u.id = ls.shared_with_user_id
 		 WHERE ls.list_id = ? ORDER BY ls.created_at ASC`, listID)
 	if err != nil {
@@ -152,15 +154,42 @@ func (d *DB) ListListShares(ctx context.Context, listID int64) ([]*models.ListSh
 	shares := []*models.ListShare{}
 	for rows.Next() {
 		s := &models.ListShare{}
-		if err := rows.Scan(&s.ID, &s.ListID, &s.SharedWithUserID, &s.Permission, &s.CreatedAt, &s.Email, &s.DisplayName); err != nil {
+		var pinned int
+		if err := rows.Scan(&s.ID, &s.ListID, &s.SharedWithUserID, &s.Permission, &s.CreatedAt, &pinned, &s.Email, &s.DisplayName); err != nil {
 			return nil, fmt.Errorf("scanning list share row: %w", err)
 		}
+		s.IsPinnedToDashboard = pinned != 0
 		shares = append(shares, s)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating list share rows: %w", err)
 	}
 	return shares, nil
+}
+
+// SetListSharePinned lets the recipient of a direct List share
+// (sharedWithUserID) choose whether it shows up pinned on their own
+// dashboard, alongside their House's own lists, rather than only in the
+// "Partagé avec moi" tab — see handlers.handleListSharePin. This only ever
+// touches a list_shares row the recipient themselves already holds; a list
+// reached solely via a shared Space has no such row and can't be pinned
+// this way. Returns ErrNotFound if sharedWithUserID has no list_shares row
+// for listID.
+func (d *DB) SetListSharePinned(ctx context.Context, listID, sharedWithUserID int64, pinned bool) (*models.ListShare, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE list_shares SET is_pinned_to_dashboard = ? WHERE list_id = ? AND shared_with_user_id = ?`,
+		boolToInt(pinned), listID, sharedWithUserID)
+	if err != nil {
+		return nil, fmt.Errorf("updating list share pin: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected for list share pin update: %w", err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetListShare(ctx, listID, sharedWithUserID)
 }
 
 // RevokeListShare removes a share. Returns ErrNotFound if sharedWithUserID
@@ -238,7 +267,20 @@ func (d *DB) AccessLevelForList(ctx context.Context, userID int64, list *models.
 // noise) — this is what backs the frontend's "Partagé avec moi" tab. Each
 // result has AccessSource/AccessPermission populated; a List reachable both
 // directly and via its Space keeps the higher ("write") permission and is
-// only returned once.
+// only returned once. IsPinnedToDashboard is also populated (from the
+// list_shares row's own flag when reached that way, always false via a bare
+// space_share) — see handlers.handleListSharePin and the dashboard-merge
+// logic in static/js/shares.js.
+//
+// The query's only House-related condition is that NOT IN exclusion — it
+// is never a requirement that userID belong to the list's House, since the
+// entire point of this query is the opposite case: a list the caller can
+// only see *because* it was shared with them directly (list_shares) or via
+// a shared Space (space_shares), by someone in a House they otherwise have
+// no membership in at all. Every row still comes from a `shared_with_user_id
+// = ?` match — never a house_id filter — so a caller who is a member of
+// zero Houses in common with the sharer gets the exact same result as one
+// who happens to share other, unrelated Houses with them.
 func (d *DB) ListSharedListsForUser(ctx context.Context, userID int64) ([]*models.List, error) {
 	// listSelect can't be reused as a prefix here the way every other query
 	// in this package does: its SELECT column list is already closed before
@@ -248,14 +290,14 @@ func (d *DB) ListSharedListsForUser(ctx context.Context, userID int64) ([]*model
 	query := `
 		SELECT lists.id, lists.house_id, lists.name, lists.type, lists.icon, lists.created_at, lists.updated_at, lists.custom_category_id,
 		       cc.id, cc.user_id, cc.name, cc.icon, cc.color, cc.position, cc.created_at,
-		       shared.permission, shared.source
+		       shared.permission, shared.source, shared.pinned
 		FROM lists
 		LEFT JOIN custom_categories cc ON cc.id = lists.custom_category_id
 		JOIN (
-			SELECT ls.list_id AS list_id, ls.permission AS permission, 'list_share' AS source
+			SELECT ls.list_id AS list_id, ls.permission AS permission, 'list_share' AS source, ls.is_pinned_to_dashboard AS pinned
 			FROM list_shares ls WHERE ls.shared_with_user_id = ?
 			UNION ALL
-			SELECT l.id AS list_id, ss.permission AS permission, 'space_share' AS source
+			SELECT l.id AS list_id, ss.permission AS permission, 'space_share' AS source, 0 AS pinned
 			FROM space_shares ss JOIN lists l ON l.custom_category_id = ss.custom_category_id
 			WHERE ss.shared_with_user_id = ?
 		) shared ON shared.list_id = lists.id
@@ -278,8 +320,9 @@ func (d *DB) ListSharedListsForUser(ctx context.Context, userID int64) ([]*model
 		var catName, catIcon, catColor, catCreatedAt sql.NullString
 		var catPosition sql.NullInt64
 		var permission, source string
+		var pinned int
 		if err := rows.Scan(&l.ID, &l.HouseID, &l.Name, &l.Type, &l.Icon, &l.CreatedAt, &l.UpdatedAt, &customCategoryID,
-			&catID, &catUserID, &catName, &catIcon, &catColor, &catPosition, &catCreatedAt, &permission, &source); err != nil {
+			&catID, &catUserID, &catName, &catIcon, &catColor, &catPosition, &catCreatedAt, &permission, &source, &pinned); err != nil {
 			return nil, fmt.Errorf("scanning shared list row: %w", err)
 		}
 		if customCategoryID.Valid {
@@ -299,10 +342,14 @@ func (d *DB) ListSharedListsForUser(ctx context.Context, userID int64) ([]*model
 		}
 		l.AccessSource = source
 		l.AccessPermission = permission
+		l.IsPinnedToDashboard = pinned != 0
 
 		if idx, ok := indexByID[l.ID]; ok {
 			if l.AccessPermission == "write" {
 				lists[idx].AccessPermission = "write"
+			}
+			if l.IsPinnedToDashboard {
+				lists[idx].IsPinnedToDashboard = true
 			}
 			continue
 		}

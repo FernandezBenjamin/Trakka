@@ -124,6 +124,11 @@ function buildAlertRow(alert) {
 // becoming visible again, ...), so a network failure just keeps the last
 // known count rather than surfacing an error banner.
 async function loadNotifications() {
+  // ensureHousesLoaded is defined in app.js, resolved lazily the same way
+  // every other cross-file call in this codebase already is — see its own
+  // comment for why every house-scoped loader (this one included) must
+  // await it before ever using state.currentHouseId in a request.
+  await ensureHousesLoaded();
   if (state.currentHouseId === null) {
     notificationAlerts = [];
     updateNotificationsBadge();
