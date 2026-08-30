@@ -10,6 +10,7 @@
 const listEls = {
   itemsSection: document.getElementById('items-section'),
   itemsHeading: document.getElementById('items-heading'),
+  itemsRemainingCount: document.getElementById('items-remaining-count'),
   backButton: document.getElementById('back-button'),
   editListButton: document.getElementById('edit-list-button'),
   shareListButton: document.getElementById('share-list-button'),
@@ -888,6 +889,11 @@ function renderItems() {
   // with nothing else to reconstruct — but are filtered out of every view
   // (including the finance summary) as if already gone.
   const items = (list.items || []).filter((item) => !item.pendingDelete);
+  // remainingItemsLabel is defined in app.js — the same "unchecked items,
+  // not total items" count shown on this list's own dashboard/Espaces card,
+  // kept in sync here since every mutation (toggleDone, add, delete, the
+  // swipe gestures in gestures.js) re-runs this whole function.
+  listEls.itemsRemainingCount.textContent = remainingItemsLabel(items);
   // Array.prototype.sort is stable, so this only ever moves unfinished
   // urgent items ahead of everything else — items within each group keep
   // their existing relative order (position/id) instead of being reshuffled.

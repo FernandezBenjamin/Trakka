@@ -774,6 +774,18 @@ function typeLabel(type) {
   return type === 'todo' ? 'tâches' : 'courses';
 }
 
+// Shared by buildListCard's card subtitle and list_view.js's list-detail
+// header: a list's "count" is how many items still need attention, not its
+// total size — a fully-checked-off shopping list should read "0 restant",
+// not "12 éléments". `items` here is expected already filtered to exclude
+// any item mid-undo-grace-period (see renderItems' `pendingDelete` filter),
+// so a card built from the dashboard's own full-detail fetch (which never
+// carries that flag to begin with) can just pass `list.items || []` as-is.
+function remainingItemsLabel(items) {
+  const remaining = items.filter((item) => !item.done).length;
+  return `${remaining} restant${remaining === 1 ? '' : 's'}`;
+}
+
 function badge(text, palette) {
   const colors = {
     sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-300',
@@ -943,8 +955,7 @@ function buildListCard(list, badgesFragment) {
 
   const count = document.createElement('p');
   count.className = 'mt-1 text-sm text-slate-500 dark:text-slate-400';
-  const n = (list.items || []).length;
-  count.textContent = `${n} élément${n === 1 ? '' : 's'}`;
+  count.textContent = remainingItemsLabel(list.items || []);
 
   const badgesRow = document.createElement('div');
   badgesRow.className = 'mt-3 flex flex-wrap gap-1.5 empty:hidden';
