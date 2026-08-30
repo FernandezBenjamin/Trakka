@@ -10,9 +10,6 @@
 
 services:
   trakka:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: trakka:latest
     container_name: trakka
     restart: unless-stopped
