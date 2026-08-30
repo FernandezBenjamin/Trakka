@@ -129,6 +129,10 @@ function setActiveTab(tab) {
   if (tab === 'urgent') loadUrgentView();
   if (tab === 'spaces') loadSpacesView();
   if (tab === 'shared') loadSharedView();
+  // saveLastView is defined in app.js — see the "keep last page on launch"
+  // preference there. Called for every tab, 'dashboard' included, so
+  // clicking back to Lists sticks too, not just the other four tabs.
+  saveLastView({ type: 'tab', tab });
 }
 
 planningEls.tabDashboard.addEventListener('click', () => setActiveTab('dashboard'));

@@ -15,6 +15,7 @@
     "offline": "Offline",
     "pending": "{count} pending",
     "adminSettings": "System Settings",
+    "userSettings": "Settings",
     "themeSwitcher": "Change theme",
     "themeLight": "Light",
     "themeDark": "Dark",
@@ -224,6 +225,13 @@
       "oidcClientSecretPlaceholderUnset": "No secret set",
       "submit": "Save",
       "saved": "Settings saved."
+    },
+    "userSettings": {
+      "title": "Settings",
+      "keepLastPageLabel": "Keep the last page open on launch",
+      "keepLastPageHint": "Reopens Trakka directly on the last list or tab you visited, instead of the dashboard.",
+      "submit": "Save",
+      "saved": "Preferences saved."
     }
   },
   "undo": {

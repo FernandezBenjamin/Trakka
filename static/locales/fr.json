@@ -15,6 +15,7 @@
     "offline": "Hors-ligne",
     "pending": "{count} en attente",
     "adminSettings": "Paramètres du Système",
+    "userSettings": "Paramètres",
     "themeSwitcher": "Changer de thème",
     "themeLight": "Clair",
     "themeDark": "Sombre",
@@ -224,6 +225,13 @@
       "oidcClientSecretPlaceholderUnset": "Aucun secret enregistré",
       "submit": "Enregistrer",
       "saved": "Paramètres enregistrés."
+    },
+    "userSettings": {
+      "title": "Paramètres",
+      "keepLastPageLabel": "Conserver la dernière page ouverte au lancement",
+      "keepLastPageHint": "Rouvre Trakka directement sur la dernière liste ou le dernier onglet consulté, plutôt que sur le tableau de bord.",
+      "submit": "Enregistrer",
+      "saved": "Préférences enregistrées."
     }
   },
   "undo": {
