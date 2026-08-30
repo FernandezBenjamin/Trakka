@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -45,5 +46,52 @@ func TestFirstUserBecomesAdmin(t *testing.T) {
 	}
 	if byEmail.IsAdmin {
 		t.Fatal("expected GetUserByEmail to report the second user as non-admin")
+	}
+}
+
+// TestKeepLastPagePreference exercises the "keep last page on launch"
+// preference (migration 0010): it must default to enabled for a newly
+// created user, be updatable via UpdateUserKeepLastPage, and the new value
+// must be visible through both GetUser and GetUserByEmail — the two lookup
+// paths RequireSession and Authenticate rely on, respectively.
+func TestKeepLastPagePreference(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	hash := "x"
+	user, err := d.CreateUser(ctx, "keep-last-page@example.com", &hash, nil, nil, "Test")
+	if err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	if !user.KeepLastPage {
+		t.Fatal("expected keep_last_page to default to true for a new user")
+	}
+
+	updated, err := d.UpdateUserKeepLastPage(ctx, user.ID, false)
+	if err != nil {
+		t.Fatalf("disabling keep_last_page: %v", err)
+	}
+	if updated.KeepLastPage {
+		t.Fatal("expected UpdateUserKeepLastPage(false) to report keep_last_page as false")
+	}
+
+	reloaded, err := d.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("reloading user: %v", err)
+	}
+	if reloaded.KeepLastPage {
+		t.Fatal("expected GetUser to report the persisted keep_last_page as false")
+	}
+
+	byEmail, err := d.GetUserByEmail(ctx, "keep-last-page@example.com")
+	if err != nil {
+		t.Fatalf("reloading user by email: %v", err)
+	}
+	if byEmail.KeepLastPage {
+		t.Fatal("expected GetUserByEmail to report the persisted keep_last_page as false")
+	}
+
+	if _, err := d.UpdateUserKeepLastPage(ctx, 999999, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound updating a nonexistent user, got %v", err)
 	}
 }

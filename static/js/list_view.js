@@ -771,7 +771,14 @@ async function refreshCurrentList() {
   }
 }
 
-async function selectList(id) {
+// opts.silent suppresses the error banner on failure (a 404, or offline
+// with nothing cached) — used only by restoreLastView (app.js) when
+// reopening a list from a previous session, since a list that's since been
+// deleted or made inaccessible shouldn't greet the user with an error the
+// moment the app launches; every ordinary caller (clicking a list card)
+// leaves it false and keeps today's behavior exactly as before.
+async function selectList(id, opts = {}) {
+  const { silent = false } = opts;
   hideError();
   let list;
   try {
@@ -781,7 +788,7 @@ async function selectList(id) {
     // mirror instead of failing to open it at all.
     list = await cachedListDetail(id);
     if (!list) {
-      if (!isNetworkError(err)) showError(err.message);
+      if (!silent && !isNetworkError(err)) showError(err.message);
       return;
     }
   }
@@ -790,6 +797,9 @@ async function selectList(id) {
   els.listsSection.hidden = true;
   listEls.itemsSection.hidden = false;
   renderItems();
+  // saveLastView is defined in app.js — see the "keep last page on launch"
+  // preference there.
+  saveLastView({ type: 'list', id });
 }
 
 function showDashboard() {
@@ -797,6 +807,9 @@ function showDashboard() {
   state.currentList = null;
   listEls.itemsSection.hidden = true;
   els.listsSection.hidden = false;
+  // activeTab is defined in planning.js; saveLastView in app.js — see the
+  // "keep last page on launch" preference there.
+  saveLastView({ type: 'tab', tab: activeTab });
   loadDashboard();
 }
 

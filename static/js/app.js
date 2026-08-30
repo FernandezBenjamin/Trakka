@@ -19,6 +19,98 @@ const state = {
 // nothing shared with the server) so switching houses sticks between visits.
 const HOUSE_STORAGE_KEY = 'trakka:currentHouseId';
 
+// Whichever dashboard tab or list was last visited, saved as JSON — either
+// { type: 'tab', tab: 'planning' } or { type: 'list', id: 42 } — so
+// relaunching the app can reopen there instead of always landing on the
+// dashboard (the "keep last page on launch" preference below). Written by
+// saveLastView, called from list_view.js's selectList/showDashboard and
+// planning.js's setActiveTab — the only three places that change what's
+// visible.
+const LAST_VIEW_STORAGE_KEY = 'trakka:lastView';
+
+// Local mirror of state.currentUser.keep_last_page (the server-side
+// preference, PATCHed via /api/v1/me — see static/js/settings.js), read
+// before the /me call resolves so the very first paint can already decide
+// whether a restore should even be attempted, without blocking on a network
+// round-trip that might never come back (e.g. while offline). The server
+// value is authoritative and re-synced into this mirror every time /me
+// succeeds (see init() below); this key exists purely to avoid the "restore
+// or not" decision depending on a round-trip that might not have resolved
+// yet at startup.
+const KEEP_LAST_PAGE_STORAGE_KEY = 'trakka:keepLastPage';
+
+function isKeepLastPageEnabled() {
+  if (state.currentUser) return state.currentUser.keep_last_page;
+  const stored = localStorage.getItem(KEEP_LAST_PAGE_STORAGE_KEY);
+  // Defaults to enabled, matching the server column's own DEFAULT 1 (see
+  // internal/db/migrations/0010_keep_last_page_preference.sql) for a user
+  // whose preference hasn't been fetched yet.
+  return stored === null ? true : stored === 'true';
+}
+
+// Keeps the localStorage mirror in step with the server value — called once
+// state.currentUser is known (init()) and again right after settings.js
+// PATCHes a change, so neither has to wait on the other to be correct.
+function setKeepLastPagePreference(enabled) {
+  localStorage.setItem(KEEP_LAST_PAGE_STORAGE_KEY, String(enabled));
+}
+
+// Persists whichever view is now visible. A no-op while the preference is
+// off, so turning it off needs no separate cleanup — loadLastView is simply
+// never consulted again until it's turned back on, at which point whatever
+// was last saved (possibly stale) is used, same as any other "remember my
+// last choice" setting in this app (house, theme, language).
+function saveLastView(view) {
+  if (!isKeepLastPageEnabled()) return;
+  try {
+    localStorage.setItem(LAST_VIEW_STORAGE_KEY, JSON.stringify(view));
+  } catch {
+    // Storage unavailable (private browsing, quota) — losing this
+    // convenience is harmless, so it's silently ignored.
+  }
+}
+
+function loadLastView() {
+  try {
+    const raw = localStorage.getItem(LAST_VIEW_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Tabs restorable via setActiveTab (planning.js) — 'dashboard' is excluded
+// since it's already the default view, needing no restore step at all.
+const RESTORABLE_TABS = new Set(['planning', 'urgent', 'spaces', 'shared']);
+
+// Reopens whichever tab or list was last visited. Called once, at the very
+// end of init(), after state.currentUser/state.currentHouseId and the
+// dashboard are all already resolved. Both branches fail silently (leaving
+// whatever the dashboard already painted) rather than surfacing an error —
+// a stale/deleted/no-longer-accessible list or an invalid tab name is not
+// worth interrupting startup over, since the default "just show the
+// dashboard" outcome is already correct in that case.
+async function restoreLastView() {
+  if (!isKeepLastPageEnabled()) return;
+  const view = loadLastView();
+  if (!view) return;
+
+  if (view.type === 'list' && Number.isInteger(view.id)) {
+    // selectList is defined in list_view.js, resolved lazily the same way
+    // every other cross-file call in this function already is — safe here
+    // since restoreLastView only ever runs from the tail of init(), well
+    // after every script tag has finished loading and defined its
+    // top-level functions.
+    await selectList(view.id, { silent: true });
+    return;
+  }
+  if (view.type === 'tab' && RESTORABLE_TABS.has(view.tab)) {
+    // setActiveTab is defined in planning.js — same lazy-resolution
+    // reasoning as selectList above.
+    setActiveTab(view.tab);
+  }
+}
+
 // Ids of lists currently sitting in their undo grace period (see
 // removeList below) — a list in here is hidden from the dashboard even
 // though it hasn't actually been deleted server-side yet, so a re-render
@@ -1138,6 +1230,7 @@ async function init() {
     // offline, so it just keeps whatever hydrateFromCache already painted
     // instead of aborting startup.
     state.currentUser = await apiRequest('/me');
+    setKeepLastPagePreference(state.currentUser.keep_last_page);
   } catch (err) {
     console.warn('Session non vérifiée (probablement hors ligne) :', err);
   }
@@ -1158,6 +1251,10 @@ async function init() {
   // dot as a side effect) so the tab reflects reality immediately, without
   // waiting for it to be opened.
   await loadCustomCategories();
+  // Reopens the last-visited tab/list, if the preference is on and one was
+  // saved — must run last, once everything it might need (the dashboard,
+  // the current house, custom categories for the "Espaces" tab) is ready.
+  await restoreLastView();
 }
 
 // Re-render everything that embeds translated strings inside JS-generated

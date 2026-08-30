@@ -158,6 +158,10 @@ type User struct {
 	// instance (internal/db.CreateUser).
 	IsAdmin   bool   `json:"is_admin"`
 	CreatedAt string `json:"created_at"`
+	// KeepLastPage controls whether the frontend reopens on the last
+	// dashboard tab/list the user had open (static/js/settings.js) instead
+	// of always landing on the dashboard. Settable via PATCH /api/v1/me.
+	KeepLastPage bool `json:"keep_last_page"`
 }
 
 // UserWithCredentials is returned by db lookups used for authentication

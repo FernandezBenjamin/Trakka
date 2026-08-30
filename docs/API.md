@@ -50,6 +50,17 @@ Returns the authenticated user. `401 {"error": "authentication required"}` if th
 
 `is_admin` grants access to the [Admin settings](#admin-settings) endpoints below. The very first account ever created on an instance (local or OIDC-provisioned) becomes an admin automatically — see `internal/db.CreateUser` in [CLAUDE.md](../CLAUDE.md) — and there is currently no endpoint to grant or revoke it for any other account.
 
+`keep_last_page` (`bool`, defaults to `true`) controls whether the frontend reopens on the last dashboard tab or list the user had open instead of always landing on the dashboard — see the "keep last page on launch" feature in [CLAUDE.md](../CLAUDE.md). The actual last-visited view itself is tracked purely client-side (`localStorage`, per browser, never sent to the server); only this on/off preference is part of the user's profile.
+
+### `PATCH /api/v1/me`
+
+Partial update of the caller's own profile preferences — currently just `keep_last_page` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`. Returns the updated user (same shape as `GET /api/v1/me`).
+
+```bash
+curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
+  -H 'Content-Type: application/json' -d '{"keep_last_page": false}'
+```
+
 **CSRF**: the login/register forms carry no CSRF token — there's no pre-existing session for a forged POST to hijack at that point, so there's nothing for an attacker to gain. Every subsequent state-changing call goes through `/api/v1/...`, which is protected by the session cookie's `SameSite=Strict` attribute: it's never attached to a cross-site request (form or `fetch`), which closes the standard CSRF vector without a separate token.
 
 ## Health

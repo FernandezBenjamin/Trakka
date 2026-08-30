@@ -250,3 +250,32 @@ func (app *Application) handleOIDCCallback(w http.ResponseWriter, r *http.Reques
 func (app *Application) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, userFromContext(r))
 }
+
+// handleMeUpdate applies a partial update to the caller's own profile
+// preferences. Currently just keep_last_page (see the "keep last page on
+// launch" feature in static/js/settings.js) — the same "absent = untouched"
+// PATCH convention as handleItemsPatch.
+func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		KeepLastPage *bool `json:"keep_last_page"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+
+	user := userFromContext(r)
+	if in.KeepLastPage == nil {
+		writeJSON(w, http.StatusOK, user)
+		return
+	}
+
+	updated, err := app.DB.UpdateUserKeepLastPage(r.Context(), user.ID, *in.KeepLastPage)
+	if errors.Is(err, db.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	} else if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}

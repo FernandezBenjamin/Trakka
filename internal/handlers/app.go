@@ -53,6 +53,7 @@ func (app *Application) Routes() http.Handler {
 
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("GET /api/v1/me", app.handleMe)
+	apiMux.HandleFunc("PATCH /api/v1/me", app.handleMeUpdate)
 
 	apiMux.HandleFunc("GET /api/v1/houses", app.handleHousesIndex)
 	apiMux.HandleFunc("POST /api/v1/houses", app.handleHousesCreate)

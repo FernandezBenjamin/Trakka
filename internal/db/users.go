@@ -57,10 +57,10 @@ func (d *DB) CreateUser(ctx context.Context, email string, passwordHash, oidcSub
 // if no such user exists.
 func (d *DB) GetUser(ctx context.Context, id int64) (*models.User, error) {
 	u := &models.User{}
-	var isAdmin int
+	var isAdmin, keepLastPage int
 	err := d.conn.QueryRowContext(ctx,
-		`SELECT id, email, display_name, created_at, is_admin FROM users WHERE id = ?`, id,
-	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin)
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page FROM users WHERE id = ?`, id,
+	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -68,7 +68,27 @@ func (d *DB) GetUser(ctx context.Context, id int64) (*models.User, error) {
 		return nil, fmt.Errorf("querying user %d: %w", id, err)
 	}
 	u.IsAdmin = isAdmin != 0
+	u.KeepLastPage = keepLastPage != 0
 	return u, nil
+}
+
+// UpdateUserKeepLastPage sets whether the frontend should reopen on the
+// user's last-visited dashboard tab/list (see models.User.KeepLastPage).
+// Returns ErrNotFound if no such user exists.
+func (d *DB) UpdateUserKeepLastPage(ctx context.Context, id int64, keepLastPage bool) (*models.User, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE users SET keep_last_page = ? WHERE id = ?`, boolToInt(keepLastPage), id)
+	if err != nil {
+		return nil, fmt.Errorf("updating user %d keep_last_page: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected updating user %d: %w", id, err)
+	}
+	if affected == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetUser(ctx, id)
 }
 
 // GetUserByEmail fetches a user (with credentials, for authentication) by
@@ -76,7 +96,7 @@ func (d *DB) GetUser(ctx context.Context, id int64) (*models.User, error) {
 // exists.
 func (d *DB) GetUserByEmail(ctx context.Context, email string) (*models.UserWithCredentials, error) {
 	return d.getUserWithCredentials(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, password_hash, oidc_subject, oidc_issuer
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, password_hash, oidc_subject, oidc_issuer
 		 FROM users WHERE email = ?`, email)
 }
 
@@ -84,15 +104,15 @@ func (d *DB) GetUserByEmail(ctx context.Context, email string) (*models.UserWith
 // identity (issuer + subject). Returns ErrNotFound if no such user exists.
 func (d *DB) GetUserByOIDCSubject(ctx context.Context, issuer, subject string) (*models.UserWithCredentials, error) {
 	return d.getUserWithCredentials(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, password_hash, oidc_subject, oidc_issuer
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, password_hash, oidc_subject, oidc_issuer
 		 FROM users WHERE oidc_issuer = ? AND oidc_subject = ?`, issuer, subject)
 }
 
 func (d *DB) getUserWithCredentials(ctx context.Context, query string, args ...any) (*models.UserWithCredentials, error) {
 	u := &models.UserWithCredentials{}
-	var isAdmin int
+	var isAdmin, keepLastPage int
 	err := d.conn.QueryRowContext(ctx, query, args...).Scan(
-		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &u.PasswordHash, &u.OIDCSubject, &u.OIDCIssuer)
+		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.PasswordHash, &u.OIDCSubject, &u.OIDCIssuer)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -100,5 +120,6 @@ func (d *DB) getUserWithCredentials(ctx context.Context, query string, args ...a
 		return nil, fmt.Errorf("querying user: %w", err)
 	}
 	u.IsAdmin = isAdmin != 0
+	u.KeepLastPage = keepLastPage != 0
 	return u, nil
 }
