@@ -17,6 +17,14 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return false
 	}
+	// Reject anything after the first JSON value. Without this, a body like
+	// `{"done":true}{"done":false}` is accepted and the trailing document
+	// silently ignored — an ambiguity worth refusing outright in a request
+	// parser rather than resolving by accident.
+	if dec.More() {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: unexpected data after the JSON document")
+		return false
+	}
 	return true
 }
 

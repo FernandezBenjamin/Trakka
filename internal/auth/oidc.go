@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,62 @@ const clockSkew = 60 * time.Second
 // routine refresh; an unknown kid always forces one immediate refetch
 // regardless of this TTL, to handle key rotation promptly.
 const jwksCacheTTL = time.Hour
+
+// maxOIDCResponseBytes caps every response body read from the identity
+// provider (discovery document, token response, JWKS). These are all small
+// JSON documents; without a cap, a compromised, hostile, or merely
+// misbehaving IdP could stream an unbounded body into memory and take the
+// process down — the provider is trusted to assert identity, which is not
+// the same as being trusted with the server's memory.
+const maxOIDCResponseBytes = 1 << 20 // 1 MiB
+
+// minRSAKeyBits is the smallest id_token signing key this client will accept
+// from a JWKS. RS256 says nothing about modulus size, so a JWKS advertising a
+// 512-bit key would otherwise be honored — and a key that small can be
+// factored, letting anyone who can serve or tamper with that JWKS mint
+// id_tokens this server would verify happily. 2048 is the floor every current
+// recommendation (NIST SP 800-57, RFC 7518 §3.3) sets for RSA signatures.
+const minRSAKeyBits = 2048
+
+// ErrInsecureIssuer is returned when an issuer URL is not https and the
+// operator has not explicitly opted into plaintext.
+var ErrInsecureIssuer = errors.New("oidc issuer must be an https URL (set OIDC_ALLOW_INSECURE_ISSUER=true to allow http, e.g. for a provider reachable only inside a private container network)")
+
+// allowInsecureIssuer is the opt-in escape hatch for an IdP reachable only
+// over plain HTTP — typically an Authelia/Keycloak container on the same
+// private Docker network, where there is no public path to intercept. It is
+// read once at package initialization from the environment rather than
+// threaded through config, because auth.NewOIDCClient is called both from
+// cmd/server at startup and from the admin settings endpoint at runtime, and
+// this is a deployment-level property of the network, never a per-request or
+// per-admin-action choice.
+var allowInsecureIssuer = os.Getenv("OIDC_ALLOW_INSECURE_ISSUER") == "true"
+
+// validateIssuerURL enforces the transport requirement on an issuer URL.
+// Discovery, the JWKS fetch, and the token exchange all happen against
+// endpoints derived from this URL: over plaintext http, anyone on the path
+// can swap the JWKS for keys they hold and forge an id_token for any account
+// on the instance, so https is the default and http is opt-in only.
+func validateIssuerURL(issuer string) error {
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return fmt.Errorf("parsing issuer url: %w", err)
+	}
+	if parsed.Host == "" {
+		return errors.New("oidc issuer must be an absolute URL with a host")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if allowInsecureIssuer {
+			return nil
+		}
+		return ErrInsecureIssuer
+	default:
+		return fmt.Errorf("unsupported oidc issuer scheme %q", parsed.Scheme)
+	}
+}
 
 // ProviderConfig is the subset of an OIDC discovery document Trakka needs.
 type ProviderConfig struct {
@@ -66,6 +123,9 @@ type OIDCClient struct {
 // NewOIDCClient runs OIDC discovery eagerly, so a broken OIDC configuration
 // fails the process at startup rather than on a user's first login.
 func NewOIDCClient(ctx context.Context, issuer, clientID, clientSecret, redirectURI string) (*OIDCClient, error) {
+	if err := validateIssuerURL(issuer); err != nil {
+		return nil, err
+	}
 	c := &OIDCClient{
 		httpClient:   &http.Client{Timeout: 10 * time.Second},
 		issuer:       issuer,
@@ -89,7 +149,7 @@ func NewOIDCClient(ctx context.Context, issuer, clientID, clientSecret, redirect
 	}
 
 	var provider ProviderConfig
-	if err := json.NewDecoder(resp.Body).Decode(&provider); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOIDCResponseBytes)).Decode(&provider); err != nil {
 		return nil, fmt.Errorf("decoding discovery document: %w", err)
 	}
 	if provider.Issuer != issuer {
@@ -97,6 +157,20 @@ func NewOIDCClient(ctx context.Context, issuer, clientID, clientSecret, redirect
 	}
 	if provider.AuthorizationEndpoint == "" || provider.TokenEndpoint == "" || provider.JWKSURI == "" {
 		return nil, errors.New("discovery document is missing required endpoints")
+	}
+	// The discovery document is fetched from the issuer but its contents are
+	// still the issuer's own claim about where to go next: hold each endpoint
+	// it names to the same transport requirement as the issuer URL itself, so
+	// a document served over https cannot redirect the token exchange or the
+	// JWKS fetch onto plaintext http.
+	for name, endpoint := range map[string]string{
+		"authorization_endpoint": provider.AuthorizationEndpoint,
+		"token_endpoint":         provider.TokenEndpoint,
+		"jwks_uri":               provider.JWKSURI,
+	} {
+		if err := validateIssuerURL(endpoint); err != nil {
+			return nil, fmt.Errorf("discovery document %s: %w", name, err)
+		}
 	}
 	c.provider = &provider
 
@@ -144,7 +218,7 @@ func (c *OIDCClient) Exchange(ctx context.Context, code, codeVerifier string) (*
 		return nil, fmt.Errorf("requesting token: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxOIDCResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("reading token response: %w", err)
 	}
@@ -229,7 +303,7 @@ func (c *OIDCClient) refreshKeys(ctx context.Context) error {
 	}
 
 	var set jwks
-	if err := json.NewDecoder(resp.Body).Decode(&set); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOIDCResponseBytes)).Decode(&set); err != nil {
 		return fmt.Errorf("decoding JWKS: %w", err)
 	}
 
@@ -246,10 +320,19 @@ func (c *OIDCClient) refreshKeys(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
-		keys[k.Kid] = &rsa.PublicKey{
+		key := &rsa.PublicKey{
 			N: new(big.Int).SetBytes(nBytes),
 			E: int(new(big.Int).SetBytes(eBytes).Int64()),
 		}
+		// Skip keys that are too weak to trust, or whose exponent is outside
+		// the sane range: an attacker who can influence the JWKS (a hostile
+		// provider, or anyone on the path of a plaintext jwks_uri) would
+		// otherwise be able to publish a forgeable key and have every
+		// id_token signed with it accepted.
+		if key.N.BitLen() < minRSAKeyBits || key.E < 3 || key.E%2 == 0 {
+			continue
+		}
+		keys[k.Kid] = key
 	}
 
 	c.mu.Lock()

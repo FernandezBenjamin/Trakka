@@ -291,7 +291,38 @@
     return deleteOne(STORE_CUSTOM_CATEGORIES, id);
   }
 
+  // clearAll wipes every mirrored store and the pending offline write queue.
+  //
+  // This exists because the IndexedDB mirror outlives the session that filled
+  // it: nothing cleared it on logout, so on a shared or family device the next
+  // person to sign in had the previous user's houses, lists and items painted
+  // straight onto their screen by hydrateFromCache() before any network call
+  // could correct it — and any writes the previous user had queued offline
+  // would have been replayed under the new user's session by flushQueue().
+  // app.js calls this when a session ends (logout) or when /api/v1/me comes
+  // back as a different account than the cache was built for.
+  function clearAll() {
+    return open().then(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const stores = [STORE_HOUSES, STORE_LISTS, STORE_ITEMS, STORE_QUEUE, STORE_CUSTOM_CATEGORIES].filter(
+            (name) => db.objectStoreNames.contains(name)
+          );
+          if (!stores.length) {
+            resolve();
+            return;
+          }
+          const tx = db.transaction(stores, 'readwrite');
+          stores.forEach((name) => tx.objectStore(name).clear());
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+        })
+    );
+  }
+
   self.TrakkaDB = {
+    clearAll,
     getHouses,
     putHouses,
     getHouse,

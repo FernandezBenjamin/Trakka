@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"trakka/internal/db"
 	"trakka/internal/validate"
@@ -52,12 +51,20 @@ func (app *Application) handleCustomCategoriesCreate(w http.ResponseWriter, r *h
 		return
 	}
 
-	in.Name = strings.TrimSpace(in.Name)
+	in.Name = validate.Text(in.Name)
 	if in.Name == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	in.Icon = strings.TrimSpace(in.Icon)
+	if !validate.MaxLen(in.Name, validate.MaxNameLen) {
+		writeError(w, http.StatusBadRequest, "name is too long")
+		return
+	}
+	in.Icon = validate.Text(in.Icon)
+	if !validate.MaxLen(in.Icon, validate.MaxIconLen) {
+		writeError(w, http.StatusBadRequest, "icon is too long")
+		return
+	}
 	cleanColor, err := validate.Color(in.Color)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -93,12 +100,20 @@ func (app *Application) handleCustomCategoriesUpdate(w http.ResponseWriter, r *h
 		return
 	}
 
-	in.Name = strings.TrimSpace(in.Name)
+	in.Name = validate.Text(in.Name)
 	if in.Name == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	in.Icon = strings.TrimSpace(in.Icon)
+	if !validate.MaxLen(in.Name, validate.MaxNameLen) {
+		writeError(w, http.StatusBadRequest, "name is too long")
+		return
+	}
+	in.Icon = validate.Text(in.Icon)
+	if !validate.MaxLen(in.Icon, validate.MaxIconLen) {
+		writeError(w, http.StatusBadRequest, "icon is too long")
+		return
+	}
 	cleanColor, err := validate.Color(in.Color)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

@@ -208,6 +208,34 @@ type HouseMember struct {
 	CreatedAt   string `json:"created_at"`
 	Email       string `json:"email,omitempty"`
 	DisplayName string `json:"display_name,omitempty"`
+	// Pending marks a roster entry that is an outstanding invitation rather
+	// than an actual membership: UserID is 0, and the entry becomes a real
+	// member once the invited person next signs in (see
+	// db.MaterializePendingInvitations). Response-only, like Item.PriceStatus
+	// — never stored, never accepted in a request body.
+	Pending bool `json:"pending,omitempty"`
+}
+
+// PendingInvitation is an invitation addressed to an email address that has
+// not yet been turned into a real membership or share — either because the
+// address has no account here at all, or because its owner has not signed in
+// since being invited.
+//
+// Invitations are deliberately keyed by email rather than by user id: that is
+// what lets the invite endpoints answer identically whether or not the
+// address is registered, closing the account-enumeration oracle they used to
+// expose (see docs/AUDIT.md, finding L-06). Kind is one of db.InvitationKind*, and
+// TargetID is a house, list, or custom_categories id accordingly. Permission
+// is "read"/"write" for a list or space share, and "" for a house invitation,
+// where membership carries a role instead.
+type PendingInvitation struct {
+	ID         int64  `json:"id"`
+	Kind       string `json:"kind"`
+	TargetID   int64  `json:"target_id"`
+	Email      string `json:"email"`
+	Permission string `json:"permission,omitempty"`
+	InvitedBy  int64  `json:"invited_by"`
+	CreatedAt  string `json:"created_at"`
 }
 
 // ValidHouseRoles enumerates the allowed values for HouseMember.Role.
@@ -334,6 +362,10 @@ type SpaceShare struct {
 	// PATCH /api/v1/custom-categories/{id}/share/pin (handleSpaceSharePin)
 	// and CustomCategory.IsPinnedToDashboard above.
 	IsPinnedToDashboard bool `json:"is_pinned_to_dashboard"`
+	// Pending marks a roster entry that is still an outstanding invitation
+	// rather than a granted share — SharedWithUserID is 0 and only Email is
+	// meaningful. See HouseMember.Pending.
+	Pending bool `json:"pending,omitempty"`
 }
 
 // ListShare grants one other user ("SharedWithUserID") read or write access
@@ -357,6 +389,10 @@ type ListShare struct {
 	// see PATCH /api/v1/lists/{id}/share/pin (handleListSharePin) and
 	// List.IsPinnedToDashboard above.
 	IsPinnedToDashboard bool `json:"is_pinned_to_dashboard"`
+	// Pending marks a roster entry that is still an outstanding invitation
+	// rather than a granted share — SharedWithUserID is 0 and only Email is
+	// meaningful. See HouseMember.Pending.
+	Pending bool `json:"pending,omitempty"`
 }
 
 // ValidSharePermissions enumerates the allowed values for

@@ -82,6 +82,13 @@ func (app *Application) authorizeListAccess(w http.ResponseWriter, r *http.Reque
 // (never the list itself directly).
 func (app *Application) authorizeItemAccess(w http.ResponseWriter, r *http.Request, listID int64, requireWrite bool) bool {
 	list, err := app.DB.GetList(r.Context(), listID)
+	if errors.Is(err, db.ErrNotFound) {
+		// A row pointing at a list that no longer exists is a missing
+		// resource, not a server fault: reporting it as a 500 both misleads
+		// the client and puts a spurious error in the operator's logs.
+		writeError(w, http.StatusNotFound, "list not found")
+		return false
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return false

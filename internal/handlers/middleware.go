@@ -7,12 +7,17 @@ import (
 )
 
 // SecurityHeaders sets standard hardening headers on every response.
-// static/index.html loads the Tailwind Play CDN script, which is the one
-// deliberate, narrowly-scoped exception to an otherwise unsafe-inline-free
-// policy: script-src trusts exactly that one host (no 'unsafe-inline', no
-// 'unsafe-eval' — Trakka's own scripts stay external-file-only), and
-// style-src needs 'unsafe-inline' because Play CDN generates utility CSS
-// into a <style> tag at runtime rather than serving an external file.
+//
+// script-src is 'self' and nothing else: the Tailwind Play CDN runtime that
+// used to be loaded from https://cdn.tailwindcss.com is now vendored at
+// static/js/tailwind.js and served from this origin, so no third party can
+// execute code inside Trakka's own origin any more (see docs/AUDIT.md, BP-01 —
+// the CDN's URL is unversioned, so Subresource Integrity could not pin it).
+// style-src still needs 'unsafe-inline' because that runtime generates its
+// utility CSS into a <style> tag at run time rather than serving a
+// stylesheet; eliminating it requires precompiling Tailwind with the CLI,
+// which would introduce the build step this project deliberately does not
+// have.
 // img-src's "http: https:" is the other deliberate widening: an item's
 // product thumbnail (internal/scraper's og:image/JSON-LD/twitter:image
 // lookup, static/js/list_view.js's buildItemThumbnail) can point at any
@@ -23,14 +28,22 @@ import (
 // resolveImageURL only ever accepts an absolute http(s) URL (see
 // internal/scraper/scraper.go), so this can never be used to load a
 // "javascript:"/"data:" URI dressed up as an image source.
-func SecurityHeaders(next http.Handler) http.Handler {
+//
+// hsts asks for Strict-Transport-Security to be asserted. It is wired from
+// SESSION_COOKIE_SECURE (see Routes) rather than from whether this specific
+// request arrived over TLS, because in the deployment this app is designed
+// for the TLS terminates at a reverse proxy and the request reaching Go is
+// plain HTTP — so r.TLS is nil even on a properly HTTPS-only instance.
+// Asserting HSTS unconditionally would instead pin a developer's browser to
+// https for a localhost instance that only ever serves http.
+func SecurityHeaders(hsts bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' https://cdn.tailwindcss.com; "+
+				"script-src 'self'; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data: http: https:; "+
 				"connect-src 'self'; "+
@@ -41,6 +54,24 @@ func SecurityHeaders(next http.Handler) http.Handler {
 				"form-action 'self'; "+
 				"frame-ancestors 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
+		// Cross-origin isolation headers: nothing in this app is meant to be
+		// embedded in, or to share a browsing-context group with, another
+		// site. COOP severs the window.opener relationship a malicious opener
+		// would otherwise keep; CORP stops another origin from loading
+		// Trakka's own responses as a subresource.
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		// Trakka uses none of these device/browser capabilities; denying them
+		// outright means a compromised third-party script (the Tailwind Play
+		// CDN is the one third-party script this CSP trusts) cannot reach for
+		// them either.
+		h.Set("Permissions-Policy",
+			"accelerometer=(), autoplay=(), camera=(), display-capture=(), "+
+				"encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), "+
+				"magnetometer=(), microphone=(), midi=(), payment=(), usb=(), xr-spatial-tracking=()")
+		if hsts {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

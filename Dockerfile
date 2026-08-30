@@ -38,10 +38,10 @@ RUN addgroup -g 10001 -S trakka \
 # app stores and logs every timestamp in UTC (see CLAUDE.md conventions) and
 # never calls time.LoadLocation.
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/static-debian12:latest AS runtime
+FROM gcr.io/distroless/static-debian13:latest AS runtime
 # Pin this to a specific digest (`docker pull` it once and read
 # `RepoDigests`) before relying on this image for production reproducibility
-# — "latest" here tracks Debian 12 rebuilds, not a stable release like the
+# — "latest" here tracks Debian 13 rebuilds, not a stable release like the
 # builder's Go version tag above.
 
 COPY --from=build /etc/passwd /etc/passwd

@@ -115,6 +115,11 @@ func main() {
 		go runPriceAlertScanLoop(priceScanCtx, app, cfg.PriceCheckInterval, logger)
 	}
 
+	// Expired sessions are swept on the same detached-context pattern as the
+	// price scan above: nothing deleted them before, so the table grew for
+	// the life of the instance (see db.DeleteExpiredSessions).
+	go runSessionCleanupLoop(priceScanCtx, database, logger)
+
 	serverErrs := make(chan error, 1)
 	go func() {
 		logger.Info("listening", "addr", srv.Addr, "db_path", cfg.DBPath, "static_dir", cfg.StaticDir)
@@ -167,6 +172,42 @@ func runPriceAlertScanLoop(ctx context.Context, app *handlers.Application, inter
 			return
 		case <-ticker.C:
 			app.RunPriceAlertScan(ctx)
+		}
+	}
+}
+
+// sessionCleanupInterval is how often expired session rows are swept. Hourly
+// is far more often than strictly necessary for correctness — an expired
+// session is already rejected by GetSessionByHash's own WHERE clause, so this
+// is purely housekeeping — but cheap enough (one indexed DELETE) that a tighter
+// interval costs nothing and keeps the table proportional to live sessions.
+const sessionCleanupInterval = time.Hour
+
+// runSessionCleanupLoop periodically deletes expired sessions, stopping once
+// ctx is canceled during shutdown. Like the price scan, it runs once
+// immediately so a long-lived instance restarted after downtime clears its
+// backlog straight away instead of carrying it for another full interval.
+func runSessionCleanupLoop(ctx context.Context, database *db.DB, logger *slog.Logger) {
+	sweep := func() {
+		n, err := database.DeleteExpiredSessions(ctx)
+		if err != nil {
+			logger.Error("cleaning up expired sessions", "error", err)
+			return
+		}
+		if n > 0 {
+			logger.Info("cleaned up expired sessions", "deleted", n)
+		}
+	}
+
+	ticker := time.NewTicker(sessionCleanupInterval)
+	defer ticker.Stop()
+	sweep()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
 		}
 	}
 }

@@ -5,10 +5,10 @@
 // for all persistence (see that file for why it's importScripts()-safe).
 importScripts('/js/db.js');
 
-// Bump both on any change to APP_SHELL's/CDN_ASSETS' contents so activate()
+// Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v35';
-const RUNTIME_CACHE = 'trakka-runtime-v35';
+const SHELL_CACHE = 'trakka-shell-v38';
+const RUNTIME_CACHE = 'trakka-runtime-v38';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -16,6 +16,7 @@ const APP_SHELL = [
   '/index.html',
   '/js/theme-init.js',
   '/js/theme.js',
+  '/js/tailwind.js',
   '/js/tailwind-config.js',
   '/js/i18n.js',
   '/js/app.js',
@@ -52,8 +53,6 @@ const APP_SHELL = [
 // unstyled. Cached separately from APP_SHELL (best-effort, not part of
 // the atomic install) so a CDN hiccup at install time can't break the
 // installation of Trakka's own app shell.
-const CDN_ASSETS = ['https://cdn.tailwindcss.com'];
-
 const API_PREFIX = '/api/v1';
 const SYNC_TAG = 'trakka-sync-queue';
 
@@ -73,22 +72,9 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
       .then((cache) => cache.addAll(APP_SHELL).then(() => cache))
-      .then((cache) => Promise.all(CDN_ASSETS.map((url) => precacheCdnAsset(cache, url))))
       .then(() => self.skipWaiting())
   );
 });
-
-// Fetched with mode 'no-cors' so caching succeeds even without CORS
-// headers from the CDN — the resulting "opaque" response can be replayed
-// later but never inspected (status/body unreadable), which is fine here
-// since we only ever need to serve it back to a <script> tag, never read
-// it ourselves. Failures are swallowed: an unreachable CDN at install
-// time must not fail the install of Trakka's own app shell.
-function precacheCdnAsset(cache, url) {
-  return fetch(url, { mode: 'no-cors' })
-    .then((response) => cache.put(url, response))
-    .catch(() => {});
-}
 
 // Only ever deletes entries from the Cache Storage API (KNOWN_CACHES,
 // declared above) — never touches IndexedDB, which is a completely
@@ -131,11 +117,6 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-
-  if (CDN_ASSETS.includes(request.url)) {
-    event.respondWith(handleCdnAsset(request));
-    return;
-  }
 
   if (url.origin !== self.location.origin || url.pathname === '/healthz') {
     return; // other cross-origin requests and healthz pass straight through
@@ -197,28 +178,6 @@ async function handleShellRequest(request) {
 
   const fallback = await caches.match('/index.html');
   return fallback || new Response('Hors ligne', { status: 503, statusText: 'Offline' });
-}
-
-// Same cache-first-then-refresh strategy as handleShellRequest, kept
-// separate because the cached entry here is an opaque (no-cors) response:
-// matching and re-caching it works the same way, but it can never be
-// inspected (response.ok/status are meaningless on an opaque response).
-async function handleCdnAsset(request) {
-  const cached = await caches.match(request.url);
-  const networkFetch = fetch(request.url, { mode: 'no-cors' })
-    .then((response) => {
-      caches.open(SHELL_CACHE).then((cache) => cache.put(request.url, response.clone()));
-      return response;
-    })
-    .catch(() => undefined);
-
-  if (cached) {
-    networkFetch.catch(() => {});
-    return cached;
-  }
-
-  const fresh = await networkFetch;
-  return fresh || new Response('', { status: 503, statusText: 'Offline' });
 }
 
 // ---------------------------------------------------------------------------
@@ -448,13 +407,16 @@ async function queueOfflineWrite(method, url, body) {
     );
   }
 
-  // Granting/revoking a List or Space share needs an immediate round-trip
-  // (looking up the recipient by email, confirming they aren't already a
-  // House member) and reports success or failure back to the modal right
-  // away — queuing it silently, like houses/admin settings above, would
-  // surface a confusing failure only once the queue eventually flushes,
-  // long after the modal already looked like it worked.
-  if (/^\/api\/v1\/(custom-categories|lists)\/[^/]+\/share(\/[^/]+)?$/.test(pathname)) {
+  // Granting/revoking a List or Space share (or withdrawing an invitation
+  // that has not been accepted yet) needs an immediate round-trip and
+  // reports success or failure back to the modal right away — queuing it
+  // silently, like houses/admin settings above, would surface a confusing
+  // failure only once the queue eventually flushes, long after the modal
+  // already looked like it worked.
+  if (
+    /^\/api\/v1\/(custom-categories|lists)\/[^/]+\/share(\/[^/]+)?$/.test(pathname) ||
+    /^\/api\/v1\/(custom-categories|lists|houses)\/[^/]+\/invitations$/.test(pathname)
+  ) {
     return jsonError(
       { 'Content-Type': 'application/json; charset=utf-8' },
       503,

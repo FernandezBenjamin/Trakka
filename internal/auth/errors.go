@@ -13,3 +13,9 @@ var ErrInvalidCredentials = errors.New("invalid email or password")
 // different OIDC issuer). Rejected rather than auto-linked, since the OIDC
 // provider's email claim isn't guaranteed to be verified.
 var ErrOIDCEmailConflict = errors.New("an account with this email already exists")
+
+// ErrRegistrationClosed is returned by LoginOrProvisionOIDCUser when a
+// previously-unseen OIDC identity tries to sign in while the instance has
+// registration closed. Existing OIDC accounts are unaffected — only creating
+// a new one is blocked.
+var ErrRegistrationClosed = errors.New("registration is closed on this instance")

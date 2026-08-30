@@ -185,7 +185,9 @@
     "members": {
       "title": "House Members",
       "invitePlaceholder": "Email of the person to invite",
-      "inviteSubmit": "Invite"
+      "inviteSubmit": "Invite",
+      "pendingBadge": "invitation pending",
+      "ownerBadge": "owner"
     },
     "share": {
       "titleList": "Share list",
@@ -194,7 +196,8 @@
       "permissionRead": "Read-only",
       "permissionWrite": "Edit",
       "submit": "Share",
-      "revokeAriaLabel": "Remove {email}'s access"
+      "revokeAriaLabel": "Remove {email}'s access",
+      "pendingBadge": "invitation pending"
     },
     "newCategory": {
       "titleCreate": "New space",

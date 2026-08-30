@@ -5,12 +5,17 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"trakka/internal/db"
 	"trakka/internal/models"
 	"trakka/internal/validate"
 )
+
+// maxItemQuantity bounds an item's quantity. Nothing enforced an upper
+// limit before, so a request could store a quantity of 2^31 and have the
+// frontend's price x quantity line totals overflow into meaningless
+// figures; a shopping list never legitimately needs more than this.
+const maxItemQuantity = 100000
 
 func (app *Application) handleItemsIndex(w http.ResponseWriter, r *http.Request) {
 	listIDStr := r.URL.Query().Get("list_id")
@@ -62,7 +67,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	in.Title = strings.TrimSpace(in.Title)
+	in.Title = validate.Text(in.Title)
 	if in.ListID <= 0 {
 		writeError(w, http.StatusBadRequest, "list_id is required")
 		return
@@ -71,8 +76,16 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "title is required")
 		return
 	}
+	if !validate.MaxLen(in.Title, validate.MaxTitleLen) {
+		writeError(w, http.StatusBadRequest, "title is too long")
+		return
+	}
 	if in.Quantity <= 0 {
 		in.Quantity = 1
+	}
+	if in.Quantity > maxItemQuantity {
+		writeError(w, http.StatusBadRequest, "quantity is too large")
+		return
 	}
 	cleanURL, err := validate.URL(in.URL)
 	if err != nil {
@@ -182,13 +195,21 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	in.Title = strings.TrimSpace(in.Title)
+	in.Title = validate.Text(in.Title)
 	if in.Title == "" {
 		writeError(w, http.StatusBadRequest, "title is required")
 		return
 	}
+	if !validate.MaxLen(in.Title, validate.MaxTitleLen) {
+		writeError(w, http.StatusBadRequest, "title is too long")
+		return
+	}
 	if in.Quantity <= 0 {
 		in.Quantity = 1
+	}
+	if in.Quantity > maxItemQuantity {
+		writeError(w, http.StatusBadRequest, "quantity is too large")
+		return
 	}
 	cleanURL, err := validate.URL(in.URL)
 	if err != nil {
@@ -295,9 +316,13 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	previousDone := item.Done
 
 	if in.Title != nil {
-		title := strings.TrimSpace(*in.Title)
+		title := validate.Text(*in.Title)
 		if title == "" {
 			writeError(w, http.StatusBadRequest, "title cannot be empty")
+			return
+		}
+		if !validate.MaxLen(title, validate.MaxTitleLen) {
+			writeError(w, http.StatusBadRequest, "title is too long")
 			return
 		}
 		item.Title = title
@@ -319,6 +344,10 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	if in.Quantity != nil {
 		if *in.Quantity <= 0 {
 			writeError(w, http.StatusBadRequest, "quantity must be positive")
+			return
+		}
+		if *in.Quantity > maxItemQuantity {
+			writeError(w, http.StatusBadRequest, "quantity is too large")
 			return
 		}
 		item.Quantity = *in.Quantity

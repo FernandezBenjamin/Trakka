@@ -11,6 +11,7 @@ import (
 
 	"trakka/internal/db"
 	"trakka/internal/models"
+	"trakka/internal/validate"
 )
 
 // dummyHash is a fixed bcrypt hash checked when a login's email doesn't
@@ -69,9 +70,12 @@ func (s *Service) SetOIDC(oidc *OIDCClient) {
 // Register creates a new local account. Returns db.ErrDuplicateEmail if the
 // email is already registered.
 func (s *Service) Register(ctx context.Context, email, password, displayName string) (*models.User, error) {
-	email = strings.ToLower(strings.TrimSpace(email))
+	email = strings.ToLower(validate.Text(email))
 	if _, err := mail.ParseAddress(email); err != nil {
 		return nil, errors.New("invalid email address")
+	}
+	if !validate.MaxLen(email, validate.MaxEmailLen) {
+		return nil, errors.New("email address is too long")
 	}
 	if err := ValidatePasswordStrength(password); err != nil {
 		return nil, err
@@ -80,7 +84,10 @@ func (s *Service) Register(ctx context.Context, email, password, displayName str
 	if err != nil {
 		return nil, err
 	}
-	displayName = strings.TrimSpace(displayName)
+	displayName = validate.Text(displayName)
+	if !validate.MaxLen(displayName, validate.MaxDisplayNameLen) {
+		return nil, errors.New("display name is too long")
+	}
 	return s.DB.CreateUser(ctx, email, &hash, nil, nil, displayName)
 }
 

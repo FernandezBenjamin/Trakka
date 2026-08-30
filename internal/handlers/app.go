@@ -6,8 +6,13 @@ package handlers
 
 import (
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"path"
+	"strings"
+	"sync"
 
 	"trakka/internal/auth"
 	"trakka/internal/config"
@@ -28,6 +33,27 @@ type Application struct {
 	// internal/handlers/admin.go) — and pass it to internal/settings.Resolve
 	// as the fallback under whatever's stored in system_settings.
 	Config config.Config
+
+	// Authentication rate-limiter state (see ratelimit.go). Lazily built
+	// through sync.Once rather than in a constructor, because Application is
+	// built as a plain struct literal in cmd/server and in tests — a zero
+	// value must stay usable.
+	authIPLimiterOnce    sync.Once
+	authIPLimiterVal     *rateLimiter
+	authEmailLimiterOnce sync.Once
+	authEmailLimiterVal  *rateLimiter
+}
+
+// authIPLimiter is the per-client-IP authentication attempt bucket.
+func (app *Application) authIPLimiter() *rateLimiter {
+	app.authIPLimiterOnce.Do(func() { app.authIPLimiterVal = newRateLimiter(authRateWindow) })
+	return app.authIPLimiterVal
+}
+
+// authEmailLimiter is the per-account authentication attempt bucket.
+func (app *Application) authEmailLimiter() *rateLimiter {
+	app.authEmailLimiterOnce.Do(func() { app.authEmailLimiterVal = newRateLimiter(authRateWindow) })
+	return app.authEmailLimiterVal
 }
 
 // Routes builds the full HTTP handler: middleware chain + route table.
@@ -63,6 +89,10 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/houses/{id}/members", app.handleHouseMembersIndex)
 	apiMux.HandleFunc("POST /api/v1/houses/{id}/members", app.handleHouseMembersInvite)
 	apiMux.HandleFunc("DELETE /api/v1/houses/{id}/members/{userId}", app.handleHouseMembersRemove)
+	// Withdrawing an invitation that has not been accepted yet. Keyed by
+	// ?email= rather than a path segment, since a pending invitation has no
+	// user id to name it by — that is precisely what makes it pending.
+	apiMux.HandleFunc("DELETE /api/v1/houses/{id}/invitations", app.handleHouseInvitationRevoke)
 
 	apiMux.HandleFunc("GET /api/v1/custom-categories", app.handleCustomCategoriesIndex)
 	apiMux.HandleFunc("POST /api/v1/custom-categories", app.handleCustomCategoriesCreate)
@@ -76,6 +106,7 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("POST /api/v1/custom-categories/{id}/share", app.handleSpaceShareCreate)
 	apiMux.HandleFunc("PATCH /api/v1/custom-categories/{id}/share/pin", app.handleSpaceSharePin)
 	apiMux.HandleFunc("DELETE /api/v1/custom-categories/{id}/share/{userId}", app.handleSpaceShareRevoke)
+	apiMux.HandleFunc("DELETE /api/v1/custom-categories/{id}/invitations", app.handleSpaceShareInvitationRevoke)
 
 	apiMux.HandleFunc("GET /api/v1/lists", app.handleListsIndex)
 	apiMux.HandleFunc("POST /api/v1/lists", app.handleListsCreate)
@@ -86,6 +117,7 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("POST /api/v1/lists/{id}/share", app.handleListShareCreate)
 	apiMux.HandleFunc("PATCH /api/v1/lists/{id}/share/pin", app.handleListSharePin)
 	apiMux.HandleFunc("DELETE /api/v1/lists/{id}/share/{userId}", app.handleListShareRevoke)
+	apiMux.HandleFunc("DELETE /api/v1/lists/{id}/invitations", app.handleListShareInvitationRevoke)
 
 	apiMux.HandleFunc("GET /api/v1/items", app.handleItemsIndex)
 	apiMux.HandleFunc("POST /api/v1/items", app.handleItemsCreate)
@@ -102,13 +134,83 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("PATCH /api/v1/admin/settings", app.handleAdminSettingsUpdate)
 
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
-	mux.Handle("/", http.FileServer(http.Dir(app.StaticDir)))
+	mux.Handle("/", http.FileServer(staticFileSystem{http.Dir(app.StaticDir)}))
 
 	var handler http.Handler = mux
-	handler = SecurityHeaders(handler)
+	// Cross-origin write rejection wraps everything (both /auth/... and
+	// /api/v1/...) and sits inside the header/logging middleware, so a
+	// rejected request is still logged and still carries the hardening
+	// headers. See csrf.go for the two gaps this closes that the session
+	// cookie's SameSite=Lax attribute alone does not.
+	handler = requireSameOriginWrite(baseURLHost(app.Config.BaseURL), handler)
+	// HSTS is only asserted when the deployment says it is behind TLS —
+	// SESSION_COOKIE_SECURE is exactly that statement, and sending HSTS from
+	// a plain-HTTP localhost instance would pin a developer's browser to a
+	// scheme the instance does not serve.
+	handler = SecurityHeaders(app.Config.SessionCookieSecure, handler)
 	handler = Logging(app.Logger, handler)
 	handler = Recover(app.Logger, handler)
 	return handler
+}
+
+// baseURLHost extracts the hostname from a configured BASE_URL, for the
+// cross-origin write check to accept alongside the request's own Host (which
+// a reverse proxy may rewrite). Returns "" when BASE_URL is unset or
+// unparseable, in which case only the request's own Host is accepted.
+func baseURLHost(baseURL string) string {
+	if baseURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(parsed.Hostname())
+}
+
+// staticFileSystem wraps http.Dir to remove two behaviors of the bare
+// http.FileServer that this app has no use for:
+//
+//   - Directory listings. static/ has several directories with no
+//     index.html (js/, css/, icons/, locales/), so the default FileServer
+//     published a browsable index of every asset — a free inventory of the
+//     application's client-side surface for anyone probing it. Requests for a
+//     directory now 404 unless it actually contains an index.html.
+//   - Dotfiles. Nothing in static/ starts with a dot today, but an editor
+//     swap file or a stray .env landing there should never be reachable over
+//     HTTP just because it was dropped in the served directory.
+type staticFileSystem struct {
+	fs http.FileSystem
+}
+
+func (sfs staticFileSystem) Open(name string) (http.File, error) {
+	for _, part := range strings.Split(path.Clean(name), "/") {
+		if strings.HasPrefix(part, ".") && part != "." && part != ".." {
+			return nil, fs.ErrNotExist
+		}
+	}
+
+	f, err := sfs.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	stat, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if stat.IsDir() {
+		// http.FileServer falls back to a generated listing when a directory
+		// has no index.html; refusing to open index.html here is what makes
+		// it give up and 404 instead.
+		index, err := sfs.fs.Open(path.Join(name, "index.html"))
+		if err != nil {
+			_ = f.Close()
+			return nil, fs.ErrNotExist
+		}
+		_ = index.Close()
+	}
+	return f, nil
 }
 
 // serverError logs the underlying error (never exposed to the client) and
