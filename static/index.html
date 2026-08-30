@@ -127,15 +127,33 @@
   <main class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
 
     <section id="lists-section">
-      <div class="mb-4 flex items-center gap-3">
+      <div id="house-toolbar" class="mb-4 flex items-center gap-3">
         <label for="house-select" data-i18n="dashboard.house" class="text-sm font-medium text-slate-500 dark:text-slate-400">Maison</label>
         <select id="house-select"
                 class="min-h-[44px] flex-1 max-w-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 sm:flex-none"></select>
+        <button type="button" id="rename-house-inline-button" hidden data-i18n-aria-label="dashboard.renameHouseAriaLabel" aria-label="Renommer la maison"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+        </button>
         <button type="button" id="manage-members-button" hidden data-i18n="dashboard.members"
                 class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
           Membres
         </button>
       </div>
+
+      <form id="rename-house-inline-form" hidden class="mb-4 flex items-center gap-2">
+        <label for="rename-house-inline-input" data-i18n="dashboard.house" class="text-sm font-medium text-slate-500 dark:text-slate-400">Maison</label>
+        <input type="text" id="rename-house-inline-input" required maxlength="200"
+               class="min-h-[44px] min-w-0 flex-1 max-w-xs rounded-xl border border-sky-400 dark:border-sky-500 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <button type="submit" data-i18n-aria-label="dashboard.renameConfirmAriaLabel" aria-label="Valider"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+        </button>
+        <button type="button" id="cancel-rename-house-inline-button" data-i18n-aria-label="dashboard.renameCancelAriaLabel" aria-label="Annuler"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </form>
 
       <div id="dashboard-tabs" class="mb-6 flex items-center gap-2" role="tablist">
         <button type="button" id="tab-dashboard" role="tab" aria-selected="true" data-i18n="dashboard.tabLists"

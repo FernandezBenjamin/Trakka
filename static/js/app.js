@@ -129,7 +129,12 @@ const els = {
   updateReloadButton: document.getElementById('update-reload-button'),
   logoLink: document.getElementById('logo-link'),
   listsSection: document.getElementById('lists-section'),
+  houseToolbar: document.getElementById('house-toolbar'),
   houseSelect: document.getElementById('house-select'),
+  renameHouseInlineButton: document.getElementById('rename-house-inline-button'),
+  renameHouseInlineForm: document.getElementById('rename-house-inline-form'),
+  renameHouseInlineInput: document.getElementById('rename-house-inline-input'),
+  cancelRenameHouseInlineButton: document.getElementById('cancel-rename-house-inline-button'),
   shoppingLists: document.getElementById('shopping-lists'),
   todoLists: document.getElementById('todo-lists'),
   customLists: document.getElementById('custom-lists'),
@@ -412,6 +417,7 @@ async function loadHouses() {
 
   els.houseSelect.value = state.currentHouseId !== null ? String(state.currentHouseId) : CREATE_HOUSE_OPTION_VALUE;
   updateManageMembersButton();
+  updateRenameHouseButton();
 }
 
 // Tracks whether loadHouses() has resolved at least once for this page
@@ -447,10 +453,22 @@ function selectHouse(houseId) {
   localStorage.setItem(HOUSE_STORAGE_KEY, String(houseId));
   els.houseSelect.value = String(houseId);
   updateManageMembersButton();
+  updateRenameHouseButton();
+  // Switching houses mid-edit is only reachable programmatically (the
+  // select is hidden while #rename-house-inline-form is open), but reset
+  // defensively so a stale edit never lingers pointed at the wrong house.
+  closeRenameHouseInline();
 }
 
 function updateManageMembersButton() {
   els.manageMembersButton.hidden = state.currentHouseId === null;
+}
+
+// Owner-only, same gate as the "remove member"/invite-form visibility in
+// the Members modal — a plain member can view the house name but not
+// rename it (see internal/handlers.authorizeHouseOwner).
+function updateRenameHouseButton() {
+  els.renameHouseInlineButton.hidden = currentHouseRole() !== 'owner';
 }
 
 els.houseSelect.addEventListener('change', async (event) => {
@@ -512,6 +530,69 @@ els.createHouseForm.addEventListener('submit', async (event) => {
 function currentHouseRole() {
   return state.houses.find((house) => house.id === state.currentHouseId)?.role ?? null;
 }
+
+function currentHouseName() {
+  return state.houses.find((house) => house.id === state.currentHouseId)?.name ?? '';
+}
+
+// Inline rename of the current house, directly on the dashboard header —
+// deliberately not tucked inside the Members modal (that was last
+// session's first pass, moved out here for discoverability: renaming is a
+// one-click action from the same row as the house selector, no modal to
+// open first). #house-toolbar (the label + <select> + pencil + "Membres"
+// row) and #rename-house-inline-form are mutually exclusive; toggling one
+// hidden and the other visible swaps between browse and edit mode in
+// place, the same "one real row, two states" pattern list_view.js's
+// quick-add bar uses for its collapsed/expanded advanced panel.
+function openRenameHouseInline() {
+  if (state.currentHouseId === null) return;
+  els.renameHouseInlineInput.value = currentHouseName();
+  els.houseToolbar.hidden = true;
+  els.renameHouseInlineForm.hidden = false;
+  els.renameHouseInlineInput.focus();
+  els.renameHouseInlineInput.select();
+}
+
+function closeRenameHouseInline() {
+  els.renameHouseInlineForm.hidden = true;
+  els.houseToolbar.hidden = false;
+}
+
+function isRenameHouseInlineOpen() {
+  return !els.renameHouseInlineForm.hidden;
+}
+
+els.renameHouseInlineButton.addEventListener('click', openRenameHouseInline);
+els.cancelRenameHouseInlineButton.addEventListener('click', closeRenameHouseInline);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && isRenameHouseInlineOpen()) closeRenameHouseInline();
+});
+
+els.renameHouseInlineForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  hideError();
+
+  const name = els.renameHouseInlineInput.value.trim();
+  if (!name || state.currentHouseId === null) return;
+
+  let house;
+  try {
+    house = await apiRequest(`/houses/${state.currentHouseId}`, { method: 'PUT', body: JSON.stringify({ name }) });
+  } catch (err) {
+    showError(err.message);
+    return;
+  }
+
+  // Patches state.houses in place (rather than a full loadHouses() round
+  // trip) so the header selector's option label updates immediately.
+  const stored = state.houses.find((h) => h.id === house.id);
+  if (stored) stored.name = house.name;
+  populateHouseSelect(state.houses);
+  els.houseSelect.value = String(state.currentHouseId);
+
+  closeRenameHouseInline();
+  window.TrakkaToast?.success(t('dashboard.renameSuccess', { name: house.name }));
+});
 
 function buildMemberRow(member, isOwnerView) {
   const li = document.createElement('li');
@@ -1281,6 +1362,7 @@ async function hydrateFromCache() {
   state.currentHouseId = storedIsValid ? stored : (houses[0]?.id ?? null);
   els.houseSelect.value = state.currentHouseId !== null ? String(state.currentHouseId) : CREATE_HOUSE_OPTION_VALUE;
   updateManageMembersButton();
+  updateRenameHouseButton();
 
   await renderDashboardFromCache();
 
