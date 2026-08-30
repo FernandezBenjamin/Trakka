@@ -261,7 +261,26 @@
       "keepLastPageLabel": "Keep the last page open on launch",
       "keepLastPageHint": "Reopens Trakka directly on the last list or tab you visited, instead of the dashboard.",
       "submit": "Save",
-      "saved": "Preferences saved."
+      "saved": "Preferences saved.",
+      "installHelpButton": "How do I install the app on my phone?"
+    },
+    "installHelp": {
+      "title": "Install Trakka on your phone",
+      "intro": "Trakka installs like an app, straight from your browser — no app store needed.",
+      "iosTab": "iOS (iPhone/iPad)",
+      "androidTab": "Android",
+      "ios": {
+        "step1": "Open this link in Safari.",
+        "step2": "Tap the Share icon (the square with an arrow pointing up) in the toolbar.",
+        "step3": "Scroll down and select \"Add to Home Screen\".",
+        "step4": "Check the suggested name, then tap \"Add\"."
+      },
+      "android": {
+        "step1": "Open this link in Chrome (or your mobile browser).",
+        "step2": "Tap the ⋮ menu in the top-right corner.",
+        "step3": "Select \"Install app\" or \"Add to Home screen\".",
+        "step4": "Confirm the installation."
+      }
     }
   },
   "undo": {

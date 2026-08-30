@@ -261,7 +261,26 @@
       "keepLastPageLabel": "Conserver la dernière page ouverte au lancement",
       "keepLastPageHint": "Rouvre Trakka directement sur la dernière liste ou le dernier onglet consulté, plutôt que sur le tableau de bord.",
       "submit": "Enregistrer",
-      "saved": "Préférences enregistrées."
+      "saved": "Préférences enregistrées.",
+      "installHelpButton": "Comment installer l'application sur mon téléphone ?"
+    },
+    "installHelp": {
+      "title": "Installer Trakka sur votre téléphone",
+      "intro": "Trakka s'installe comme une application, directement depuis votre navigateur — sans passer par un store.",
+      "iosTab": "iOS (iPhone/iPad)",
+      "androidTab": "Android",
+      "ios": {
+        "step1": "Ouvrez ce lien dans Safari.",
+        "step2": "Appuyez sur l'icône de partage (le carré avec une flèche vers le haut) dans la barre d'outils.",
+        "step3": "Faites défiler les options et sélectionnez « Sur l'écran d'accueil ».",
+        "step4": "Vérifiez le nom proposé, puis appuyez sur « Ajouter »."
+      },
+      "android": {
+        "step1": "Ouvrez ce lien dans Chrome (ou votre navigateur mobile).",
+        "step2": "Appuyez sur le menu à 3 points ⋮ en haut à droite.",
+        "step3": "Sélectionnez « Installer l'application » ou « Ajouter à l'écran d'accueil ».",
+        "step4": "Confirmez l'installation."
+      }
     }
   },
   "undo": {

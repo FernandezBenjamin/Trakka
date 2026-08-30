@@ -47,7 +47,11 @@ userSettingsEls.modal.addEventListener('click', (event) => {
   if (event.target === userSettingsEls.modal) closeUserSettingsModal();
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !userSettingsEls.modal.hidden) closeUserSettingsModal();
+  // install-help.js's modal can open on top of this one (from the button
+  // added to the form below) — when it's the one currently visible, let its
+  // own Escape handler close just that one instead of both at once (same
+  // pattern as app.js/spaces.js's new-list/category modal pair).
+  if (event.key === 'Escape' && !userSettingsEls.modal.hidden && installHelpEls.modal.hidden) closeUserSettingsModal();
 });
 
 userSettingsEls.form.addEventListener('submit', async (event) => {
