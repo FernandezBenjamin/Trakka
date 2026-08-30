@@ -83,6 +83,7 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("DELETE /api/v1/lists/{id}", app.handleListsDelete)
 	apiMux.HandleFunc("GET /api/v1/lists/{id}/share", app.handleListShareIndex)
 	apiMux.HandleFunc("POST /api/v1/lists/{id}/share", app.handleListShareCreate)
+	apiMux.HandleFunc("PATCH /api/v1/lists/{id}/share/pin", app.handleListSharePin)
 	apiMux.HandleFunc("DELETE /api/v1/lists/{id}/share/{userId}", app.handleListShareRevoke)
 
 	apiMux.HandleFunc("GET /api/v1/items", app.handleItemsIndex)

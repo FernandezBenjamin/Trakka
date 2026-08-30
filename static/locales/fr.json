@@ -3,6 +3,8 @@
     "deleteList": "Supprimer {name}",
     "editList": "Modifier {name}",
     "shareList": "Partager {name}",
+    "pinList": "Épingler {name} au tableau de bord",
+    "unpinList": "Retirer {name} du tableau de bord",
     "removeMember": "Retirer {email}"
   },
   "header": {

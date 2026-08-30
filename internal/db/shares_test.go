@@ -92,6 +92,63 @@ func TestListShareCRUD(t *testing.T) {
 	}
 }
 
+// TestSetListSharePinned exercises the "pin a shared list to my dashboard"
+// action: it defaults to unpinned, can be toggled on and back off by the
+// recipient, and returns ErrNotFound for a user with no list_shares row on
+// that list at all (never created, or already revoked).
+func TestSetListSharePinned(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	owner := mustCreateUser(t, ctx, d)
+	recipient := mustCreateUserWithEmail(t, ctx, d, "recipient@example.com")
+	stranger := mustCreateUserWithEmail(t, ctx, d, "stranger@example.com")
+	house, err := d.CreateHouseWithOwner(ctx, "Maison Test", owner)
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil, "")
+	if err != nil {
+		t.Fatalf("CreateList: %v", err)
+	}
+
+	share, err := d.CreateOrUpdateListShare(ctx, list.ID, recipient, "read")
+	if err != nil {
+		t.Fatalf("CreateOrUpdateListShare: %v", err)
+	}
+	if share.IsPinnedToDashboard {
+		t.Fatalf("expected a freshly created share to default to unpinned")
+	}
+
+	pinned, err := d.SetListSharePinned(ctx, list.ID, recipient, true)
+	if err != nil {
+		t.Fatalf("SetListSharePinned(true): %v", err)
+	}
+	if !pinned.IsPinnedToDashboard {
+		t.Fatalf("expected IsPinnedToDashboard true after pinning")
+	}
+	// GetListShare must agree with what SetListSharePinned returned.
+	got, err := d.GetListShare(ctx, list.ID, recipient)
+	if err != nil {
+		t.Fatalf("GetListShare: %v", err)
+	}
+	if !got.IsPinnedToDashboard {
+		t.Fatalf("expected GetListShare to reflect the pinned state")
+	}
+
+	unpinned, err := d.SetListSharePinned(ctx, list.ID, recipient, false)
+	if err != nil {
+		t.Fatalf("SetListSharePinned(false): %v", err)
+	}
+	if unpinned.IsPinnedToDashboard {
+		t.Fatalf("expected IsPinnedToDashboard false after unpinning")
+	}
+
+	if _, err := d.SetListSharePinned(ctx, list.ID, stranger, true); err != ErrNotFound {
+		t.Fatalf("expected ErrNotFound pinning a share that doesn't exist, got %v", err)
+	}
+}
+
 // TestAccessLevelForList exercises every source db.AccessLevelForList
 // combines: House membership always wins as "write", a direct List share
 // grants exactly its own permission, a Space share (via the list's
@@ -213,6 +270,9 @@ func TestListSharedListsForUser(t *testing.T) {
 	if _, err := d.CreateOrUpdateSpaceShare(ctx, category.ID, recipient, "write"); err != nil {
 		t.Fatalf("CreateOrUpdateSpaceShare: %v", err)
 	}
+	if _, err := d.SetListSharePinned(ctx, directList.ID, recipient, true); err != nil {
+		t.Fatalf("SetListSharePinned: %v", err)
+	}
 
 	shared, err := d.ListSharedListsForUser(ctx, recipient)
 	if err != nil {
@@ -222,12 +282,14 @@ func TestListSharedListsForUser(t *testing.T) {
 	byID := map[int64]*struct {
 		source     string
 		permission string
+		pinned     bool
 	}{}
 	for _, l := range shared {
 		byID[l.ID] = &struct {
 			source     string
 			permission string
-		}{l.AccessSource, l.AccessPermission}
+			pinned     bool
+		}{l.AccessSource, l.AccessPermission, l.IsPinnedToDashboard}
 	}
 
 	if _, ok := byID[memberHouseList.ID]; ok {
@@ -237,9 +299,15 @@ func TestListSharedListsForUser(t *testing.T) {
 	if !ok || direct.source != "list_share" || direct.permission != "read" {
 		t.Fatalf("expected directList tagged list_share/read, got %+v", byID[directList.ID])
 	}
+	if !direct.pinned {
+		t.Fatalf("expected directList to come back pinned, got %+v", byID[directList.ID])
+	}
 	viaSpace, ok := byID[spaceList.ID]
 	if !ok || viaSpace.source != "space_share" || viaSpace.permission != "write" {
 		t.Fatalf("expected spaceList tagged space_share/write, got %+v", byID[spaceList.ID])
+	}
+	if viaSpace.pinned {
+		t.Fatalf("expected spaceList (reached only via a Space, no list_shares row) to never come back pinned, got %+v", byID[spaceList.ID])
 	}
 	if len(shared) != 2 {
 		t.Fatalf("expected exactly 2 shared lists, got %d: %+v", len(shared), shared)

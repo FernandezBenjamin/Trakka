@@ -124,6 +124,11 @@
     },
   };
   let currentLang = DEFAULT_LANG;
+  // True once the very first loadLang() call (the page-load bootstrap, see
+  // the IIFE's tail below) has resolved. Guards the trakka:lang-changed
+  // dispatch in loadLang() below — see that function for why the very
+  // first call must not fire it.
+  let hasLoadedOnce = false;
 
   function detectLang() {
     const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -176,7 +181,28 @@
     currentLang = lang;
     applyTranslations();
     updateLangButton();
-    document.dispatchEvent(new CustomEvent('trakka:lang-changed', { detail: { lang } }));
+    // Skip the event on the very first call (the page-load bootstrap at
+    // the bottom of this IIFE) — app.js's trakka:lang-changed listener
+    // re-renders dynamic, network-driven content (the dashboard grids,
+    // notifications) in the new language, which on a fresh load races
+    // ahead of app.js's own init() sequence: state.currentHouseId hasn't
+    // necessarily been corrected against the live GET /api/v1/houses yet
+    // (it may still hold whatever hydrateFromCache() set it to from the
+    // IndexedDB mirror, which can reference a house that doesn't belong to
+    // the current session at all — e.g. right after switching accounts in
+    // the same browser). Firing the dashboard/notifications refresh with
+    // that stale id produced a real, user-visible 403 "not a member of
+    // this house" banner on the very first paint, milliseconds before
+    // init() corrected itself — this fetch here typically resolves in a
+    // handful of milliseconds, well before init()'s own /api/v1/houses
+    // round-trip. There's nothing to re-render yet on first load anyway:
+    // applyTranslations() above already handles the static data-i18n
+    // markup, and init()'s own subsequent loadDashboard()/loadNotifications()
+    // calls will render everything in the right language once they run.
+    if (hasLoadedOnce) {
+      document.dispatchEvent(new CustomEvent('trakka:lang-changed', { detail: { lang } }));
+    }
+    hasLoadedOnce = true;
   }
 
   async function setLang(lang) {
