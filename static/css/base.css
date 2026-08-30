@@ -202,3 +202,39 @@ body {
   right: 1.5rem;
   bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
 }
+
+/* iOS/iPadOS Safari (and some Android WebViews) force-zoom the whole page
+   on focus of any text-entry control whose *computed* font-size is below
+   16px — this is a hardcoded WebKit heuristic, not a preference, and it
+   cannot be suppressed via the viewport meta tag without also disabling
+   pinch-to-zoom for the whole page (`user-scalable=no`/`maximum-scale=1`),
+   which index.html's/login.html's viewport meta deliberately does not do,
+   since that's a WCAG 1.4.4 (Reflow/zoom) accessibility failure unrelated
+   to this bug. The only correct fix is to make sure every focusable text
+   control actually renders at >= 16px, and to do it here rather than at
+   each call site, since most of this app's text-entry controls already
+   use Tailwind's `text-base` (1rem = 16px) — a handful (the house-name
+   rename input and the house/share-permission `<select>`s in index.html,
+   and every `<input>` on the server-rendered login/register page in
+   templates/login.html, which also loads this stylesheet) were built with
+   the smaller `text-sm` (14px), and any input added in the future could
+   just as easily make the same mistake. `!important` is required: the
+   Tailwind Play CDN script (loaded after this stylesheet, see index.html/
+   login.html's <head>) injects `.text-sm`/`.text-xs` as ordinary class
+   selectors, which already carry higher specificity than the bare
+   type selectors below regardless of source order, so a non-`!important`
+   rule here would silently lose to any of them and fix nothing.
+   #list-icon/#category-icon are excluded because they deliberately use a
+   larger `text-lg`/`text-xl` (18px/20px) so a typed emoji stays legible —
+   both are already comfortably above the 16px floor this rule exists to
+   guarantee, and forcing them down to exactly 16px would be a visual
+   regression for no correctness benefit. Scoped to mobile viewport widths
+   (matching this file's existing 768px breakpoint) since the zoom-on-focus
+   behavior only affects touch devices; nothing here changes desktop. */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(#list-icon):not(#category-icon),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
