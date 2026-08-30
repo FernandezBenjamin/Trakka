@@ -39,6 +39,55 @@ const LAST_VIEW_STORAGE_KEY = 'trakka:lastView';
 // yet at startup.
 const KEEP_LAST_PAGE_STORAGE_KEY = 'trakka:keepLastPage';
 
+// CACHED_USER_STORAGE_KEY records which account the local IndexedDB mirror
+// (and the localStorage view/house preferences) were built for. Everything
+// cached client-side is per-account data, but nothing tied it to an account
+// before: on a shared browser, signing out and signing in as someone else
+// left the previous user's houses/lists/items in IndexedDB, where
+// hydrateFromCache() would paint them onto the new user's dashboard before
+// any network response could correct it — and any writes the previous user
+// had queued offline would be replayed by the service worker under the new
+// user's session. purgeLocalUserData() below clears all of it; it runs on
+// logout, and again defensively whenever /api/v1/me reports a different
+// account than this key names.
+const CACHED_USER_STORAGE_KEY = 'trakka:cachedUserId';
+
+// purgeLocalUserData drops every trace of the current account's data from
+// this browser: the IndexedDB mirror and pending offline write queue, the
+// service worker's runtime API cache, and the per-account localStorage
+// preferences. Best-effort throughout — a browser that denies storage access
+// must not be able to block a logout — so every step is individually
+// guarded rather than allowed to reject the whole chain.
+async function purgeLocalUserData() {
+  if (window.TrakkaDB && window.TrakkaDB.clearAll) {
+    try {
+      await window.TrakkaDB.clearAll();
+    } catch (err) {
+      console.warn('Purge du cache local impossible :', err);
+    }
+  }
+
+  // The app shell (HTML/CSS/JS) is not user data and is deliberately kept —
+  // only caches holding API responses are dropped, so the next user still
+  // gets an instant shell load.
+  if (window.caches) {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key.includes('runtime')).map((key) => caches.delete(key)));
+    } catch (err) {
+      console.warn('Purge du cache réseau impossible :', err);
+    }
+  }
+
+  try {
+    [HOUSE_STORAGE_KEY, LAST_VIEW_STORAGE_KEY, KEEP_LAST_PAGE_STORAGE_KEY, CACHED_USER_STORAGE_KEY].forEach((key) =>
+      localStorage.removeItem(key)
+    );
+  } catch (err) {
+    console.warn('Purge des préférences locales impossible :', err);
+  }
+}
+
 function isKeepLastPageEnabled() {
   if (state.currentUser) return state.currentUser.keep_last_page;
   const stored = localStorage.getItem(KEEP_LAST_PAGE_STORAGE_KEY);
@@ -604,7 +653,17 @@ function buildMemberRow(member, isOwnerView) {
   name.textContent = member.display_name || member.email;
   const email = document.createElement('p');
   email.className = 'text-xs text-slate-500 dark:text-slate-400';
-  email.textContent = member.role === 'owner' ? `${member.email} · propriétaire` : member.email;
+  // A pending entry is an invitation nobody has accepted yet: it becomes a
+  // real membership the next time the invited person signs in (see
+  // db.MaterializePendingInvitations). Labelling it is what stops a
+  // successful invitation from looking like it did nothing at all.
+  if (member.pending) {
+    email.textContent = `${member.email} · ${t('modals.members.pendingBadge')}`;
+  } else if (member.role === 'owner') {
+    email.textContent = `${member.email} · ${t('modals.members.ownerBadge')}`;
+  } else {
+    email.textContent = member.email;
+  }
   info.append(name, email);
   li.appendChild(info);
 
@@ -614,11 +673,28 @@ function buildMemberRow(member, isOwnerView) {
     removeBtn.setAttribute('aria-label', t('common.removeMember', { email: member.email }));
     removeBtn.className = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
     removeBtn.innerHTML = TRASH_ICON_SVG;
-    removeBtn.addEventListener('click', () => removeMember(member.user_id));
+    removeBtn.addEventListener('click', () =>
+      member.pending ? revokeHouseInvitation(member.email) : removeMember(member.user_id)
+    );
     li.appendChild(removeBtn);
   }
 
   return li;
+}
+
+// A pending invitation has no user id to address it by, so it is withdrawn
+// by email rather than through the members endpoint.
+async function revokeHouseInvitation(email) {
+  if (state.currentHouseId === null) return;
+  hideError();
+  try {
+    await apiRequest(`/houses/${state.currentHouseId}/invitations?email=${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+    });
+    await loadMembers();
+  } catch (err) {
+    showError(err.message);
+  }
 }
 
 async function loadMembers() {
@@ -1538,6 +1614,28 @@ async function init() {
     // offline, so it just keeps whatever hydrateFromCache already painted
     // instead of aborting startup.
     state.currentUser = await apiRequest('/me');
+    // If the mirror painted above belongs to a different account (a shared
+    // browser, or a session that expired and was replaced by someone else's),
+    // drop it and repaint from scratch rather than leaving another user's
+    // data on screen. See CACHED_USER_STORAGE_KEY.
+    let cachedUserId = null;
+    try {
+      cachedUserId = localStorage.getItem(CACHED_USER_STORAGE_KEY);
+    } catch {
+      cachedUserId = null;
+    }
+    if (cachedUserId !== null && cachedUserId !== String(state.currentUser.id)) {
+      await purgeLocalUserData();
+      state.houses = [];
+      state.lists = [];
+      state.currentHouseId = null;
+      populateHouseSelect(state.houses);
+    }
+    try {
+      localStorage.setItem(CACHED_USER_STORAGE_KEY, String(state.currentUser.id));
+    } catch {
+      /* private mode / storage denied — the purge above still ran */
+    }
     setKeepLastPagePreference(state.currentUser.keep_last_page);
   } catch (err) {
     console.warn('Session non vérifiée (probablement hors ligne) :', err);
@@ -1575,6 +1673,18 @@ document.addEventListener('trakka:lang-changed', () => {
   updateNetworkStatus();
   refreshNotifications();
 });
+
+// Logout is a plain form POST (a full-page navigation, not an apiRequest),
+// so the local purge has to happen before the form is allowed to submit —
+// hence preventDefault, await, then submit() programmatically. submit()
+// bypasses this listener, so there is no recursion.
+const logoutForm = document.querySelector('form[action="/auth/logout"]');
+if (logoutForm) {
+  logoutForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    purgeLocalUserData().finally(() => logoutForm.submit());
+  });
+}
 
 init();
 updateNetworkStatus();

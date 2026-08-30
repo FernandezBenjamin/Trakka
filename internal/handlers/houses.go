@@ -3,9 +3,9 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"trakka/internal/db"
+	"trakka/internal/validate"
 )
 
 // houseResponse adds the caller's own role to a house, computed per
@@ -54,9 +54,13 @@ func (app *Application) handleHousesCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	in.Name = strings.TrimSpace(in.Name)
+	in.Name = validate.Text(in.Name)
 	if in.Name == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if !validate.MaxLen(in.Name, validate.MaxNameLen) {
+		writeError(w, http.StatusBadRequest, "name is too long")
 		return
 	}
 
@@ -108,9 +112,13 @@ func (app *Application) handleHousesUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	in.Name = strings.TrimSpace(in.Name)
+	in.Name = validate.Text(in.Name)
 	if in.Name == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if !validate.MaxLen(in.Name, validate.MaxNameLen) {
+		writeError(w, http.StatusBadRequest, "name is too long")
 		return
 	}
 

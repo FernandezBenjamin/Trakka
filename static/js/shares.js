@@ -102,7 +102,14 @@ function buildShareRosterRow(share) {
   name.textContent = share.display_name || share.email;
   const permission = document.createElement('p');
   permission.className = 'text-xs text-slate-500 dark:text-slate-400';
-  permission.textContent = t(share.permission === 'write' ? 'modals.share.permissionWrite' : 'modals.share.permissionRead');
+  const permissionLabel = t(share.permission === 'write' ? 'modals.share.permissionWrite' : 'modals.share.permissionRead');
+  // A pending entry is an invitation that has not taken effect yet: the
+  // recipient only becomes a real share holder once they next sign in (see
+  // db.MaterializePendingInvitations). Saying so is what keeps a successful
+  // invitation from looking like it did nothing.
+  permission.textContent = share.pending
+    ? `${permissionLabel} · ${t('modals.share.pendingBadge')}`
+    : permissionLabel;
   info.append(name, permission);
   li.appendChild(info);
 
@@ -112,7 +119,9 @@ function buildShareRosterRow(share) {
   revokeBtn.className =
     'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
   revokeBtn.innerHTML = TRASH_ICON_SVG;
-  revokeBtn.addEventListener('click', () => revokeShare(share.shared_with_user_id));
+  revokeBtn.addEventListener('click', () =>
+    share.pending ? revokeInvitation(share.email) : revokeShare(share.shared_with_user_id)
+  );
   li.appendChild(revokeBtn);
 
   return li;
@@ -123,6 +132,22 @@ async function revokeShare(userId) {
   hideError();
   try {
     await apiRequest(`${shareEndpoint()}/${userId}`, { method: 'DELETE' });
+    await loadShareRoster();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+// A pending invitation has no user id to address it by — that is exactly
+// what makes it pending — so it is withdrawn by email instead.
+async function revokeInvitation(email) {
+  if (!sharingTarget) return;
+  hideError();
+  const base = sharingTarget.kind === 'space' ? 'custom-categories' : 'lists';
+  try {
+    await apiRequest(`/${base}/${sharingTarget.id}/invitations?email=${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+    });
     await loadShareRoster();
   } catch (err) {
     showError(err.message);

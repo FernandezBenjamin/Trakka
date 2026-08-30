@@ -185,7 +185,9 @@
     "members": {
       "title": "Membres de la Maison",
       "invitePlaceholder": "Email de la personne à inviter",
-      "inviteSubmit": "Inviter"
+      "inviteSubmit": "Inviter",
+      "pendingBadge": "invitation en attente",
+      "ownerBadge": "propriétaire"
     },
     "share": {
       "titleList": "Partager la liste",
@@ -194,7 +196,8 @@
       "permissionRead": "Lecture seule",
       "permissionWrite": "Édition",
       "submit": "Partager",
-      "revokeAriaLabel": "Retirer l'accès de {email}"
+      "revokeAriaLabel": "Retirer l'accès de {email}",
+      "pendingBadge": "invitation en attente"
     },
     "newCategory": {
       "titleCreate": "Nouvel espace",

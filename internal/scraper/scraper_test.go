@@ -846,3 +846,53 @@ func TestLogIfAmazonBlockedIgnoresNonAmazonHost(t *testing.T) {
 func TestLogIfAmazonBlockedNilLoggerNoPanic(t *testing.T) {
 	logIfAmazonBlocked(nil, "https://www.amazon.fr/dp/B0EXAMPLE", true, []byte("Server Busy"))
 }
+
+// TestIsPublicIPRejectsNonRoutableRanges covers the SSRF guard's address
+// filter directly (safeDialContext itself needs a resolver and a socket, so
+// the decision function is what's worth testing). Every case here is a
+// literal an item's `url` could name — the whole point of the guard being
+// that a user-supplied URL must not be able to reach anything but the
+// public internet.
+func TestIsPublicIPRejectsNonRoutableRanges(t *testing.T) {
+	blocked := []string{
+		"127.0.0.1",        // loopback
+		"::1",              // IPv6 loopback
+		"::ffff:127.0.0.1", // IPv4-mapped loopback
+		"10.1.2.3",         // RFC1918
+		"172.16.0.1",       // RFC1918
+		"192.168.1.1",      // RFC1918
+		"169.254.169.254",  // cloud metadata
+		"fd00::1",          // IPv6 unique-local
+		"fe80::1",          // IPv6 link-local
+		"0.0.0.0",          // unspecified
+		"0.1.2.3",          // "this network" — reaches localhost on Linux
+		"100.64.0.1",       // carrier-grade NAT / shared address space
+		"192.0.0.1",        // IETF protocol assignments
+		"198.18.0.1",       // benchmarking
+		"240.0.0.1",        // reserved
+		"255.255.255.255",  // broadcast
+		"224.0.0.1",        // multicast
+		"64:ff9b::a00:1",   // NAT64-embedded 10.0.0.1
+		"2002:0a00:0001::", // 6to4-embedded 10.0.0.1
+	}
+	for _, raw := range blocked {
+		ip := net.ParseIP(raw)
+		if ip == nil {
+			t.Fatalf("test bug: %q is not a valid IP", raw)
+		}
+		if isPublicIP(ip) {
+			t.Errorf("isPublicIP(%s) = true, want false — this address must never be dialed for a user-supplied URL", raw)
+		}
+	}
+
+	allowed := []string{"8.8.8.8", "1.1.1.1", "93.184.216.34", "2606:4700:4700::1111"}
+	for _, raw := range allowed {
+		ip := net.ParseIP(raw)
+		if ip == nil {
+			t.Fatalf("test bug: %q is not a valid IP", raw)
+		}
+		if !isPublicIP(ip) {
+			t.Errorf("isPublicIP(%s) = false, want true — ordinary public addresses must stay reachable", raw)
+		}
+	}
+}

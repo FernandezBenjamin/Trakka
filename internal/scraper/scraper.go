@@ -122,13 +122,73 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	return nil, lastErr
 }
 
+// blockedRanges are the address ranges Go's own net.IP predicates do not
+// cover but that still must never be dialed on a user's behalf. Each is a
+// range that either reaches the local host, reaches infrastructure a
+// deployment does not consider "the internet", or exists to smuggle one of
+// those two past a naive IPv6 check:
+//
+//	0.0.0.0/8           "this network" — on Linux, connecting to 0.x.y.z
+//	                    reaches the local host
+//	100.64.0.0/10       carrier-grade NAT / shared address space, routinely
+//	                    used for internal networks in cloud and Kubernetes
+//	                    deployments
+//	192.0.0.0/24        IETF protocol assignments
+//	192.0.2.0/24        TEST-NET-1
+//	198.18.0.0/15       benchmarking range
+//	198.51.100.0/24     TEST-NET-2
+//	203.0.113.0/24      TEST-NET-3
+//	240.0.0.0/4         reserved, includes the 255.255.255.255 broadcast
+//	64:ff9b::/96        NAT64 — embeds an arbitrary IPv4 address, so without
+//	                    this a NAT64-capable host could be used to reach
+//	                    10.0.0.1 through an IPv6 literal
+//	64:ff9b:1::/48      local-use NAT64
+//	2002::/16           6to4 — embeds an IPv4 address the same way
+//	100::/64            discard-only
+//	2001:db8::/32       documentation
+var blockedRanges = func() []*net.IPNet {
+	cidrs := []string{
+		"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24",
+		"198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4",
+		"64:ff9b::/96", "64:ff9b:1::/48", "2002::/16", "100::/64", "2001:db8::/32",
+	}
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic("scraper: bad blocked CIDR " + cidr) // a constant above is malformed; a build-time bug
+		}
+		nets = append(nets, n)
+	}
+	return nets
+}()
+
 // isPublicIP reports whether ip is safe for this server to connect to on a
 // user's behalf: not loopback, not link-local (this also covers the
 // 169.254.169.254 cloud metadata address), not a private/ULA range, not a
-// multicast or unspecified address.
+// multicast, unspecified, or otherwise non-globally-routable address.
+//
+// Go's own predicates (IsLoopback/IsPrivate/...) are the first half of this;
+// they leave several ranges uncovered that are just as effective for reaching
+// something the operator never meant to expose — see blockedRanges above for
+// the list and why each one matters. An IPv4-mapped IPv6 address is unmapped
+// before any of it, so ::ffff:127.0.0.1 is judged as 127.0.0.1 rather than as
+// an unrecognized IPv6 address.
 func isPublicIP(ip net.IP) bool {
-	return !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() &&
-		!ip.IsPrivate() && !ip.IsUnspecified() && !ip.IsMulticast()
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() ||
+		ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+	for _, n := range blockedRanges {
+		if n.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 // ProductInfo is what FetchProductInfo manages to extract from a product

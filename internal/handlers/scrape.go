@@ -27,7 +27,23 @@ import (
 const (
 	scrapeTimeout     = 12 * time.Second
 	syncScrapeTimeout = 2500 * time.Millisecond
+
+	// maxConcurrentScrapes bounds how many product-page fetches this process
+	// has in flight at once. Every item create/update carrying a new url
+	// starts one, so without a ceiling an authenticated user could script a
+	// burst of item creations and turn the server into an outbound request
+	// amplifier — a load generator pointed at a third-party site from
+	// Trakka's address, and a pile of concurrent sockets and 2 MiB read
+	// buffers on the server itself. Requests over the limit wait for a slot
+	// rather than being dropped, and give up with the rest of the lookup when
+	// scrapeTimeout expires; the user-visible effect of saturation is simply
+	// a price_status of "pending", which the frontend already handles.
+	maxConcurrentScrapes = 8
 )
+
+// scrapeSem is the semaphore enforcing maxConcurrentScrapes, shared by every
+// request goroutine in the process.
+var scrapeSem = make(chan struct{}, maxConcurrentScrapes)
 
 // scrapeProductInfo is the single entry point handleItemsCreate/Update/Patch
 // call after persisting an item, for an item whose url was just set to
@@ -78,6 +94,16 @@ func (app *Application) scrapeProductInfo(item *models.Item, previousURL string)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), scrapeTimeout)
 		defer cancel()
+
+		// Wait for a slot, or give up if the whole lookup times out first.
+		select {
+		case scrapeSem <- struct{}{}:
+			defer func() { <-scrapeSem }()
+		case <-ctx.Done():
+			app.Logger.Debug("product lookup skipped: scrape concurrency limit saturated", "item_id", itemID, "url", url)
+			done <- nil
+			return
+		}
 
 		info, err := scraper.FetchProductInfo(ctx, url, app.Logger)
 		if err != nil {

@@ -8,6 +8,7 @@ import (
 
 	"trakka/internal/db"
 	"trakka/internal/models"
+	"trakka/internal/validate"
 )
 
 // authorizeSpaceOwner writes a 404 (never a 403 — matches
@@ -42,6 +43,22 @@ func (app *Application) handleSpaceShareIndex(w http.ResponseWriter, r *http.Req
 		app.serverError(w, r, err)
 		return
 	}
+
+	invitations, err := app.DB.ListPendingInvitations(r.Context(), db.InvitationKindSpace, id)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	for _, inv := range invitations {
+		shares = append(shares, &models.SpaceShare{
+			CustomCategoryID: id,
+			Permission:       inv.Permission,
+			CreatedAt:        inv.CreatedAt,
+			Email:            inv.Email,
+			Pending:          true,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, shares)
 }
 
@@ -65,9 +82,13 @@ func (app *Application) handleSpaceShareCreate(w http.ResponseWriter, r *http.Re
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	in.Email = strings.TrimSpace(in.Email)
+	in.Email = validate.Text(in.Email)
 	if in.Email == "" {
 		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+	if !validate.MaxLen(in.Email, validate.MaxEmailLen) {
+		writeError(w, http.StatusBadRequest, "email is too long")
 		return
 	}
 	if !models.ValidSharePermissions[in.Permission] {
@@ -75,25 +96,54 @@ func (app *Application) handleSpaceShareCreate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	target, err := app.DB.GetUserByEmail(r.Context(), in.Email)
-	if errors.Is(err, db.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "no account exists for this email yet; ask them to register or sign in, then share again")
+	// Recorded against the email, never a resolved user id, and granting
+	// nothing until the recipient signs in — see handleHouseMembersInvite
+	// and docs/AUDIT.md finding L-06 for why this endpoint must answer the same
+	// whether or not the address has an account here. Sharing with your own
+	// address is still rejected: that reveals only your own identity.
+	if strings.EqualFold(in.Email, userFromContext(r).Email) {
+		writeError(w, http.StatusBadRequest, "cannot share a space with yourself")
+		return
+	}
+
+	invitation, err := app.DB.CreatePendingInvitation(
+		r.Context(), db.InvitationKindSpace, id, in.Email, in.Permission, userFromContext(r).ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, invitation)
+}
+
+// handleSpaceShareInvitationRevoke withdraws an outstanding Space invitation
+// that has not been materialized into a space_shares row yet.
+func (app *Application) handleSpaceShareInvitationRevoke(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if !app.authorizeSpaceOwner(w, r, id) {
+		return
+	}
+	app.revokeInvitation(w, r, db.InvitationKindSpace, id)
+}
+
+// revokeInvitation is the shared tail of the two share-invitation revoke
+// handlers (the caller does its own authorization first).
+func (app *Application) revokeInvitation(w http.ResponseWriter, r *http.Request, kind string, targetID int64) {
+	email := validate.Text(r.URL.Query().Get("email"))
+	if email == "" {
+		writeError(w, http.StatusBadRequest, "email query parameter is required")
+		return
+	}
+	if err := app.DB.DeletePendingInvitation(r.Context(), kind, targetID, email); errors.Is(err, db.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "invitation not found")
 		return
 	} else if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	if target.ID == userFromContext(r).ID {
-		writeError(w, http.StatusBadRequest, "cannot share a space with yourself")
-		return
-	}
-
-	share, err := app.DB.CreateOrUpdateSpaceShare(r.Context(), id, target.ID, in.Permission)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, share)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *Application) handleSpaceShareRevoke(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +260,22 @@ func (app *Application) handleListShareIndex(w http.ResponseWriter, r *http.Requ
 		app.serverError(w, r, err)
 		return
 	}
+
+	invitations, err := app.DB.ListPendingInvitations(r.Context(), db.InvitationKindList, id)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	for _, inv := range invitations {
+		shares = append(shares, &models.ListShare{
+			ListID:     id,
+			Permission: inv.Permission,
+			CreatedAt:  inv.CreatedAt,
+			Email:      inv.Email,
+			Pending:    true,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, shares)
 }
 
@@ -244,9 +310,13 @@ func (app *Application) handleListShareCreate(w http.ResponseWriter, r *http.Req
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	in.Email = strings.TrimSpace(in.Email)
+	in.Email = validate.Text(in.Email)
 	if in.Email == "" {
 		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+	if !validate.MaxLen(in.Email, validate.MaxEmailLen) {
+		writeError(w, http.StatusBadRequest, "email is too long")
 		return
 	}
 	if !models.ValidSharePermissions[in.Permission] {
@@ -254,34 +324,52 @@ func (app *Application) handleListShareCreate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	target, err := app.DB.GetUserByEmail(r.Context(), in.Email)
+	// Same reasoning as handleSpaceShareCreate above (docs/AUDIT.md, L-06): the
+	// invitation is keyed by email and grants nothing until the recipient
+	// signs in, so the reply cannot be used to test whether an address is
+	// registered here. The "already a member of this list's house" rejection
+	// is kept because it only reflects the membership of a house the caller
+	// belongs to and can enumerate anyway.
+	if strings.EqualFold(in.Email, userFromContext(r).Email) {
+		writeError(w, http.StatusBadRequest, "cannot share a list with yourself")
+		return
+	}
+	if already, err := app.houseMemberExistsForEmail(r.Context(), list.HouseID, in.Email); err != nil {
+		app.serverError(w, r, err)
+		return
+	} else if already {
+		writeError(w, http.StatusBadRequest, "this person is already a member of the list's house")
+		return
+	}
+
+	invitation, err := app.DB.CreatePendingInvitation(
+		r.Context(), db.InvitationKindList, id, in.Email, in.Permission, userFromContext(r).ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, invitation)
+}
+
+// handleListShareInvitationRevoke withdraws an outstanding List invitation
+// that has not been materialized into a list_shares row yet.
+func (app *Application) handleListShareInvitationRevoke(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	list, err := app.DB.GetList(r.Context(), id)
 	if errors.Is(err, db.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "no account exists for this email yet; ask them to register or sign in, then share again")
+		writeError(w, http.StatusNotFound, "list not found")
 		return
 	} else if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	if target.ID == userFromContext(r).ID {
-		writeError(w, http.StatusBadRequest, "cannot share a list with yourself")
+	if !app.authorizeHouseAccess(w, r, list.HouseID) {
 		return
 	}
-	alreadyMember, err := app.DB.UserCanAccessHouse(r.Context(), target.ID, list.HouseID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if alreadyMember {
-		writeError(w, http.StatusBadRequest, "this person is already a member of the list's house")
-		return
-	}
-
-	share, err := app.DB.CreateOrUpdateListShare(r.Context(), id, target.ID, in.Permission)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, share)
+	app.revokeInvitation(w, r, db.InvitationKindList, id)
 }
 
 // handleListSharePin lets a share *recipient* pin or unpin a list directly

@@ -60,3 +60,22 @@ func (d *DB) DeleteSessionByHash(ctx context.Context, tokenHash string) error {
 	}
 	return nil
 }
+
+// DeleteExpiredSessions removes every session whose expiry has passed and
+// reports how many rows went. Nothing pruned the sessions table before: rows
+// were only ever deleted on an explicit logout, so every expired session an
+// instance ever issued stayed on disk indefinitely — unbounded growth, and a
+// larger set of (hashed) tokens sitting in a backup than the instance has any
+// use for. cmd/server runs this periodically.
+func (d *DB) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`DELETE FROM sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`)
+	if err != nil {
+		return 0, fmt.Errorf("deleting expired sessions: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("reading rows affected for expired session delete: %w", err)
+	}
+	return n, nil
+}

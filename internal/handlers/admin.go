@@ -9,6 +9,7 @@ import (
 
 	"trakka/internal/auth"
 	"trakka/internal/settings"
+	"trakka/internal/validate"
 )
 
 // oidcDiscoveryTimeout bounds how long an admin PATCH that enables or
@@ -93,7 +94,7 @@ func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http
 
 	next := current
 	if body.InstanceName != nil {
-		next.InstanceName = strings.TrimSpace(*body.InstanceName)
+		next.InstanceName = validate.Text(*body.InstanceName)
 	}
 	if body.RegistrationOpen != nil {
 		next.RegistrationOpen = *body.RegistrationOpen
@@ -114,6 +115,10 @@ func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http
 
 	if next.InstanceName == "" {
 		writeError(w, http.StatusBadRequest, "instance_name cannot be empty")
+		return
+	}
+	if !validate.MaxLen(next.InstanceName, validate.MaxNameLen) {
+		writeError(w, http.StatusBadRequest, "instance_name is too long")
 		return
 	}
 

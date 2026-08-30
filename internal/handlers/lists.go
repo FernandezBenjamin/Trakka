@@ -4,10 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"trakka/internal/db"
 	"trakka/internal/models"
+	"trakka/internal/validate"
 )
 
 // handleListsIndex lists the caller's lists. ?shared_with_me=true switches
@@ -84,9 +84,13 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	in.Name = strings.TrimSpace(in.Name)
+	in.Name = validate.Text(in.Name)
 	if in.Name == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if !validate.MaxLen(in.Name, validate.MaxNameLen) {
+		writeError(w, http.StatusBadRequest, "name is too long")
 		return
 	}
 	if in.Type == "" {
@@ -96,7 +100,11 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "type must be one of 'todo', 'shopping', 'groceries', 'recurring_shopping', 'custom'")
 		return
 	}
-	in.Icon = strings.TrimSpace(in.Icon)
+	in.Icon = validate.Text(in.Icon)
+	if !validate.MaxLen(in.Icon, validate.MaxIconLen) {
+		writeError(w, http.StatusBadRequest, "icon is too long")
+		return
+	}
 	if in.HouseID <= 0 {
 		writeError(w, http.StatusBadRequest, "house_id is required")
 		return
@@ -187,10 +195,26 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
-	// Renaming/retyping/recategorizing a list counts as "editing" it, so a
-	// write-level List/Space share is enough here — unlike deleting it
-	// outright (handleListsDelete below), which stays House-membership-only.
+	// Renaming/retyping a list counts as "editing" it, so a write-level
+	// List/Space share is enough here — unlike deleting it outright
+	// (handleListsDelete below), which stays House-membership-only.
 	if !app.authorizeListAccess(w, r, existing, true) {
+		return
+	}
+	// Re-categorizing it is NOT ordinary editing, though: a list's
+	// custom_category_id decides which Space grants access to it
+	// (db.AccessLevelForList), so whoever can change it can hand the list to
+	// a Space of their own and then share that Space with anyone — which
+	// would route straight around handleListShareCreate's deliberate "only
+	// the list's real House members can extend access to it" rule, and would
+	// equally let them revoke everyone else's Space-derived access by
+	// detaching it. Changing it therefore requires actual House membership,
+	// exactly like deleting the list. A caller who is merely a write-share
+	// holder can still rename/retype/re-icon the list; they just cannot move
+	// it between Spaces.
+	isHouseMember, err := app.DB.UserCanAccessHouse(r.Context(), userFromContext(r).ID, existing.HouseID)
+	if err != nil {
+		app.serverError(w, r, err)
 		return
 	}
 
@@ -204,9 +228,13 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	in.Name = strings.TrimSpace(in.Name)
+	in.Name = validate.Text(in.Name)
 	if in.Name == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if !validate.MaxLen(in.Name, validate.MaxNameLen) {
+		writeError(w, http.StatusBadRequest, "name is too long")
 		return
 	}
 	if in.Type == "" {
@@ -216,7 +244,15 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "type must be one of 'todo', 'shopping', 'groceries', 'recurring_shopping', 'custom'")
 		return
 	}
-	in.Icon = strings.TrimSpace(in.Icon)
+	in.Icon = validate.Text(in.Icon)
+	if !validate.MaxLen(in.Icon, validate.MaxIconLen) {
+		writeError(w, http.StatusBadRequest, "icon is too long")
+		return
+	}
+	if !isHouseMember && !sameCategoryID(in.CustomCategoryID, existing.CustomCategoryID) {
+		writeError(w, http.StatusForbidden, "only a member of this list's house can change its space")
+		return
+	}
 	if !app.validateCustomCategoryOwnership(w, r, in.CustomCategoryID) {
 		return
 	}
@@ -261,4 +297,15 @@ func (app *Application) handleListsDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// sameCategoryID reports whether two optional custom_category_id values
+// refer to the same category (both unset counts as the same). Used by
+// handleListsUpdate to tell an actual re-categorization apart from a
+// request that merely round-trips the value it already had.
+func sameCategoryID(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
