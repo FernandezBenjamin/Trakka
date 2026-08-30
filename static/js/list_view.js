@@ -51,7 +51,10 @@ const listEls = {
   itemActionsSheetTitle: document.getElementById('item-actions-sheet-title'),
   closeItemActionsSheetButton: document.getElementById('close-item-actions-sheet-button'),
   itemActionsEditButton: document.getElementById('item-actions-edit-button'),
-  itemActionsLinkButton: document.getElementById('item-actions-link-button'),
+  itemActionsLinkGroup: document.getElementById('item-actions-link-group'),
+  itemActionsOpenLinkButton: document.getElementById('item-actions-open-link-button'),
+  itemActionsCopyLinkButton: document.getElementById('item-actions-copy-link-button'),
+  itemActionsShareLinkButton: document.getElementById('item-actions-share-link-button'),
   itemActionsUrgentButton: document.getElementById('item-actions-urgent-button'),
   itemActionsUrgentLabel: document.getElementById('item-actions-urgent-label'),
   itemActionsDeleteButton: document.getElementById('item-actions-delete-button'),
@@ -62,7 +65,9 @@ const listEls = {
 
 // The item currently open in the item-actions bottom sheet (#item-actions-
 // sheet), or null when it's closed — set by openItemActionsSheet, read by
-// that sheet's own button handlers below.
+// that sheet's own button handlers below. Every entry point that acts on an
+// item (title tap, kebab tap, long press) opens this same sheet — there is
+// no separate link-only sheet to keep in sync with it.
 let itemActionsSheetItem = null;
 
 // The item currently open in the edit modal, or null when the modal is
@@ -92,6 +97,171 @@ const AUTO_PRICE_ICON_SVG =
 // #item-actions-sheet instead (see buildItemRow and openItemActionsSheet).
 const KEBAB_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>';
+
+// ---------------------------------------------------------------------------
+// Link actions — Ouvrir/Copier/Partager, shared by #item-actions-sheet's
+// link group (its only caller — see buildItemRow/openItemActionsSheet below)
+// so the clipboard/share-API handling isn't duplicated anywhere else.
+// ---------------------------------------------------------------------------
+
+function openLink(url) {
+  if (!url || !isSafeHttpUrl(url)) return;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+// document.execCommand('copy') is deprecated but remains the only dependency
+// -free fallback for a browser/context without navigator.clipboard.writeText
+// (older WebKit, or any non-secure-context edge case) — there is no modern
+// replacement that doesn't pull in a library, which CLAUDE.md's "no
+// dependencies" frontend convention rules out.
+function legacyCopyToClipboard(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    textarea.remove();
+  }
+}
+
+async function copyLink(url) {
+  if (!url) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(url);
+    } else {
+      legacyCopyToClipboard(url);
+    }
+    TrakkaToast.success(t('items.linkCopied'));
+  } catch {
+    showError(t('items.linkCopyFailed'));
+  }
+}
+
+// navigator.share triggers the OS-native share sheet — supported on most
+// mobile browsers and a handful of desktop ones (Safari, Edge), but not
+// Chrome/Firefox desktop — so this falls back to copyLink wherever it's
+// unavailable, per the feature's own "bascule sur la copie" fallback rule,
+// rather than "Partager" silently doing nothing on unsupported browsers.
+async function shareLink(item) {
+  const url = item && item.url;
+  if (!url || !isSafeHttpUrl(url)) return;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: item.title, url });
+    } catch (err) {
+      // AbortError: the user closed/canceled the native share sheet — not a
+      // real failure, nothing to report.
+      if (err && err.name !== 'AbortError') showError(t('items.linkShareFailed'));
+    }
+    return;
+  }
+  await copyLink(url);
+}
+
+// ---------------------------------------------------------------------------
+// Long-press gesture (~500ms touch hold) — the mobile affordance that opens
+// #item-actions-sheet (focused on its link group) from an item's title or
+// its inline 🔗 link icon (see buildItemRow) — the same sheet a short tap
+// already opens, just pre-focused on the link actions rather than a separate
+// sheet of its own. Touch-only by design: a desktop mouse never fires
+// touchstart, so attachLongPress is a complete no-op there and the element's
+// ordinary click handler (openItemActionsSheet on the title, ordinary
+// navigation on the link icon) is entirely unaffected.
+// ---------------------------------------------------------------------------
+
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+
+// Attaches the gesture to `el`, calling `onLongPress(event)` once the touch
+// has been held in place for LONG_PRESS_MS. A move past the tolerance (the
+// user is scrolling, not pressing) or an early lift cancels it. `touchend`'s
+// own default is prevented when a long press actually fired, so the
+// synthetic `click` a touch normally triggers afterward can't also run the
+// element's ordinary tap handler on top of the long-press action.
+function attachLongPress(el, onLongPress) {
+  let timer = null;
+  let startX = 0;
+  let startY = 0;
+  let firedLongPress = false;
+
+  function clearTimer() {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  }
+
+  el.addEventListener(
+    'touchstart',
+    (event) => {
+      if (event.touches.length !== 1) {
+        clearTimer();
+        return;
+      }
+      const touch = event.touches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
+      firedLongPress = false;
+      clearTimer();
+      timer = setTimeout(() => {
+        firedLongPress = true;
+        timer = null;
+        if (navigator.vibrate) {
+          try {
+            navigator.vibrate(50);
+          } catch {
+            // Vibration blocked/unsupported — a purely cosmetic touch, skip it.
+          }
+        }
+        onLongPress(event);
+      }, LONG_PRESS_MS);
+    },
+    { passive: true },
+  );
+
+  el.addEventListener(
+    'touchmove',
+    (event) => {
+      if (!timer) return;
+      const touch = event.touches[0];
+      if (
+        Math.abs(touch.clientX - startX) > LONG_PRESS_MOVE_TOLERANCE_PX ||
+        Math.abs(touch.clientY - startY) > LONG_PRESS_MOVE_TOLERANCE_PX
+      ) {
+        clearTimer();
+      }
+    },
+    { passive: true },
+  );
+
+  el.addEventListener(
+    'touchend',
+    (event) => {
+      clearTimer();
+      if (firedLongPress) event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  el.addEventListener('touchcancel', () => {
+    clearTimer();
+    firedLongPress = false;
+  });
+
+  // Suppresses the native long-press context menu (Android Chrome's
+  // copy-link/open-in-new-tab popup, and — via `long-press-target` in
+  // base.css — iOS Safari's link callout) only while our own gesture is
+  // mid-flight or just fired, so a genuine desktop right-click (which never
+  // sets either flag) is completely unaffected.
+  el.addEventListener('contextmenu', (event) => {
+    if (firedLongPress || timer) event.preventDefault();
+  });
+}
 
 // True for an item created while offline whose "create" request is still
 // sitting in the service worker's sync queue — see the tempId generation in
@@ -462,7 +632,7 @@ function buildInlineLinkIcon(item) {
   link.href = item.url;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
-  link.className = 'shrink-0 text-sky-500 hover:text-sky-400';
+  link.className = 'long-press-target shrink-0 text-sky-500 hover:text-sky-400';
   link.setAttribute('aria-label', t('items.openLinkAriaLabel', { title: item.title }));
   link.textContent = '🔗';
   link.addEventListener('click', (event) => event.stopPropagation());
@@ -637,8 +807,17 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
   title.addEventListener('click', () => openItemActionsSheet(item));
   lead.appendChild(title);
 
-  if (item.url && isSafeHttpUrl(item.url)) {
-    lead.appendChild(buildInlineLinkIcon(item));
+  const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
+  if (hasLink) {
+    const linkIcon = buildInlineLinkIcon(item);
+    lead.appendChild(linkIcon);
+    // A long press (~500ms touch hold, desktop mouse unaffected — see
+    // attachLongPress) on either the title or the link icon itself opens
+    // the very same #item-actions-sheet a short tap does, just pre-focused
+    // on its Ouvrir/Copier/Partager link group — the "appui long sur
+    // l'item ou le lien" gesture, without a second sheet to keep in sync.
+    attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
+    attachLongPress(linkIcon, () => openItemActionsSheet(item, { focusLink: true }));
   }
 
   row.appendChild(lead);
@@ -1220,20 +1399,33 @@ document.addEventListener('keydown', (event) => {
 });
 
 // ---------------------------------------------------------------------------
-// Item actions bottom sheet — the mobile-first replacement for the ✏️/🗑️
-// buttons shown directly on a card on wider screens (see buildItemRow):
-// opened by a tap on an item's title or its [⋮] kebab button, it offers
-// Modifier/Ouvrir le lien/Basculer en urgent/Supprimer for whichever item was
-// tapped, tracked in the module-level `itemActionsSheetItem` declared above.
+// Item actions bottom sheet — the single, mobile-first replacement for the
+// ✏️/🗑️ buttons shown directly on a card on wider screens (see buildItemRow):
+// opened by a tap on an item's title, its [⋮] kebab button, or a long press
+// on the title/link icon, it offers Modifier/[Ouvrir·Copier·Partager le
+// lien]/Basculer en urgent/Supprimer for whichever item was acted on,
+// tracked in the module-level `itemActionsSheetItem` declared above. Every
+// entry point funnels into this one sheet — there is no separate link-only
+// sheet to keep in sync with it.
 // ---------------------------------------------------------------------------
 
-function openItemActionsSheet(item) {
+// `focusLink` moves keyboard focus straight to "Ouvrir le lien" once the
+// sheet is shown — used by the long-press gesture (see attachLongPress in
+// buildItemRow) so that gesture lands the user directly on the link actions
+// rather than at the top of the full action list. Only meaningful when the
+// item actually has a link, which is the only case attachLongPress ever
+// requests it for.
+function openItemActionsSheet(item, { focusLink = false } = {}) {
   itemActionsSheetItem = item;
   listEls.itemActionsSheetTitle.textContent = item.title;
-  listEls.itemActionsLinkButton.hidden = !(item.url && isSafeHttpUrl(item.url));
+  const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
+  listEls.itemActionsLinkGroup.hidden = !hasLink;
   listEls.itemActionsUrgentLabel.textContent = t(item.is_urgent ? 'modals.itemActions.unmarkUrgent' : 'modals.itemActions.markUrgent');
   listEls.itemActionsSheet.hidden = false;
   document.body.classList.add('overflow-hidden');
+  if (focusLink && hasLink) {
+    listEls.itemActionsOpenLinkButton.focus();
+  }
 }
 
 function closeItemActionsSheet() {
@@ -1256,10 +1448,22 @@ listEls.itemActionsEditButton.addEventListener('click', () => {
   if (item) openEditItemModal(item);
 });
 
-listEls.itemActionsLinkButton.addEventListener('click', () => {
+listEls.itemActionsOpenLinkButton.addEventListener('click', () => {
   const item = itemActionsSheetItem;
   closeItemActionsSheet();
-  if (item && item.url && isSafeHttpUrl(item.url)) window.open(item.url, '_blank', 'noopener,noreferrer');
+  if (item) openLink(item.url);
+});
+
+listEls.itemActionsCopyLinkButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item) copyLink(item.url);
+});
+
+listEls.itemActionsShareLinkButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item) shareLink(item);
 });
 
 listEls.itemActionsUrgentButton.addEventListener('click', () => {

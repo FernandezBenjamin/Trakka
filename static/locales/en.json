@@ -59,6 +59,9 @@
     "addFabAriaLabel": "Add an item",
     "addSheetTitle": "Add an item",
     "openLinkAriaLabel": "Open {title}'s link",
+    "linkCopied": "Link copied!",
+    "linkCopyFailed": "Couldn't copy the link.",
+    "linkShareFailed": "Couldn't share the link.",
     "moreActionsAriaLabel": "More actions for {title}",
     "titlePlaceholder": "Item or task",
     "titlePlaceholderCustom": "Name, idea, note...",
@@ -198,6 +201,8 @@
     "itemActions": {
       "edit": "Edit item",
       "openLink": "Open link",
+      "copyLink": "Copy link",
+      "shareLink": "Share link",
       "markUrgent": "Toggle urgent",
       "unmarkUrgent": "Remove urgent",
       "delete": "Delete item"
