@@ -157,12 +157,14 @@ body {
    truncate utilities directly in buildItemRow) and, only when there's
    something to show, a secondary line below it (.item-card__secondary: the
    quantity stepper plus the month/recurrence/urgent badges) indented to align
-   under the title rather than the checkbox. `.item-card__actions` (✏️/🗑️) and
-   `.item-card__kebab` (⋮, opening #item-actions-sheet) are both always built
-   by buildItemRow; which one is actually visible is a pure CSS/Tailwind
-   concern (`hidden md:flex` / `flex md:hidden` on the two, respectively) —
-   see buildItemRow for why the sheet exists at all on narrow screens where
-   two more 44px tap targets on the card would crowd the price/title. */
+   under the title rather than the checkbox. `.item-card__actions` (✏️/🗑️)
+   and `.item-card__kebab` (⋮, opening #item-actions-sheet — the single sheet
+   every "act on this item" entry point funnels into, including its own
+   Ouvrir/Copier/Partager link group) are both always built by buildItemRow;
+   which one is actually visible is a pure CSS/Tailwind concern (`hidden
+   md:flex` / `flex md:hidden` on the two, respectively) — see buildItemRow
+   for why the sheet exists at all on narrow screens where two more 44px tap
+   targets on the card would crowd the price/title. */
 @media (max-width: 768px) {
   /* Edit/delete/kebab are already 44x44px (Tailwind's h-11 w-11) — this is a
      defensive floor tied directly to the "safe touch target" requirement,
@@ -172,6 +174,21 @@ body {
     min-height: 44px;
     min-width: 44px;
   }
+}
+
+/* Long-press targets (an item's title and its inline 🔗 link icon — see
+   attachLongPress/buildItemRow in list_view.js) must not also trigger the
+   browser/OS's own long-press UI, since the whole point of the gesture here
+   is to open Trakka's own #item-actions-sheet, focused on its link group,
+   instead. The `contextmenu` listener attachLongPress installs on these same
+   elements covers Android Chrome's long-press menu; -webkit-touch-callout/
+   user-select cover iOS Safari, which shows its own link callout (Open/Add
+   to Reading List/Copy/Share) on a plain long press without ever firing a
+   `contextmenu` event. */
+.long-press-target {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* The FAB (#add-item-fab, shown only below Tailwind's `md` breakpoint — see

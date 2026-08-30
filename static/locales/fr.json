@@ -59,6 +59,9 @@
     "addFabAriaLabel": "Ajouter un article",
     "addSheetTitle": "Ajouter un article",
     "openLinkAriaLabel": "Ouvrir le lien de {title}",
+    "linkCopied": "Lien copié !",
+    "linkCopyFailed": "Impossible de copier le lien.",
+    "linkShareFailed": "Impossible de partager le lien.",
     "moreActionsAriaLabel": "Plus d'actions pour {title}",
     "titlePlaceholder": "Article ou tâche",
     "titlePlaceholderCustom": "Prénom, idée, note...",
@@ -198,6 +201,8 @@
     "itemActions": {
       "edit": "Modifier l'article",
       "openLink": "Ouvrir le lien",
+      "copyLink": "Copier le lien",
+      "shareLink": "Partager le lien",
       "markUrgent": "Basculer en urgent",
       "unmarkUrgent": "Retirer l'urgence",
       "delete": "Supprimer l'article"

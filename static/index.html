@@ -772,10 +772,14 @@
     </div>
   </div>
 
-  <!-- Item actions bottom sheet: opened by a tap on an item's title or its [⋮]
+  <!-- Item actions bottom sheet: opened by a tap on an item's title, its [⋮]
        kebab button (buildItemRow in list_view.js) as the mobile replacement for
-       the ✏️/🗑️ buttons shown directly on the card on larger screens. Populated
-       per-item by openItemActionsSheet right before it's shown. -->
+       the ✏️/🗑️ buttons shown directly on the card on larger screens, or a long
+       press on the title/link icon (see attachLongPress) — every entry point
+       into "act on this item" funnels into this one sheet, including the
+       Ouvrir/Copier/Partager link group below when the item has a link, so
+       there is nowhere else in the app a link action can be reached from.
+       Populated per-item by openItemActionsSheet right before it's shown. -->
   <div id="item-actions-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
     <div role="dialog" aria-modal="true" aria-labelledby="item-actions-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
       <div class="mb-3 flex items-center justify-between gap-3">
@@ -791,11 +795,23 @@
           <span aria-hidden="true">✏️</span>
           <span data-i18n="modals.itemActions.edit">Modifier l'article</span>
         </button>
-        <button type="button" id="item-actions-link-button"
-                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
-          <span aria-hidden="true">🔗</span>
-          <span data-i18n="modals.itemActions.openLink">Ouvrir le lien</span>
-        </button>
+        <div id="item-actions-link-group" class="flex flex-col gap-1">
+          <button type="button" id="item-actions-open-link-button"
+                  class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+            <span aria-hidden="true">🌐</span>
+            <span data-i18n="modals.itemActions.openLink">Ouvrir le lien</span>
+          </button>
+          <button type="button" id="item-actions-copy-link-button"
+                  class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+            <span aria-hidden="true">📋</span>
+            <span data-i18n="modals.itemActions.copyLink">Copier le lien</span>
+          </button>
+          <button type="button" id="item-actions-share-link-button"
+                  class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+            <span aria-hidden="true">🔗</span>
+            <span data-i18n="modals.itemActions.shareLink">Partager le lien</span>
+          </button>
+        </div>
         <button type="button" id="item-actions-urgent-button"
                 class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
           <span aria-hidden="true">🚨</span>
