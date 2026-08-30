@@ -99,5 +99,34 @@
     };
   }
 
+  // A short-lived, non-interactive confirmation toast — reuses the same
+  // #toast-container as the undo/rollback toast above, but with no undo
+  // button or countdown bar, since it confirms a mutation that's already
+  // been committed rather than one still open to being undone. Used e.g. by
+  // app.js's "rename house" flow.
+  function success(message, delay = 3000) {
+    const root = getContainer();
+    if (!root) return;
+
+    const toast = document.createElement('div');
+    toast.setAttribute('role', 'status');
+    toast.className =
+      'pointer-events-auto flex items-center gap-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-slate-100 dark:bg-slate-800 py-3 px-4 text-sm text-slate-900 dark:text-slate-100 shadow-xl';
+
+    const icon = document.createElement('span');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.className = 'text-emerald-500';
+    icon.textContent = '✓';
+
+    const text = document.createElement('span');
+    text.textContent = message;
+
+    toast.append(icon, text);
+    root.appendChild(toast);
+
+    setTimeout(() => toast.remove(), delay);
+  }
+
   window.TrakkaUndo = { schedule };
+  window.TrakkaToast = { success };
 })();

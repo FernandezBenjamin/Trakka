@@ -30,6 +30,10 @@
   "dashboard": {
     "house": "Maison",
     "members": "Membres",
+    "renameHouseAriaLabel": "Renommer la maison",
+    "renameConfirmAriaLabel": "Valider",
+    "renameCancelAriaLabel": "Annuler",
+    "renameSuccess": "Maison renommée avec succès en « {name} »",
     "title": "Tableau de bord",
     "newList": "Nouvelle liste",
     "shoppingHeading": "Achats & Sourcing",
