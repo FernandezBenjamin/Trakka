@@ -173,6 +173,8 @@ const els = {
   networkDot: document.getElementById('network-dot'),
   networkLabel: document.getElementById('network-label'),
   pendingBadge: document.getElementById('pending-badge'),
+  pendingBadgeIcon: document.getElementById('pending-badge-icon'),
+  pendingBadgeText: document.getElementById('pending-badge-text'),
   errorBanner: document.getElementById('error-banner'),
   updateBanner: document.getElementById('update-banner'),
   updateReloadButton: document.getElementById('update-reload-button'),
@@ -292,7 +294,7 @@ async function apiRequest(path, options = {}) {
   // portal, a down server, ...); that case is unaffected and still runs the
   // normal fetch()-then-catch path below.
   if (method === 'GET' && !navigator.onLine) {
-    const err = new Error('Impossible de contacter le serveur. Vérifiez votre connexion.');
+    const err = new Error(t('common.networkError'));
     err.isNetworkError = true;
     throw err;
   }
@@ -317,7 +319,7 @@ async function apiRequest(path, options = {}) {
     // skip the blocking error banner for the former, since the header's
     // discreet network badge already communicates that on its own. See
     // isNetworkError below.
-    const err = new Error('Impossible de contacter le serveur. Vérifiez votre connexion.');
+    const err = new Error(t('common.networkError'));
     err.isNetworkError = true;
     throw err;
   }
@@ -346,6 +348,20 @@ async function apiRequest(path, options = {}) {
     throw new Error(message);
   }
 
+  // This response came from the service worker's offline queue (queued,
+  // edited-in-place, or cancelled — see sw.js's queueOfflineWrite/
+  // resolveAgainstPendingCreate, which set this header on every response
+  // they return) rather than a real server round-trip. Refresh the
+  // "unsynced changes" id caches synchronously here, before the caller's own
+  // success path re-renders (toggleDone/removeItem/changeQuantity/the
+  // create-item form handler, ...), so the pending dot this exact action
+  // just affected is already correct the moment that render happens instead
+  // of only catching up a moment later once the service worker's own
+  // trakka-sync-status broadcast arrives (see handleSyncStatusMessage).
+  if (response.headers.get('X-Trakka-Queued') === 'true') {
+    await refreshPendingChangeIndicators();
+  }
+
   return body;
 }
 
@@ -363,7 +379,31 @@ function isNetworkError(err) {
 }
 
 // ---------------------------------------------------------------------------
-// Network status + pending sync count
+// Network status + offline sync indicators
+//
+// Three related but distinct pieces of UI, all driven by the same offline
+// sync queue (db.js's STORE_QUEUE, owned exclusively by sw.js):
+//
+//   1. The header's #pending-badge cycles through 'pending' (☁️⏳, amber —
+//      at least one change is queued and nothing is being sent right now),
+//      'syncing' (🔄, spinning — sw.js's flushQueue is actively replaying
+//      the queue) and 'synced' (☁️✓, briefly, before fading back to plain
+//      "En ligne") — see setSyncIndicatorState/handleSyncStatusMessage.
+//   2. pendingListIds/pendingItemIds are the id sets buildListCard (below)
+//      and list_view.js's renderItems/buildItemRow consult to show a small
+//      "unsynced changes" dot on a specific list's card/detail header or a
+//      specific item's row — see hasPendingListChanges/hasPendingItemChanges.
+//   3. The public `trakka:sync-pending`/`trakka:sync-complete` window
+//      events, dispatched from handleSyncStatusMessage, let any other code
+//      (this app's own, or a future addition) react to the queue changing
+//      without having to know about IndexedDB or the service worker at all.
+//
+// sw.js tags every queue entry it writes with a listId (and, for an
+// item-scoped write, an itemId) precisely so refreshPendingChangeIndicators
+// below can derive both id sets with one read of the queue, and posts a
+// 'trakka-sync-status' message (handled in registerServiceWorker further
+// down) every time the queue's size changes — on every enqueue/cancel, and
+// at the start/end of every flushQueue attempt.
 // ---------------------------------------------------------------------------
 
 async function updateNetworkStatus() {
@@ -384,24 +424,136 @@ async function updateNetworkStatus() {
   await refreshPendingBadge();
 }
 
-// Reads the offline sync queue directly from IndexedDB (via db.js) so the
-// user can see how many changes are waiting to reach the server — the
-// service worker owns writing to that queue, this only ever reads it.
-async function refreshPendingBadge() {
+let pendingListIds = new Set();
+let pendingItemIds = new Set();
+
+// Reads the offline sync queue directly from IndexedDB (via db.js) and
+// rebuilds pendingListIds/pendingItemIds from it — the service worker owns
+// writing to that queue and to the listId/itemId tag on each entry, this
+// only ever reads it. Returns the queue's total size so callers that only
+// need the count (refreshPendingBadge) don't have to read it a second time.
+async function refreshPendingChangeIndicators() {
   if (!window.TrakkaDB) {
+    pendingListIds = new Set();
+    pendingItemIds = new Set();
+    return 0;
+  }
+  let queue = [];
+  try {
+    queue = await window.TrakkaDB.getQueue();
+  } catch {
+    queue = [];
+  }
+  pendingListIds = new Set(queue.filter((entry) => entry.listId != null).map((entry) => entry.listId));
+  pendingItemIds = new Set(queue.filter((entry) => entry.itemId != null).map((entry) => entry.itemId));
+  return queue.length;
+}
+
+// listId may be a real numeric id or a temp-list-* id (a list created while
+// offline, not yet synced) — both are valid Set members, compared by strict
+// equality same as any other id lookup in this app (see buildListCard).
+function hasPendingListChanges(listId) {
+  return pendingListIds.has(listId);
+}
+
+function hasPendingItemChanges(itemId) {
+  return pendingItemIds.has(itemId);
+}
+
+// Auto-hide delay for the transient 'synced' (☁️✓) state before the header
+// badge fades back to nothing — long enough to actually notice, short
+// enough not to linger once there's nothing left to report.
+const SYNC_SYNCED_DISPLAY_MS = 2500;
+let syncSyncedTimer = null;
+
+// Drives #pending-badge through its four states. 'idle' hides the badge
+// entirely (nothing queued, nothing just finished); the other three show it
+// with a state-specific icon/label/tooltip — see the section doc comment
+// above. Tailwind's built-in animate-spin/animate-pulse utilities (no
+// custom CSS needed) provide the syncing/pending motion.
+function setSyncIndicatorState(state, count = 0) {
+  clearTimeout(syncSyncedTimer);
+  syncSyncedTimer = null;
+  els.pendingBadge.dataset.syncState = state;
+  els.pendingBadgeIcon.classList.remove('animate-spin', 'animate-pulse');
+
+  if (state === 'idle') {
     els.pendingBadge.hidden = true;
+    els.pendingBadge.title = '';
     return;
   }
-  try {
-    const queue = await window.TrakkaDB.getQueue();
-    if (queue.length > 0) {
-      els.pendingBadge.hidden = false;
-      els.pendingBadge.textContent = t('header.pending', { count: queue.length });
-    } else {
-      els.pendingBadge.hidden = true;
-    }
-  } catch {
-    els.pendingBadge.hidden = true;
+
+  els.pendingBadge.hidden = false;
+  if (state === 'pending') {
+    els.pendingBadgeIcon.textContent = '☁️⏳';
+    els.pendingBadgeIcon.classList.add('animate-pulse');
+    els.pendingBadgeText.textContent = t('header.pending', { count });
+    els.pendingBadge.title = t('header.pending', { count });
+  } else if (state === 'syncing') {
+    els.pendingBadgeIcon.textContent = '🔄';
+    els.pendingBadgeIcon.classList.add('animate-spin');
+    els.pendingBadgeText.textContent = t('header.syncing');
+    els.pendingBadge.title = t('header.syncing');
+  } else if (state === 'synced') {
+    els.pendingBadgeIcon.textContent = '☁️✓';
+    els.pendingBadgeText.textContent = t('header.synced');
+    els.pendingBadge.title = t('header.synced');
+    syncSyncedTimer = setTimeout(() => setSyncIndicatorState('idle'), SYNC_SYNCED_DISPLAY_MS);
+  }
+}
+
+// refreshPendingBadge is the plain "just show the current count" entry
+// point, called from updateNetworkStatus and after a handful of ordinary
+// (online) mutations elsewhere in this file — it never forces a 'syncing'/
+// 'synced' transition of its own (only handleSyncStatusMessage's
+// service-worker-driven messages do that), and defers entirely while one of
+// those transient states is already showing so it can't cut a 🔄 spin or a
+// ☁️✓ confirmation short.
+async function refreshPendingBadge() {
+  const count = await refreshPendingChangeIndicators();
+  const current = els.pendingBadge.dataset.syncState;
+  if (current === 'syncing' || current === 'synced') return;
+  setSyncIndicatorState(count > 0 ? 'pending' : 'idle', count);
+}
+
+// Handles sw.js's 'trakka-sync-status' postMessage (see broadcastQueueState
+// in sw.js) — the single source of truth for the header badge's syncing/
+// pending/synced transitions and for the public trakka:sync-pending/
+// trakka:sync-complete window events. Also refreshes the per-list/per-item
+// dot caches and repaints whatever's currently on screen, since this
+// message is exactly "the queue changed" regardless of which of
+// enqueue/cancel/flush caused it.
+function handleSyncStatusMessage({ pending, syncing }) {
+  if (syncing) {
+    setSyncIndicatorState('syncing', pending);
+    window.dispatchEvent(new CustomEvent('trakka:sync-pending', { detail: { count: pending, syncing: true } }));
+  } else if (pending === 0) {
+    // Only animate the ☁️✓ "synced" confirmation when something was
+    // actually showing beforehand (pending or mid-sync) — an idle-to-idle
+    // transition (e.g. a queue that was already empty) needs no fanfare.
+    const wasActive = els.pendingBadge.dataset.syncState && els.pendingBadge.dataset.syncState !== 'idle';
+    setSyncIndicatorState(wasActive ? 'synced' : 'idle', 0);
+    if (wasActive) window.dispatchEvent(new CustomEvent('trakka:sync-complete', { detail: {} }));
+  } else {
+    setSyncIndicatorState('pending', pending);
+    window.dispatchEvent(new CustomEvent('trakka:sync-pending', { detail: { count: pending, syncing: false } }));
+  }
+
+  refreshPendingChangeIndicators().then(repaintPendingChangeIndicators);
+}
+
+// A network-free repaint of whichever surface is currently visible, so a
+// list's/item's "unsynced changes" dot appears (or clears) the moment the
+// queue changes rather than waiting for that view's next full network
+// refresh. renderItems (list_view.js) and renderDashboardFromCache (below)
+// both read purely from already-loaded state/IndexedDB — safe to call at
+// any time, the same guarantee every optimistic mutation in this app
+// already relies on.
+function repaintPendingChangeIndicators() {
+  if (state.currentListId !== null) {
+    renderItems();
+  } else if (isDashboardTabActive()) {
+    renderDashboardFromCache();
   }
 }
 
@@ -770,20 +922,19 @@ async function removeMember(userId) {
 // Dashboard (lists grouped by type, with per-card badges)
 // ---------------------------------------------------------------------------
 
-function typeLabel(type) {
-  return type === 'todo' ? 'tâches' : 'courses';
-}
-
 // Shared by buildListCard's card subtitle and list_view.js's list-detail
 // header: a list's "count" is how many items still need attention, not its
-// total size — a fully-checked-off shopping list should read "0 restant",
-// not "12 éléments". `items` here is expected already filtered to exclude
+// total size — a fully-checked-off shopping list should read "0 remaining",
+// not "12 items". `items` here is expected already filtered to exclude
 // any item mid-undo-grace-period (see renderItems' `pendingDelete` filter),
 // so a card built from the dashboard's own full-detail fetch (which never
 // carries that flag to begin with) can just pass `list.items || []` as-is.
+// items.remainingCountOne/remainingCountOther is this file's one hand-rolled
+// plural: the underlying t() engine has no ICU plural support, so the
+// caller (here) picks which key to use based on the actual count instead.
 function remainingItemsLabel(items) {
   const remaining = items.filter((item) => !item.done).length;
-  return `${remaining} restant${remaining === 1 ? '' : 's'}`;
+  return t(remaining === 1 ? 'items.remainingCountOne' : 'items.remainingCountOther', { count: remaining });
 }
 
 function badge(text, palette) {
@@ -878,7 +1029,7 @@ function progressBadge(items) {
   const frag = document.createDocumentFragment();
   if (items.length === 0) return frag;
   const done = items.filter((item) => item.done).length;
-  frag.appendChild(badge(`${done}/${items.length} terminées`, done === items.length ? 'emerald' : 'slate'));
+  frag.appendChild(badge(t('dashboard.todoProgress', { done, total: items.length }), done === items.length ? 'emerald' : 'slate'));
   return frag;
 }
 
@@ -937,6 +1088,19 @@ function buildListCard(list, badgesFragment) {
   // the same way in both places.
   if (list.is_pinned_to_dashboard) {
     typeRow.appendChild(badge(`📌 ${t('shares.pinnedBadge')}`, 'amber'));
+  }
+  // hasPendingListChanges reads the offline sync queue's listId tags (see
+  // the "Network status + offline sync indicators" section above) — shown
+  // whenever this list itself, or any of its items, still has a write
+  // sitting in the queue (an offline reorder/add/delete/toggle), and
+  // cleared automatically the next time that queue empties out, since
+  // refreshPendingChangeIndicators/repaintPendingChangeIndicators re-derive
+  // this set from scratch on every queue mutation.
+  if (hasPendingListChanges(list.id)) {
+    const unsyncedBadge = badge(`⏳ ${t('sync.listBadgeLabel')}`, 'amber');
+    unsyncedBadge.classList.add('animate-pulse');
+    unsyncedBadge.title = t('sync.listBadgeAriaLabel', { name: list.name });
+    typeRow.appendChild(unsyncedBadge);
   }
 
   const titleRow = document.createElement('div');
@@ -1100,9 +1264,9 @@ function isPurchaseList(type) {
 // them — shared by the cache-only offline path and the normal network path
 // below so the three-way split can't drift between them.
 function renderDashboardGrids(detailed) {
-  renderGrid(els.shoppingLists, detailed.filter((l) => isPurchaseList(l.type)), urlBadges, 'Aucune liste de courses pour le moment.');
-  renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, 'Aucun espace tâches pour le moment.');
-  renderGrid(els.customLists, detailed.filter((l) => l.type === 'custom'), noBadges, 'Aucune liste libre pour le moment.');
+  renderGrid(els.shoppingLists, detailed.filter((l) => isPurchaseList(l.type)), urlBadges, t('dashboard.emptyShopping'));
+  renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, t('dashboard.emptyTodo'));
+  renderGrid(els.customLists, detailed.filter((l) => l.type === 'custom'), noBadges, t('dashboard.emptyCustom'));
 }
 
 // Renders the dashboard purely from the local IndexedDB mirror, with no
@@ -1517,6 +1681,15 @@ function registerServiceWorker() {
       updateNetworkStatus();
       refreshNotifications();
     }
+    // 'trakka-sync-status' is the finer-grained sibling of the message
+    // above — sent on every queue mutation, not just once a flush attempt
+    // fully finishes, so the header badge and the per-list/per-item dots
+    // can react immediately instead of only once refreshVisibleView's own
+    // network round-trip resolves. See handleSyncStatusMessage's own
+    // comment for the full state machine.
+    if (event.data && event.data.type === 'trakka-sync-status') {
+      handleSyncStatusMessage(event.data);
+    }
   });
 }
 
@@ -1586,6 +1759,11 @@ async function hydrateFromCache() {
   updateManageMembersButton();
   updateRenameHouseButton();
 
+  // Warmed before the first render below (rather than left to whenever the
+  // next queue mutation happens to broadcast) so a leftover, never-flushed
+  // offline queue from a previous session already shows its "unsynced
+  // changes" dots on the very first paint, not only once something changes.
+  await refreshPendingChangeIndicators();
   await renderDashboardFromCache();
 
   // Also warm the custom-categories ("Espaces") mirror here, not just lists/

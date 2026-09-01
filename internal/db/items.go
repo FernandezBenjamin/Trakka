@@ -206,6 +206,60 @@ func (d *DB) UpdateItemImageIfMissing(ctx context.Context, id int64, url string,
 	return nil
 }
 
+// ReorderItems assigns each item in itemIDs a new position matching its
+// index in the slice (0-based), so ListItemsByList/GetList's own `ORDER BY
+// position ASC, id ASC` reflects the new order immediately afterward.
+// itemIDs must be exactly a permutation of listID's current items — every
+// current item named once, nothing else — or ErrInvalidReorder is returned
+// without writing anything; a partial list would leave the omitted items'
+// positions ambiguous relative to the reordered ones, and silently
+// accepting an id from a different list would let a caller who only has
+// write access to listID reorder items out from under a list they don't
+// control. Runs as a single transaction so a failure partway through can
+// never leave positions in a mixed old/new state. Returns the list's items
+// in their new order (equivalent to a fresh ListItemsByList call).
+func (d *DB) ReorderItems(ctx context.Context, listID int64, itemIDs []int64) ([]*models.Item, error) {
+	current, err := d.ListItemsByList(ctx, listID)
+	if err != nil {
+		return nil, err
+	}
+	if len(itemIDs) != len(current) {
+		return nil, ErrInvalidReorder
+	}
+	currentIDs := make(map[int64]bool, len(current))
+	for _, item := range current {
+		currentIDs[item.ID] = true
+	}
+	seen := make(map[int64]bool, len(itemIDs))
+	for _, id := range itemIDs {
+		if seen[id] || !currentIDs[id] {
+			return nil, ErrInvalidReorder
+		}
+		seen[id] = true
+	}
+
+	tx, err := d.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("beginning reorder transaction for list %d: %w", listID, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once committed
+
+	for position, id := range itemIDs {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE items SET position = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND list_id = ?`,
+			position, id, listID,
+		); err != nil {
+			return nil, fmt.Errorf("updating position for item %d: %w", id, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing reorder transaction for list %d: %w", listID, err)
+	}
+
+	return d.ListItemsByList(ctx, listID)
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

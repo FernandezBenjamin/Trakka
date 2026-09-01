@@ -203,6 +203,33 @@ body {
   bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* Same env(safe-area-inset-bottom) reasoning as the FAB above, applied to
+   the fixed "Valider l'ordre"/"Annuler" bar shown while reorder mode
+   (static/js/reorder.js) is active, so its buttons never sit under a
+   notched phone's home-indicator/gesture area in fullscreen PWA mode. */
+#reorder-actions-bar {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Drag handle cursor + touch behavior for reorder mode's rows
+   (static/js/reorder.js). `touch-action: none` on the handle specifically
+   (not the whole row) is what lets the touch-drag JS fully own vertical
+   movement starting from a handle press, without the browser's own native
+   scroll ever competing with it — the rest of a long reorder list is left
+   alone and stays natively scrollable, since only the handle carries this
+   rule. `.dragging` (added while a row is actively being moved, by either
+   the HTML5 DnD path or the touch path) dims the row being carried so the
+   list's new order reads clearly through it. */
+.reorder-handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.reorder-row.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
 /* iOS/iPadOS Safari (and some Android WebViews) force-zoom the whole page
    on focus of any text-entry control whose *computed* font-size is below
    16px — this is a hardcoded WebKit heuristic, not a preference, and it

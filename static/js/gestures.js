@@ -158,9 +158,15 @@ if (IS_TOUCH_DEVICE) {
         // (see base.css) that this gesture's own visual "pull" would
         // otherwise visually fight with for no benefit, since it's already
         // scrolled fully left whenever this zone is reachable on it anyway.
+        // .reorder-row (static/js/reorder.js) is excluded for the same
+        // reason as .swipe-item: a card's own drag handle can sit close
+        // enough to the left edge on a narrow phone to fall inside
+        // EDGE_BACK_ZONE_PX, and a manual reorder drag must never be
+        // hijacked into an edge-back navigation gesture instead.
         if (
           touch.clientX > EDGE_BACK_ZONE_PX ||
           event.target.closest('.swipe-item') ||
+          event.target.closest('.reorder-row') ||
           event.target.closest('#dashboard-tabs')
         ) {
           tracking = false;

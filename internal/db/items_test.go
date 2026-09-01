@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -299,6 +300,84 @@ func TestUrgentItemPersistence(t *testing.T) {
 		}
 		if updated.IsUrgent {
 			t.Fatal("expected is_urgent to be cleared")
+		}
+	})
+}
+
+// TestReorderItems exercises db.ReorderItems: the happy path (positions end
+// up matching the requested order, both by re-fetching the items and by
+// checking ListItemsByList's own ordering), and the validation that rejects
+// anything short of an exact permutation of the list's current items.
+func TestReorderItems(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	house, err := d.CreateHouseWithOwner(ctx, "Maison Test", mustCreateUser(t, ctx, d))
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil, "")
+	if err != nil {
+		t.Fatalf("creating list: %v", err)
+	}
+
+	itemA, err := d.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false)
+	if err != nil {
+		t.Fatalf("creating item A: %v", err)
+	}
+	itemB, err := d.CreateItem(ctx, list.ID, "Pain", nil, 1, nil, false, 0, nil, nil, nil, nil, false)
+	if err != nil {
+		t.Fatalf("creating item B: %v", err)
+	}
+	itemC, err := d.CreateItem(ctx, list.ID, "Beurre", nil, 1, nil, false, 0, nil, nil, nil, nil, false)
+	if err != nil {
+		t.Fatalf("creating item C: %v", err)
+	}
+
+	t.Run("reorders and persists new positions", func(t *testing.T) {
+		reordered, err := d.ReorderItems(ctx, list.ID, []int64{itemC.ID, itemA.ID, itemB.ID})
+		if err != nil {
+			t.Fatalf("ReorderItems: %v", err)
+		}
+		if len(reordered) != 3 || reordered[0].ID != itemC.ID || reordered[1].ID != itemA.ID || reordered[2].ID != itemB.ID {
+			t.Fatalf("unexpected order in response: %+v", reordered)
+		}
+
+		fromScratch, err := d.ListItemsByList(ctx, list.ID)
+		if err != nil {
+			t.Fatalf("ListItemsByList: %v", err)
+		}
+		if len(fromScratch) != 3 || fromScratch[0].ID != itemC.ID || fromScratch[1].ID != itemA.ID || fromScratch[2].ID != itemB.ID {
+			t.Fatalf("unexpected persisted order: %+v", fromScratch)
+		}
+		if fromScratch[0].Position != 0 || fromScratch[1].Position != 1 || fromScratch[2].Position != 2 {
+			t.Fatalf("expected sequential 0-based positions, got %d/%d/%d", fromScratch[0].Position, fromScratch[1].Position, fromScratch[2].Position)
+		}
+	})
+
+	t.Run("rejects a partial list", func(t *testing.T) {
+		if _, err := d.ReorderItems(ctx, list.ID, []int64{itemA.ID, itemB.ID}); !errors.Is(err, ErrInvalidReorder) {
+			t.Fatalf("expected ErrInvalidReorder for a partial list, got %v", err)
+		}
+	})
+
+	t.Run("rejects a duplicated id", func(t *testing.T) {
+		if _, err := d.ReorderItems(ctx, list.ID, []int64{itemA.ID, itemA.ID, itemB.ID}); !errors.Is(err, ErrInvalidReorder) {
+			t.Fatalf("expected ErrInvalidReorder for a duplicated id, got %v", err)
+		}
+	})
+
+	t.Run("rejects an id from a different list", func(t *testing.T) {
+		otherList, err := d.CreateList(ctx, "Autre liste", "shopping", house.ID, nil, "")
+		if err != nil {
+			t.Fatalf("creating other list: %v", err)
+		}
+		foreignItem, err := d.CreateItem(ctx, otherList.ID, "Intrus", nil, 1, nil, false, 0, nil, nil, nil, nil, false)
+		if err != nil {
+			t.Fatalf("creating foreign item: %v", err)
+		}
+		if _, err := d.ReorderItems(ctx, list.ID, []int64{itemA.ID, itemB.ID, foreignItem.ID}); !errors.Is(err, ErrInvalidReorder) {
+			t.Fatalf("expected ErrInvalidReorder for a foreign item id, got %v", err)
 		}
 	})
 }

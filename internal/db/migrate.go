@@ -138,6 +138,26 @@ func setSchemaVersion(tx *sql.Tx, version int) error {
 	return nil
 }
 
+// legacySchemaVersion is the fixed version a pre-existing, pre-engine
+// database (see hasExistingSchema) is adopted at — never "whatever the
+// latest migration happens to be today". Migrations 1 through
+// legacySchemaVersion reconstruct exactly what the old, unversioned
+// schema.sql + addColumnIfMissing() code already applied to any database
+// that ever started successfully (see the package doc comment above
+// loadMigrations' sibling functions for that history); every migration
+// numbered higher is a genuine post-engine schema change that such a
+// database has never seen, no matter how long ago it predates the engine or
+// how many migrations have since been added to the source tree. This must
+// never be bumped — it's a historical fact about the moment the versioned
+// engine replaced the old system, not a moving target. Getting this wrong
+// silently strands a legacy database missing every migration after it,
+// while user_version claims it's fully up to date — exactly the bug this
+// constant exists to prevent (discovered live: a database last touched by
+// pre-engine code, first opened by an engine-aware binary long after
+// migrations 10-14 already existed in the tree, jumped straight to
+// user_version=14 without ever running 10-14's SQL).
+const legacySchemaVersion = 9
+
 // migrate brings the database's schema up to the latest known version. On
 // every startup:
 //
@@ -146,15 +166,18 @@ func setSchemaVersion(tx *sql.Tx, version int) error {
 //     one step at a time, ending in the same shape as any other case below.
 //  2. A database that predates this migration system (PRAGMA user_version
 //     is still 0, SQLite's default for a file that's never had it set, but
-//     tables already exist) is adopted at the latest version without
-//     running any migration SQL — see hasExistingSchema for why this is
-//     always safe and, in fact, necessary rather than optional.
-//  3. An already-versioned database (current > 0) applies only the
-//     migrations newer than its current version — the ordinary "pull a new
-//     release" path this system exists for. This is the one case preceded
-//     by a hot backup (see backupBeforeMigration), since it's the only one
-//     applying migration SQL this exact binary has never run before to a
-//     database that might already hold real user data.
+//     tables already exist) is adopted at legacySchemaVersion without
+//     running any migration SQL for versions up to that point — see
+//     hasExistingSchema for why that much is always safe. Anything newer
+//     than legacySchemaVersion is a real post-engine migration this
+//     database has genuinely never run, so it falls through to case 3
+//     below in the very same call, exactly like an already-versioned
+//     database that's simply behind.
+//  3. A database at a known version below latest (whether just adopted in
+//     case 2 or already-versioned to begin with) applies only the
+//     migrations newer than its current version, preceded by a hot backup
+//     (see backupBeforeMigration) — the ordinary "pull a new release" path
+//     this system exists for.
 func migrate(conn *sql.DB, dbPath string, logger *slog.Logger) error {
 	migrations, err := loadMigrations()
 	if err != nil {
@@ -170,23 +193,25 @@ func migrate(conn *sql.DB, dbPath string, logger *slog.Logger) error {
 		return fmt.Errorf("reading schema version: %w", err)
 	}
 
-	if current >= latest {
-		return nil
-	}
-
 	if current == 0 {
 		legacy, err := hasExistingSchema(conn)
 		if err != nil {
 			return fmt.Errorf("checking for a pre-existing schema: %w", err)
 		}
 		if legacy {
-			if _, err := conn.Exec(fmt.Sprintf("PRAGMA user_version = %d", latest)); err != nil {
-				return fmt.Errorf("adopting pre-existing database at schema version %d: %w", latest, err)
+			if _, err := conn.Exec(fmt.Sprintf("PRAGMA user_version = %d", legacySchemaVersion)); err != nil {
+				return fmt.Errorf("adopting pre-existing database at schema version %d: %w", legacySchemaVersion, err)
 			}
-			logger.Info("adopted pre-existing database into versioned schema migrations", "version", latest)
-			return nil
+			current = legacySchemaVersion
+			logger.Info("adopted pre-existing database into versioned schema migrations", "version", legacySchemaVersion)
 		}
-	} else {
+	}
+
+	if current >= latest {
+		return nil
+	}
+
+	if current > 0 {
 		if err := backupBeforeMigration(conn, dbPath, current, latest, logger); err != nil {
 			return fmt.Errorf("backing up database before migration: %w", err)
 		}

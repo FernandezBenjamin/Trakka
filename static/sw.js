@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v40';
-const RUNTIME_CACHE = 'trakka-runtime-v40';
+const SHELL_CACHE = 'trakka-shell-v44';
+const RUNTIME_CACHE = 'trakka-runtime-v44';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -24,6 +24,7 @@ const APP_SHELL = [
   '/js/undo.js',
   '/js/list_view.js',
   '/js/gestures.js',
+  '/js/reorder.js',
   '/js/planning.js',
   '/js/urgent.js',
   '/js/spaces.js',
@@ -342,10 +343,16 @@ async function mirrorWriteResult(method, url, response) {
 
   const houseMatch = url.pathname.match(/^\/api\/v1\/houses\/(\d+)$/);
   const listMatch = url.pathname.match(/^\/api\/v1\/lists\/(\d+)$/);
+  const reorderMatch = url.pathname.match(/^\/api\/v1\/lists\/(\d+)\/reorder$/);
   const itemMatch = url.pathname.match(/^\/api\/v1\/items\/(\d+)$/);
   const categoryMatch = url.pathname.match(/^\/api\/v1\/custom-categories\/(\d+)$/);
 
-  if (url.pathname === '/api/v1/houses' && method === 'POST' && data) {
+  if (reorderMatch && method === 'PUT' && Array.isArray(data)) {
+    // The response is every item in the list, freshly re-ordered — mirror
+    // all of them in one go rather than one at a time, the same bulk helper
+    // GET /api/v1/lists/{id}'s own item-array mirroring already uses.
+    await self.TrakkaDB.putItems(data);
+  } else if (url.pathname === '/api/v1/houses' && method === 'POST' && data) {
     await self.TrakkaDB.putHouse(data);
   } else if (houseMatch && method === 'PUT' && data) {
     await self.TrakkaDB.putHouse(data);
@@ -425,6 +432,30 @@ async function queueOfflineWrite(method, url, body) {
     );
   }
 
+  // A manual drag-and-drop reorder (PUT /lists/{id}/reorder) sends the
+  // complete new ordering as item_ids. Unlike houses/admin settings/shares
+  // above, this is a plain per-list item mutation exactly like a PATCH on a
+  // single item's `position` would be — there is no reason it needs to be
+  // exempted from the offline queue, and previously blocking it with a hard
+  // 503 here is what surfaced as "Cette action nécessite une connexion
+  // réseau." mid-drag (see the Offline-First requirement in
+  // CLAUDE.md/docs/PWA.md). queueOfflineReorder below applies the new
+  // ordering straight to the local IndexedDB mirror (so it survives a reload
+  // even before the request ever reaches the server) and queues the request
+  // for replay once back online, synthesizing the same shape a real 200
+  // response carries — every item in the list, in its new order — so
+  // reorder.js's commitReorder can assign it straight into
+  // state.currentList.items exactly as it would for a live response.
+  // reorder.js's own reorderAvailable() keeps the "⇅ Réordonner" button
+  // hidden whenever any item still has an offline-queued temp-item-* id, so
+  // item_ids here is always a set of real, numeric ids already present in
+  // the mirror — no temp-id resolution is needed the way pending item/list
+  // creates require below.
+  const reorderMatch = pathname.match(/^\/api\/v1\/lists\/([^/]+)\/reorder$/);
+  if (reorderMatch) {
+    return queueOfflineReorder(pathname, decodeId(reorderMatch[1]), body, headers, now);
+  }
+
   // Editing/deleting something that was itself created offline and never
   // reached the server: resolve it against the pending "create" entry
   // directly instead of queuing a request against an id the API has never
@@ -438,8 +469,12 @@ async function queueOfflineWrite(method, url, body) {
     const tempId = generateTempId('temp-list');
     const list = { id: tempId, house_id: body?.house_id, name: body?.name ?? '', type: body?.type || 'shopping', created_at: now, updated_at: now };
     await self.TrakkaDB.putList(list);
-    await self.TrakkaDB.enqueueRequest({ method, path: pathname, body, tempId, dependsOnListTempId: null, createdAt: now });
+    // listId: tempId — this queue entry *is* the list's own still-pending
+    // create, so it's attributed to itself (see the listId/itemId doc
+    // comment above resolveQueueTargetIds below).
+    await self.TrakkaDB.enqueueRequest({ method, path: pathname, body, tempId, dependsOnListTempId: null, listId: tempId, itemId: null, createdAt: now });
     scheduleSync();
+    await broadcastQueueState(false);
     return new Response(JSON.stringify(list), { status: 202, headers });
   }
 
@@ -460,15 +495,21 @@ async function queueOfflineWrite(method, url, body) {
       updated_at: now,
     };
     await self.TrakkaDB.putItem(item);
-    await self.TrakkaDB.enqueueRequest({ method, path: pathname, body, tempId, dependsOnListTempId, createdAt: now });
+    await self.TrakkaDB.enqueueRequest({ method, path: pathname, body, tempId, dependsOnListTempId, listId, itemId: tempId, createdAt: now });
     scheduleSync();
+    await broadcastQueueState(false);
     return new Response(JSON.stringify(item), { status: 202, headers });
   }
 
-  // Editing/deleting an already-synced list or item.
-  await self.TrakkaDB.enqueueRequest({ method, path: pathname, body, tempId: null, dependsOnListTempId: null, createdAt: now });
+  // Editing/deleting an already-synced list or item. Resolved BEFORE
+  // enqueueing/applyOptimisticEdit runs, since a DELETE's optimistic apply
+  // removes the row from the mirror — after that point there would be
+  // nothing left to look list_id up from (see resolveQueueTargetIds).
+  const { listId: targetListId, itemId: targetItemId } = await resolveQueueTargetIds(pathname, body);
+  await self.TrakkaDB.enqueueRequest({ method, path: pathname, body, tempId: null, dependsOnListTempId: null, listId: targetListId, itemId: targetItemId, createdAt: now });
   scheduleSync();
   const optimistic = await applyOptimisticEdit(pathname, method, body);
+  await broadcastQueueState(false);
   return new Response(JSON.stringify(optimistic ?? { queued: true }), { status: 202, headers });
 }
 
@@ -503,6 +544,59 @@ async function applyOptimisticEdit(pathname, method, body) {
   }
 
   return null;
+}
+
+// Resolves which list (and, for an item write, which item) a queued
+// list-or-item write should be attributed to. Every queue entry carries a
+// listId (and itemId, for an item-scoped write) precisely so app.js's
+// "unsynced changes" indicator (refreshPendingChangeIndicators, driving the
+// small dot on a list's card/detail header and an item's row) can be
+// derived with one read of the queue, without re-parsing every entry's HTTP
+// path itself. Must run BEFORE applyOptimisticEdit, since a queued DELETE's
+// optimistic apply removes the row from the IndexedDB mirror — after that
+// point there would be nothing left to look list_id up from.
+async function resolveQueueTargetIds(pathname, body) {
+  const listMatch = pathname.match(/^\/api\/v1\/lists\/([^/]+)$/);
+  if (listMatch) {
+    return { listId: decodeId(listMatch[1]), itemId: null };
+  }
+  const itemMatch = pathname.match(/^\/api\/v1\/items\/([^/]+)$/);
+  if (itemMatch) {
+    const id = decodeId(itemMatch[1]);
+    const existing = await self.TrakkaDB.getItem(id);
+    const listId = existing ? existing.list_id : (body && body.list_id !== undefined ? body.list_id : null);
+    return { listId, itemId: id };
+  }
+  return { listId: null, itemId: null };
+}
+
+// Applies a drag-and-drop reorder locally (position = index in item_ids,
+// matching db.ReorderItems's own server-side assignment exactly) and queues
+// the PUT for replay once back online. Returns every item currently mirrored
+// under this list, freshly sorted, the same shape as a live 200 response —
+// commitReorder (reorder.js) reads this straight into
+// state.currentList.items. Any id in item_ids that isn't in the local mirror
+// (shouldn't happen — see the comment at this function's one call site) is
+// silently skipped rather than failing the whole request.
+async function queueOfflineReorder(pathname, listId, body, headers, now) {
+  const itemIds = Array.isArray(body?.item_ids) ? body.item_ids : [];
+  const items = await self.TrakkaDB.getItemsByList(listId);
+  const byId = new Map(items.map((item) => [String(item.id), item]));
+
+  const reordered = [];
+  itemIds.forEach((id, index) => {
+    const item = byId.get(String(id));
+    if (item) reordered.push({ ...item, position: index, updated_at: now });
+  });
+  if (reordered.length) await self.TrakkaDB.putItems(reordered);
+
+  await self.TrakkaDB.enqueueRequest({ method: 'PUT', path: pathname, body, tempId: null, dependsOnListTempId: null, listId, itemId: null, createdAt: now });
+  scheduleSync();
+  await broadcastQueueState(false);
+
+  const all = await self.TrakkaDB.getItemsByList(listId);
+  all.sort((a, b) => a.position - b.position || a.id - b.id);
+  return new Response(JSON.stringify(all), { status: 202, headers });
 }
 
 // ---------------------------------------------------------------------------
@@ -571,7 +665,12 @@ async function resolveAgainstPendingCreate(tempId, method, body, headers) {
     } else {
       await self.TrakkaDB.deleteItem(tempId);
     }
-    return new Response(null, { status: 204 });
+    await broadcastQueueState(false);
+    // headers carries X-Trakka-Queued — apiRequest (app.js) checks that on
+    // every response to know it needs to refresh its pending-list/item id
+    // caches, so even this body-less cancellation response has to carry it,
+    // same as every other response this function/queueOfflineWrite return.
+    return new Response(null, { status: 204, headers });
   }
 
   if (entry) {
@@ -600,9 +699,22 @@ async function flushQueue() {
   if (isFlushing) return;
   isFlushing = true;
   let processedAny = false;
+  // sw.js's own fetch handler opportunistically calls flushQueue() on
+  // *every* same-origin request while online (see the top-level 'fetch'
+  // listener above) — hadEntries is what keeps that from broadcasting a
+  // 'trakka-sync-status' message (and triggering a client-side repaint) on
+  // every single ordinary API call once the queue is already empty; it only
+  // ever fires when this attempt actually found something to do.
+  let hadEntries = false;
 
   try {
     const queue = await self.TrakkaDB.getQueue();
+    hadEntries = queue.length > 0;
+    // "syncing" only ever means "flushQueue is actively replaying entries
+    // right now" — skipped entirely when there's nothing to replay, so
+    // reconnecting with an empty queue never flashes a spinner for no
+    // reason.
+    if (hadEntries) await broadcastQueueState(true, queue.length);
     for (const entry of queue) {
       try {
         const response = await fetch(entry.path, {
@@ -643,7 +755,27 @@ async function flushQueue() {
     isFlushing = false;
   }
 
-  if (processedAny) await notifyClients();
+  // Broadcast the final state whenever this attempt had anything to do,
+  // whether or not the queue fully drained (still offline, or a 401 left
+  // the rest queued): the header indicator and the per-list/per-item dots
+  // need an up-to-date pending count either way, not just on a full
+  // success. Skipped when hadEntries is false — see its own comment above.
+  if (hadEntries) await broadcastQueueState(false);
+  if (processedAny) await notifyClients({ type: 'trakka-sync-complete' });
+}
+
+// Tells every open tab the offline sync queue's current size, and whether
+// flushQueue is actively replaying it right now — drives the header's
+// pending/syncing/synced indicator and the per-list/per-item "unsynced
+// changes" dots (see app.js's handleSyncStatusMessage/
+// refreshPendingChangeIndicators), and the trakka:sync-pending/
+// trakka:sync-complete window events the rest of the UI listens for.
+// Called after every point that adds to or removes from the queue
+// (queueOfflineWrite/queueOfflineReorder/resolveAgainstPendingCreate above)
+// and at the start/end of flushQueue itself.
+async function broadcastQueueState(syncing, pendingOverride) {
+  const pending = pendingOverride !== undefined ? pendingOverride : (await self.TrakkaDB.getQueue()).length;
+  await notifyClients({ type: 'trakka-sync-status', pending, syncing });
 }
 
 async function remapTempId(queue, tempId, realId) {
@@ -682,10 +814,13 @@ async function remapTempId(queue, tempId, realId) {
   }
 }
 
-async function notifyClients() {
+// payload defaults to the original 'trakka-sync-complete' shape this
+// function always sent before it grew a parameter — broadcastQueueState
+// above is what actually sends the newer 'trakka-sync-status' payload.
+async function notifyClients(payload = { type: 'trakka-sync-complete' }) {
   const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
   for (const client of clients) {
-    client.postMessage({ type: 'trakka-sync-complete' });
+    client.postMessage(payload);
   }
 }
 

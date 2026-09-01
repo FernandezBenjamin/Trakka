@@ -486,3 +486,17 @@ None of the following is a vulnerability; all are hardening or hygiene items for
 | **Overall** | **6.8 / 10 (B)** | **9.4 / 10 (A)** | |
 
 The gap between A and a perfect score is now essentially items 2, 6 and 7 of §5 — a build-step decision, an audit log, and backup retention — none of which is an exploitable weakness.
+
+---
+
+## 7. Post-audit addendum
+
+### 2026-09-01 — M-02 implementation bug: `Origin: null` on a legitimate navigation
+
+**What happened.** M-02's remediation (`requireSameOriginWrite`, §3.4) was implemented slightly stricter than the design this document describes: it rejected *any* non-empty `Origin` header that didn't match the request's host — including the literal opaque value `"null"` — rather than falling through to the `Sec-Fetch-Site` check the design above already calls for ("*otherwise, Sec-Fetch-Site: cross-site is rejected*"). In practice this broke `POST /auth/login` and `POST /auth/register` in every standards-compliant browser: per the [Fetch spec](https://fetch.spec.whatwg.org/#origin-header), a **navigational** request (an HTML `<form method="post">`, as opposed to a `fetch()` call) whose page has `Referrer-Policy: no-referrer` in effect — which `SecurityHeaders` sets on every response — serializes `Origin` as `"null"` even when the request is genuinely same-origin. `/auth/login`/`/auth/register` are the only two navigational, non-`fetch()` POSTs in the whole app, which is why nothing else broke.
+
+**Why this is a correctness fix, not a security downgrade.** `Origin: null` is exactly the value an attacker-controlled sandboxed iframe would also send when forging a cross-origin POST — that's the scenario the strict check was written to catch, and the fix does not weaken that: an opaque origin can never be "same-site" with anything, so `Sec-Fetch-Site` still reads `cross-site` for a genuine attack and the request is still rejected. The bug only ever rejected *too much* (a false positive breaking legitimate logins), never *too little* — it was a functional defect, not an exploitable gap, and the CSRF score/finding above stands unchanged.
+
+**Fix.** `internal/handlers/csrf.go`'s `requireSameOriginWrite` now treats an `Origin` of `""` (absent) and `"null"` (opaque) identically: both fall back to `Sec-Fetch-Site`. Three test cases were added to `TestRequireSameOriginWrite` (`internal/handlers/security_test.go`) beyond the original 10: the fixed false positive (`Origin: null` + `Sec-Fetch-Site: same-origin` → allowed), confirmation the attack path stays blocked (`Origin: null` + `Sec-Fetch-Site: cross-site` → `403`), and the one narrow residual gap this leaves — a browser old enough to predate Fetch Metadata (`Origin: null`, no `Sec-Fetch-Site` at all) — accepted deliberately as the same "no usable signal → allow" trade-off already made for a non-browser client, and made harmless in practice by the layered defenses M-01's double-submit `csrf_token` (auth forms) and `SameSite=Lax` (everything else) already provide independently of this check.
+
+**Found by:** live user report of `POST /auth/login` failing in Brave, Edge, and a fresh Firefox install, root-caused from the actual browser request headers (`sec-fetch-site: same-origin` alongside `origin: null`) and confirmed via `curl -H "Origin: null"` reproducing the exact `403` before the fix was written.
