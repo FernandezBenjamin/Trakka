@@ -160,6 +160,53 @@ async function restoreLastView() {
   }
 }
 
+// Consumes a ?list={id} deep link — the URL a push notification's
+// notificationclick opens when no Trakka tab is already open (see
+// sw.js's own comment on that handler; an already-open tab is routed
+// client-side instead, via handleNotificationClickMessage below) — in
+// preference to restoreLastView's own saved-tab/list preference, since a
+// user who just tapped a notification clearly wants the list it names, not
+// wherever they happened to leave off last. Falls through to
+// restoreLastView unchanged when there is no such query param, which is
+// the ordinary case for every plain reload/relaunch. The query string is
+// stripped via history.replaceState once consumed so a later reload of the
+// same tab doesn't keep re-triggering the same deep link, and so it can
+// never fight with saveLastView's own bookkeeping of what's currently open.
+async function handleDeepLinkOrRestore() {
+  const params = new URLSearchParams(window.location.search);
+  const listIdRaw = params.get('list');
+  const listId = Number(listIdRaw);
+
+  if (listIdRaw !== null && Number.isInteger(listId) && listId > 0) {
+    history.replaceState(null, '', window.location.pathname);
+    // silent: a deleted/no-longer-accessible list must fail quietly back to
+    // the dashboard rather than greeting a notification tap with an error
+    // banner — same reasoning restoreLastView's own selectList call uses.
+    await selectList(listId, { silent: true });
+    return;
+  }
+
+  await restoreLastView();
+}
+
+// Routes a notification click's target list into an *already-open* tab
+// without a full reload — the counterpart to handleDeepLinkOrRestore above
+// for the case sw.js's notificationclick handler found a client to focus
+// instead of opening a fresh window (see push.js, which is what actually
+// registers the 'trakka-notification-click' listener this responds to).
+function handleNotificationClickMessage(url) {
+  let listId = null;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    listId = Number(parsed.searchParams.get('list'));
+  } catch {
+    return;
+  }
+  if (Number.isInteger(listId) && listId > 0) {
+    selectList(listId, { silent: true });
+  }
+}
+
 // Ids of lists currently sitting in their undo grace period (see
 // removeList below) — a list in here is hidden from the dashboard even
 // though it hasn't actually been deleted server-side yet, so a re-render
@@ -1690,6 +1737,14 @@ function registerServiceWorker() {
     if (event.data && event.data.type === 'trakka-sync-status') {
       handleSyncStatusMessage(event.data);
     }
+    // Posted by sw.js's notificationclick handler when it focused an
+    // already-open tab instead of opening a fresh one — routes to the
+    // notification's target list client-side rather than relying on the
+    // unevenly supported WindowClient.navigate(). See
+    // handleNotificationClickMessage above.
+    if (event.data && event.data.type === 'trakka-notification-click') {
+      handleNotificationClickMessage(event.data.url);
+    }
   });
 }
 
@@ -1846,10 +1901,12 @@ async function init() {
   // dot as a side effect) so the tab reflects reality immediately, without
   // waiting for it to be opened.
   await loadCustomCategories();
-  // Reopens the last-visited tab/list, if the preference is on and one was
-  // saved — must run last, once everything it might need (the dashboard,
-  // the current house, custom categories for the "Espaces" tab) is ready.
-  await restoreLastView();
+  // Reopens a push notification's ?list= deep link if this load came from
+  // one, otherwise the last-visited tab/list per the "keep last page"
+  // preference (see handleDeepLinkOrRestore/restoreLastView above) — must
+  // run last, once everything either might need (the dashboard, the
+  // current house, custom categories for the "Espaces" tab) is ready.
+  await handleDeepLinkOrRestore();
 }
 
 // Re-render everything that embeds translated strings inside JS-generated

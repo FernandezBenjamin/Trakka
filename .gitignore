@@ -3,3 +3,12 @@
 *.db
 *.db-wal
 *.db-shm
+
+# Secrets — this app is env-var-configured only (see CLAUDE.md), so a local
+# .env is the usual place a developer keeps VAPID/OIDC/session secrets for
+# `go run`/docker compose; never commit one, or any private key material.
+.env
+.env.*
+!.env.example
+*.pem
+*.key

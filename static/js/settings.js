@@ -32,6 +32,11 @@ function openUserSettingsModal() {
   // server value, falling back to the localStorage mirror if /me hasn't
   // resolved yet (e.g. opened while offline).
   userSettingsEls.keepLastPage.checked = isKeepLastPageEnabled();
+  // refreshPushToggleUI is defined in push.js — re-checked every time the
+  // modal opens (not just cached from an earlier check) since notification
+  // permission/subscription state can change outside the app at any time,
+  // most notably the user revoking it via the browser's own site settings.
+  refreshPushToggleUI();
   userSettingsEls.modal.hidden = false;
   document.body.classList.add('overflow-hidden');
 }

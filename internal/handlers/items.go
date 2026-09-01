@@ -51,17 +51,18 @@ func (app *Application) handleItemsIndex(w http.ResponseWriter, r *http.Request)
 
 func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		ListID            int64    `json:"list_id"`
-		Title             string   `json:"title"`
-		URL               string   `json:"url"`
-		Quantity          int      `json:"quantity"`
-		Price             *float64 `json:"price"`
-		Position          int      `json:"position"`
-		TargetMonth       string   `json:"target_month"`
-		DueDate           string   `json:"due_date"`
-		RecurrenceRule    string   `json:"recurrence_rule"`
-		RecurrenceEndDate string   `json:"recurrence_end_date"`
-		IsUrgent          bool     `json:"is_urgent"`
+		ListID                int64    `json:"list_id"`
+		Title                 string   `json:"title"`
+		URL                   string   `json:"url"`
+		Quantity              int      `json:"quantity"`
+		Price                 *float64 `json:"price"`
+		Position              int      `json:"position"`
+		TargetMonth           string   `json:"target_month"`
+		DueDate               string   `json:"due_date"`
+		RecurrenceRule        string   `json:"recurrence_rule"`
+		RecurrenceEndDate     string   `json:"recurrence_end_date"`
+		IsUrgent              bool     `json:"is_urgent"`
+		RecurrenceLeadMinutes *int     `json:"recurrence_lead_minutes"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -116,6 +117,10 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if in.RecurrenceLeadMinutes != nil && *in.RecurrenceLeadMinutes < 0 {
+		writeError(w, http.StatusBadRequest, "recurrence_lead_minutes cannot be negative")
+		return
+	}
 
 	list, err := app.DB.GetList(r.Context(), in.ListID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -130,12 +135,13 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 	}
 
 	item, err := app.DB.CreateItem(r.Context(), in.ListID, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, in.Position,
-		nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate), in.IsUrgent)
+		nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate), in.IsUrgent, in.RecurrenceLeadMinutes)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	item.PriceStatus = app.scrapeProductInfo(item, "")
+	app.notifyListChange(list, userFromContext(r), item.Title, false)
 	writeJSON(w, http.StatusCreated, item)
 }
 
@@ -179,17 +185,18 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	previousURL := stringValue(existing.URL)
 
 	var in struct {
-		Title             string   `json:"title"`
-		URL               string   `json:"url"`
-		Quantity          int      `json:"quantity"`
-		Price             *float64 `json:"price"`
-		Done              bool     `json:"done"`
-		Position          int      `json:"position"`
-		TargetMonth       string   `json:"target_month"`
-		DueDate           string   `json:"due_date"`
-		RecurrenceRule    string   `json:"recurrence_rule"`
-		RecurrenceEndDate string   `json:"recurrence_end_date"`
-		IsUrgent          bool     `json:"is_urgent"`
+		Title                 string   `json:"title"`
+		URL                   string   `json:"url"`
+		Quantity              int      `json:"quantity"`
+		Price                 *float64 `json:"price"`
+		Done                  bool     `json:"done"`
+		Position              int      `json:"position"`
+		TargetMonth           string   `json:"target_month"`
+		DueDate               string   `json:"due_date"`
+		RecurrenceRule        string   `json:"recurrence_rule"`
+		RecurrenceEndDate     string   `json:"recurrence_end_date"`
+		IsUrgent              bool     `json:"is_urgent"`
+		RecurrenceLeadMinutes *int     `json:"recurrence_lead_minutes"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -240,6 +247,10 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if in.RecurrenceLeadMinutes != nil && *in.RecurrenceLeadMinutes < 0 {
+		writeError(w, http.StatusBadRequest, "recurrence_lead_minutes cannot be negative")
+		return
+	}
 
 	// A scraped image is tied to the url it was found on: if the url just
 	// changed to something new, the existing image no longer describes it
@@ -261,10 +272,18 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		RecurrenceRule:    nullableString(cleanRecurrenceRule),
 		RecurrenceEndDate: nullableString(cleanRecurrenceEndDate),
 	}
+	// Captured before applyRecurrenceCompletion runs: for a recurring item,
+	// that call flips advanced.Done back to false the moment it detects this
+	// same false→true transition, so checking advanced.Done afterward could
+	// no longer tell a genuine check-off apart from an item that was never
+	// touched — see notifyListChange below, which needs to know a check-off
+	// happened at all, regardless of whether the item then immediately
+	// un-checked itself for its next occurrence.
+	justCompleted := !existing.Done && in.Done
 	applyRecurrenceCompletion(advanced, existing.Done)
 
 	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, advanced.Done, in.Position,
-		nullableString(cleanMonth), advanced.DueDate, advanced.RecurrenceRule, advanced.RecurrenceEndDate, in.IsUrgent)
+		nullableString(cleanMonth), advanced.DueDate, advanced.RecurrenceRule, advanced.RecurrenceEndDate, in.IsUrgent, in.RecurrenceLeadMinutes)
 	if errors.Is(err, db.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "item not found")
 		return
@@ -273,6 +292,15 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	item.PriceStatus = app.scrapeProductInfo(item, previousURL)
+	// Only a genuine check-off notifies (see notifyListChange's own doc
+	// comment for why this is scoped to "add or check off" and not every
+	// field edit) — an ordinary PUT that never touched Done at all must not
+	// fire a "checked an item" push.
+	if justCompleted {
+		if list, listErr := app.DB.GetList(r.Context(), item.ListID); listErr == nil {
+			app.notifyListChange(list, userFromContext(r), item.Title, true)
+		}
+	}
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -285,17 +313,18 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	var in struct {
-		Title             *string         `json:"title"`
-		URL               *string         `json:"url"`
-		Quantity          *int            `json:"quantity"`
-		Price             json.RawMessage `json:"price"`
-		Done              *bool           `json:"done"`
-		Position          *int            `json:"position"`
-		TargetMonth       *string         `json:"target_month"`
-		DueDate           *string         `json:"due_date"`
-		RecurrenceRule    *string         `json:"recurrence_rule"`
-		RecurrenceEndDate *string         `json:"recurrence_end_date"`
-		IsUrgent          *bool           `json:"is_urgent"`
+		Title                 *string         `json:"title"`
+		URL                   *string         `json:"url"`
+		Quantity              *int            `json:"quantity"`
+		Price                 json.RawMessage `json:"price"`
+		Done                  *bool           `json:"done"`
+		Position              *int            `json:"position"`
+		TargetMonth           *string         `json:"target_month"`
+		DueDate               *string         `json:"due_date"`
+		RecurrenceRule        *string         `json:"recurrence_rule"`
+		RecurrenceEndDate     *string         `json:"recurrence_end_date"`
+		IsUrgent              *bool           `json:"is_urgent"`
+		RecurrenceLeadMinutes json.RawMessage `json:"recurrence_lead_minutes"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -428,6 +457,30 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	if in.IsUrgent != nil {
 		item.IsUrgent = *in.IsUrgent
 	}
+	// Same absent/null/number three-way as Price above: absent leaves
+	// item.RecurrenceLeadMinutes untouched, "null" clears the per-item
+	// override back to "use the instance default", a number sets it.
+	if in.RecurrenceLeadMinutes != nil {
+		if string(in.RecurrenceLeadMinutes) == "null" {
+			item.RecurrenceLeadMinutes = nil
+		} else {
+			var minutes int
+			if err := json.Unmarshal(in.RecurrenceLeadMinutes, &minutes); err != nil {
+				writeError(w, http.StatusBadRequest, "recurrence_lead_minutes must be a number")
+				return
+			}
+			if minutes < 0 {
+				writeError(w, http.StatusBadRequest, "recurrence_lead_minutes cannot be negative")
+				return
+			}
+			item.RecurrenceLeadMinutes = &minutes
+		}
+	}
+
+	// Captured before applyRecurrenceCompletion runs — see the identical
+	// comment in handleItemsUpdate for why this can't be read off
+	// item.Done after that call for a recurring item.
+	justCompleted := !previousDone && item.Done
 
 	// See applyRecurrenceCompletion: a recurring item being checked off
 	// (false → true) here advances due_date and flips Done back to false
@@ -435,12 +488,17 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	applyRecurrenceCompletion(item, previousDone)
 
 	updated, err := app.DB.UpdateItem(r.Context(), id, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL, item.Done, item.Position,
-		item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, item.IsUrgent)
+		item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, item.IsUrgent, item.RecurrenceLeadMinutes)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	updated.PriceStatus = app.scrapeProductInfo(updated, previousURL)
+	if justCompleted {
+		if list, listErr := app.DB.GetList(r.Context(), updated.ListID); listErr == nil {
+			app.notifyListChange(list, userFromContext(r), updated.Title, true)
+		}
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 

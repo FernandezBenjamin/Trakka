@@ -124,9 +124,17 @@ type Item struct {
 	// relationship to another field. The frontend sorts an unfinished urgent
 	// item to the top of its list and surfaces it in the cross-list
 	// "Achats & Tâches Urgentes" dashboard widget (static/js/urgent.js).
-	IsUrgent  bool   `json:"is_urgent"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	IsUrgent bool `json:"is_urgent"`
+	// RecurrenceLeadMinutes optionally overrides the instance-wide
+	// NOTIF_RECURRING_TASK_LEAD_TIME (internal/config) for this specific
+	// recurring item — how long before DueDate
+	// internal/handlers.RunRecurringDueScan sends a reminder push. Nil means
+	// "use the instance default"; meaningless unless RecurrenceRule is also
+	// set, the same relationship DueDate/RecurrenceEndDate already have to
+	// it.
+	RecurrenceLeadMinutes *int   `json:"recurrence_lead_minutes,omitempty"`
+	CreatedAt             string `json:"created_at"`
+	UpdatedAt             string `json:"updated_at"`
 	// PriceStatus is a transient, response-only field set by
 	// internal/handlers.scrapePrice after a create/update/patch — never
 	// persisted, and never populated by a plain GET (it's the zero value
@@ -400,4 +408,22 @@ type ListShare struct {
 var ValidSharePermissions = map[string]bool{
 	"read":  true,
 	"write": true,
+}
+
+// PushSubscription is what a browser's PushManager.subscribe() handed this
+// app, recorded against the user who granted it — see internal/webpush for
+// how Endpoint/P256dh/Auth are used to encrypt and address a push, and
+// internal/handlers/push.go for the subscribe/unsubscribe endpoints. Never
+// round-tripped back out via a GET endpoint beyond the confirmation
+// POST /api/v1/push/subscribe itself returns — there is no reason for a
+// client to ever read its own P256dh/Auth back, so those two are not even
+// JSON-tagged for output.
+type PushSubscription struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"-"`
+	Endpoint  string `json:"endpoint"`
+	P256dh    string `json:"-"`
+	Auth      string `json:"-"`
+	UserAgent string `json:"-"`
+	CreatedAt string `json:"created_at"`
 }

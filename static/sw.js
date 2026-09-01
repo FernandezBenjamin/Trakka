@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v44';
-const RUNTIME_CACHE = 'trakka-runtime-v44';
+const SHELL_CACHE = 'trakka-shell-v45';
+const RUNTIME_CACHE = 'trakka-runtime-v45';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -32,6 +32,7 @@ const APP_SHELL = [
   '/js/notifications.js',
   '/js/admin.js',
   '/js/settings.js',
+  '/js/push.js',
   '/js/install-help.js',
   '/css/base.css',
   '/css/tokens.css',
@@ -110,6 +111,65 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'flush-queue') {
     event.waitUntil(flushQueue());
   }
+});
+
+// ---------------------------------------------------------------------------
+// Web Push: a message from internal/handlers.sendToUsers
+// (internal/handlers/push.go), encrypted per RFC 8291 — decryption itself is
+// handled entirely by the browser/OS push stack before this event ever
+// fires; by the time 'push' runs, event.data is already the plaintext JSON
+// pushPayload {title, body, url} the Go backend sent. Every push this app
+// sends is a real, user-visible notification (never a data-only "silent
+// push" with no UI, which browsers restrict/penalize) — `silent: true` on
+// the Notification itself is what satisfies the "sans son, discrète" intent
+// instead: no sound/vibration, but still shown.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = {};
+  }
+  const title = data.title || 'Trakka';
+  const url = data.url || '/';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: '/icons/trakka-icon-192.png',
+      badge: '/icons/trakka-maskable-192.png',
+      silent: true,
+      tag: 'trakka-' + url,
+      data: { url },
+    })
+  );
+});
+
+// Clicking the notification focuses an already-open tab (and tells it,
+// via postMessage, which list to switch to client-side — see app.js's
+// handleNotificationClickMessage — rather than relying on the unevenly
+// supported WindowClient.navigate(), which an SPA has no real need for
+// anyway) or, with no tab open, opens a fresh one straight at the deep
+// link; static/js/app.js's own boot-time handleDeepLinkOrRestore reads that
+// URL's ?list= query param the same way either path ends up at the right
+// list.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.postMessage({ type: 'trakka-notification-click', url });
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(url);
+      }
+      return undefined;
+    })
+  );
 });
 
 // ---------------------------------------------------------------------------
