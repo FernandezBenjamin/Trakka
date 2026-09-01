@@ -1,3 +1,75 @@
+/* Applies the correct theme's background/text color immediately at first
+   paint, before a single Tailwind utility class exists. tailwind.js (the
+   vendored Play CDN runtime, ~400KB — see its own header comment) is loaded
+   with `defer` (see index.html) specifically so it never blocks the initial
+   parse/paint, but that means <body>'s own bg-white/dark:bg-slate-900
+   utility classes don't apply until it finishes running. Without this rule,
+   first paint would flash the browser's plain white-background/black-text
+   default regardless of the resolved theme, for as long as tailwind.js
+   takes to download+execute+inject its generated stylesheet. This uses the
+   same --tk-bg/--tk-text tokens theme-init.js's synchronous data-theme
+   attribute already drives (tokens.css, loaded as an ordinary blocking
+   <link>, so these custom properties are available immediately), so it's
+   correct from t=0 with no flash — and Tailwind's own utility classes
+   (class selectors, higher specificity than this plain element selector)
+   take over seamlessly once they load, with no visible change. */
+html, body {
+  background-color: var(--tk-bg);
+  color: var(--tk-text);
+}
+
+/* Loading skeletons: shimmering placeholder cards/lines shown in place of
+   real content while it's still loading, so a first-ever view of a screen
+   (or a slow mobile connection) shows visible structure immediately instead
+   of a blank area for several seconds. Two ways these get onto the page:
+   static markup already sitting inside a container in index.html (the
+   dashboard's three grids, and the Urgent/Budget/Espaces/Partagé-avec-moi
+   tabs' containers) that a view's first real render call silently replaces
+   via `container.replaceChildren()`, needing no JS to remove it — or
+   inserted just-in-time by JS right before a fetch begins (list_view.js's
+   selectList, for the item-list detail view, which doesn't exist in the DOM
+   until a list is actually opened). Purely decorative (`aria-hidden="true"`
+   on every skeleton element) — there is nothing here for a screen reader to
+   announce. `prefers-reduced-motion` disables the shimmer animation but
+   keeps the static placeholder shape, per WCAG 2.3.3. */
+@keyframes tk-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.tk-skeleton {
+  background-image: linear-gradient(
+    100deg,
+    var(--tk-surface) 30%,
+    var(--tk-surface-hover) 50%,
+    var(--tk-surface) 70%
+  );
+  background-size: 200% 100%;
+  animation: tk-skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-skeleton {
+    animation: none;
+  }
+}
+
+.tk-skeleton-card {
+  height: 6.5rem;
+  border: 1px solid var(--tk-border);
+}
+
+.tk-skeleton-row {
+  height: 3.25rem;
+  border: 1px solid var(--tk-border);
+}
+
+.tk-skeleton-block {
+  height: 5rem;
+  border: 1px solid var(--tk-border);
+}
+
 /* The browser's built-in `[hidden] { display: none }` rule is UA-origin,
    which the CSS cascade always ranks below any author-origin rule at equal
    importance — including Tailwind's `.flex`/`.grid`/`.block` utilities —

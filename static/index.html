@@ -30,8 +30,15 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Trakka">
 
-  <script src="/js/tailwind.js"></script>
-  <script src="/js/tailwind-config.js"></script>
+  <!-- defer (not blocking, unlike theme-init.js above): lets the parser
+       continue straight into <body> instead of stalling on ~400KB of JS
+       before anything can paint. See base.css's html/body background-color
+       rule for how the correct theme's colors still apply with zero flash
+       even before this runs — the shimmering skeleton content in <body>
+       is itself real markup that renders correctly with only tokens.css/
+       base.css applied, before a single Tailwind utility class exists. -->
+  <script src="/js/tailwind.js" defer></script>
+  <script src="/js/tailwind-config.js" defer></script>
 </head>
 <body class="min-h-screen bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 antialiased">
 
@@ -196,19 +203,32 @@
 
         <section aria-labelledby="shopping-heading" class="mb-8">
           <h2 id="shopping-heading" data-i18n="dashboard.shoppingHeading" class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Achats &amp; Sourcing</h2>
-          <ul id="shopping-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></ul>
+          <!-- Skeleton placeholder cards: real markup, visible at first
+               paint (no JS/network needed), silently wiped by renderGrid's
+               own container.replaceChildren() the moment the first real
+               render happens — see base.css's "Loading skeletons" comment. -->
+          <ul id="shopping-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <li class="tk-skeleton tk-skeleton-card" aria-hidden="true"></li>
+            <li class="tk-skeleton tk-skeleton-card" aria-hidden="true"></li>
+            <li class="tk-skeleton tk-skeleton-card" aria-hidden="true"></li>
+          </ul>
         </section>
 
         <section aria-labelledby="todo-heading" class="mb-8">
           <h2 id="todo-heading" data-i18n="dashboard.todoHeading" class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Espaces Tâches</h2>
-          <ul id="todo-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></ul>
+          <ul id="todo-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <li class="tk-skeleton tk-skeleton-card" aria-hidden="true"></li>
+            <li class="tk-skeleton tk-skeleton-card" aria-hidden="true"></li>
+          </ul>
         </section>
 
         <section aria-labelledby="custom-heading">
           <h2 id="custom-heading" class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             <span aria-hidden="true">📝</span> <span data-i18n="dashboard.customHeading">Notes &amp; Listes Libres</span>
           </h2>
-          <ul id="custom-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></ul>
+          <ul id="custom-lists" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <li class="tk-skeleton tk-skeleton-card" aria-hidden="true"></li>
+          </ul>
         </section>
       </div>
 
@@ -237,7 +257,10 @@
           <div id="planning-total" class="text-2xl font-semibold text-slate-900 dark:text-slate-100">0,00&nbsp;€</div>
         </div>
 
-        <div id="planning-months" class="space-y-4"></div>
+        <div id="planning-months" class="space-y-4">
+          <div class="tk-skeleton tk-skeleton-block" aria-hidden="true"></div>
+          <div class="tk-skeleton tk-skeleton-block" aria-hidden="true"></div>
+        </div>
       </div>
 
       <div id="urgent-view" hidden>
@@ -246,7 +269,10 @@
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" data-i18n="urgent.subtitle">Tout ce qui presse, toutes listes confondues.</p>
         </div>
 
-        <ul id="urgent-items" class="space-y-2"></ul>
+        <ul id="urgent-items" class="space-y-2">
+          <li class="tk-skeleton tk-skeleton-row" aria-hidden="true"></li>
+          <li class="tk-skeleton tk-skeleton-row" aria-hidden="true"></li>
+        </ul>
       </div>
 
       <div id="spaces-view" hidden>
@@ -270,7 +296,9 @@
           </button>
         </div>
 
-        <div id="spaces-list" class="space-y-4"></div>
+        <div id="spaces-list" class="space-y-4">
+          <div class="tk-skeleton tk-skeleton-block" aria-hidden="true"></div>
+        </div>
       </div>
 
       <div id="shared-view" hidden>
@@ -284,7 +312,10 @@
           <p class="mx-auto mt-2 max-w-sm text-sm text-slate-500 dark:text-slate-400" data-i18n="shares.sharedEmptyHint">Quand quelqu'un partage une liste ou un espace avec vous, il apparaît ici.</p>
         </div>
 
-        <ul id="shared-list" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></ul>
+        <ul id="shared-list" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <li class="tk-skeleton tk-skeleton-card" aria-hidden="true"></li>
+          <li class="tk-skeleton tk-skeleton-card" aria-hidden="true"></li>
+        </ul>
       </div>
     </section>
 
@@ -1024,22 +1055,35 @@
 
   <div id="toast-container" aria-live="polite" class="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-4"></div>
 
-  <script src="/js/theme.js"></script>
-  <script src="/js/i18n.js"></script>
-  <script src="/js/db.js"></script>
-  <script src="/js/undo.js"></script>
-  <script src="/js/app.js"></script>
-  <script src="/js/list_view.js"></script>
-  <script src="/js/gestures.js"></script>
-  <script src="/js/reorder.js"></script>
-  <script src="/js/planning.js"></script>
-  <script src="/js/urgent.js"></script>
-  <script src="/js/spaces.js"></script>
-  <script src="/js/shares.js"></script>
-  <script src="/js/notifications.js"></script>
-  <script src="/js/admin.js"></script>
-  <script src="/js/settings.js"></script>
-  <script src="/js/push.js"></script>
-  <script src="/js/install-help.js"></script>
+  <!-- defer on every one of these (rather than plain <script> tags, which
+       would each block the parser in turn as it reaches them) lets the
+       browser's preload scanner fetch all of them in parallel the moment it
+       sees the raw HTML, instead of waiting for each prior script to finish
+       downloading and executing before starting the next one's fetch — a
+       real difference on a high-latency mobile connection with this many
+       separate files. defer also preserves this exact document order for
+       execution (deferred scripts always run back-to-back, in order, right
+       before DOMContentLoaded), which every file here already depends on —
+       app.js calling init() at its own top level and expecting every
+       later-loaded file's top-level functions/globals to exist by the time
+       an internal `await` inside init() resumes is one documented example,
+       see hydrateFromCache's own comment in app.js. -->
+  <script src="/js/theme.js" defer></script>
+  <script src="/js/i18n.js" defer></script>
+  <script src="/js/db.js" defer></script>
+  <script src="/js/undo.js" defer></script>
+  <script src="/js/app.js" defer></script>
+  <script src="/js/list_view.js" defer></script>
+  <script src="/js/gestures.js" defer></script>
+  <script src="/js/reorder.js" defer></script>
+  <script src="/js/planning.js" defer></script>
+  <script src="/js/urgent.js" defer></script>
+  <script src="/js/spaces.js" defer></script>
+  <script src="/js/shares.js" defer></script>
+  <script src="/js/notifications.js" defer></script>
+  <script src="/js/admin.js" defer></script>
+  <script src="/js/settings.js" defer></script>
+  <script src="/js/push.js" defer></script>
+  <script src="/js/install-help.js" defer></script>
 </body>
 </html>

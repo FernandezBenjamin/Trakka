@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v45';
-const RUNTIME_CACHE = 'trakka-runtime-v45';
+const SHELL_CACHE = 'trakka-shell-v46';
+const RUNTIME_CACHE = 'trakka-runtime-v46';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -244,7 +244,17 @@ async function handleShellRequest(request) {
 
 // ---------------------------------------------------------------------------
 // API: network-first for reads (mirrored into IndexedDB), queued-write for
-// mutations made while offline.
+// mutations made while offline. This stays network-first rather than
+// stale-while-revalidate at the SW layer on purpose — a mutation's response
+// (a fresh price/quantity/RBAC check, etc.) must never be silently served
+// from a stale cache. The "instant paint, then refresh" effect the app's
+// own performance story wants is instead implemented one layer up, at each
+// view's own call site (loadDashboard in app.js; loadUrgentView/
+// loadPlanningView/loadSpacesView; selectList in list_view.js), which
+// already reads the exact same IndexedDB mirror this file writes on every
+// successful read (mirrorReadResponse below) before ever calling this
+// endpoint — see CLAUDE.md's "Loading skeletons & stale-while-revalidate
+// view loaders" entry for the full design.
 // ---------------------------------------------------------------------------
 
 async function handleApiRequest(request, url) {

@@ -57,6 +57,7 @@
   },
   "items": {
     "back": "Retour au tableau de bord",
+    "loadingHeading": "Chargement…",
     "editList": "Modifier la liste",
     "shareList": "Partager la liste",
     "reorderList": "Réordonner les articles",

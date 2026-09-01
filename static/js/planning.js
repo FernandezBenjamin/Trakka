@@ -219,6 +219,17 @@ async function loadPlanningView() {
     return;
   }
 
+  // Stale-while-revalidate: paint immediately from the IndexedDB mirror
+  // before the network fetch below even starts — same reasoning as
+  // urgent.js's loadUrgentView, which this mirrors closely. Re-rendered for
+  // real below once the network settles either way.
+  const cachedFirst = await cachedDashboardLists(state.currentHouseId);
+  const cachedPurchaseLists = cachedFirst.filter((list) => isPurchaseList(list.type));
+  if (cachedPurchaseLists.length > 0) {
+    applyPlanningEntries(cachedPurchaseLists);
+    renderPlanning();
+  }
+
   try {
     const lists = await apiRequest(`/lists?house_id=${state.currentHouseId}`);
     const purchaseLists = lists.filter((list) => isPurchaseList(list.type));
