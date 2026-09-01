@@ -175,13 +175,38 @@ jobs:
         run: gosec -fmt=sarif -out=gosec-results.sarif ./...
 
       - name: Upload gosec SARIF to GitHub Security tab
-        if: always()
+        # hashFiles() guards against gosec crashing before writing a report
+        # at all (as opposed to running cleanly and just finding issues,
+        # which is the normal case this step needs to run for) — without it,
+        # `if: always()` alone still runs this step, which then fails on a
+        # missing file and cascades into a second, unrelated-looking error.
+        # continue-on-error is a second line of defense so a transient
+        # upload failure (e.g. a GitHub API hiccup) can't fail the whole job
+        # either — gosec's own exit code, not this upload, is what gates the
+        # pipeline on a genuine finding.
+        if: always() && hashFiles('gosec-results.sarif') != ''
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: gosec-results.sarif
           category: gosec
 
       - name: Trivy filesystem scan (dependency CVEs in go.sum)
+        # if: always() — this scan is independent of gosec above it (a
+        # different tool checking a different thing: dependency CVEs, not Go
+        # source SAST findings). Without this, a gosec failure (a real
+        # HIGH/CRITICAL finding, which fails its own step with no
+        # continue-on-error, by design — see the security-scan job's own
+        # doc comment) silently skips every following step that has no
+        # `if:` of its own, including this one: Trivy would never even run,
+        # trivy-fs-results.sarif would never be created, and the *next*
+        # step's hashFiles() guard would then correctly skip its own upload
+        # — silently, no error, no results ever reaching the Security tab.
+        # This actually happened (runs 33509914922 / 33511066735 on this
+        # repo): gosec failed, Trivy was skipped, and at the time the
+        # upload step's bare `if: always()` (pre-hashFiles-guard) tried to
+        # upload a SARIF file that was never written and failed outright.
+        if: always()
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -193,13 +218,24 @@ jobs:
           exit-code: "1"
 
       - name: Upload Trivy filesystem SARIF to GitHub Security tab
-        if: always()
+        # Same reasoning as the gosec upload above: guard against Trivy
+        # itself failing to run (e.g. rate-limited pulling its vulnerability
+        # DB) rather than running cleanly and finding a CVE, which is the
+        # only case that should legitimately produce a missing-file error
+        # here otherwise.
+        if: always() && hashFiles('trivy-fs-results.sarif') != ''
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: trivy-fs-results.sarif
           category: trivy-fs
 
       - name: Install gitleaks
+        # if: always() — same independence reasoning as the Trivy step
+        # above: gitleaks (secret scanning) has nothing to do with whether
+        # gosec or Trivy found something, and must still run and report to
+        # the Security tab even if either of them failed.
+        if: always()
         run: go install github.com/zricethezav/gitleaks/v8@${{ env.GITLEAKS_VERSION }}
 
       - name: "Run gitleaks (secret scan: full git history + working tree)"
@@ -208,10 +244,15 @@ jobs:
         # still compromised for good — the fetch-depth: 0 checkout above is
         # what makes that actually possible in CI. --redact keeps the raw
         # secret value out of both the job log and the uploaded SARIF.
+        # if: always() — see the two comments above; must run independently
+        # of gosec/Trivy's own outcome.
+        if: always()
         run: gitleaks detect --source . --redact --report-format sarif --report-path gitleaks-results.sarif --exit-code 1
 
       - name: Upload gitleaks SARIF to GitHub Security tab
-        if: always()
+        # Same reasoning as the gosec/Trivy uploads above.
+        if: always() && hashFiles('gitleaks-results.sarif') != ''
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: gitleaks-results.sarif
@@ -309,7 +350,9 @@ jobs:
           exit-code: "1"
 
       - name: Upload Trivy image SARIF to GitHub Security tab
-        if: always()
+        # Same reasoning as the other three SARIF uploads above.
+        if: always() && hashFiles('trivy-image-results.sarif') != ''
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: trivy-image-results.sarif

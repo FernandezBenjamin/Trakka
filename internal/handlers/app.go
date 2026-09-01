@@ -134,6 +134,10 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/admin/settings", app.handleAdminSettingsShow)
 	apiMux.HandleFunc("PATCH /api/v1/admin/settings", app.handleAdminSettingsUpdate)
 
+	apiMux.HandleFunc("GET /api/v1/push/vapid-public-key", app.handlePushVAPIDPublicKey)
+	apiMux.HandleFunc("POST /api/v1/push/subscribe", app.handlePushSubscribe)
+	apiMux.HandleFunc("DELETE /api/v1/push/subscribe", app.handlePushUnsubscribe)
+
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
 	mux.Handle("/", http.FileServer(staticFileSystem{http.Dir(app.StaticDir)}))
 

@@ -5,8 +5,10 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -42,6 +44,33 @@ type Config struct {
 	// once one exists; these are only what a fresh instance starts with.
 	InstanceName     string
 	RegistrationOpen bool
+
+	// VAPIDPublicKey/VAPIDPrivateKey are this instance's Web Push
+	// application-server identity (see internal/webpush) — a P-256 key pair,
+	// base64url-encoded exactly as internal/webpush.GenerateVAPIDKeys (and
+	// `trakka -generate-vapid-keys`) produce them. VAPIDSubject is the
+	// contact URI (mailto: or https:) sent in every VAPID JWT's "sub" claim,
+	// as RFC 8292 requires. All three are all-or-nothing, like OIDC below —
+	// see Validate.
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	VAPIDSubject    string
+
+	// NotifRecurringLeadTime is how long before a recurring item's due date
+	// the background scan (internal/handlers.RunRecurringDueScan) sends a
+	// reminder push, unless a specific item overrides it via its own
+	// recurrence_lead_minutes. Accepts a plain Go duration ("2h", "30m") or a
+	// whole number of days with a "d" suffix ("1d", "3d") — see
+	// parseDurationWithDays, since time.ParseDuration alone has no day unit
+	// and this setting's own examples include one.
+	NotifRecurringLeadTime time.Duration
+
+	// NotifRecurringScanInterval is how often that same scan re-checks every
+	// eligible item — independent of, and normally much finer-grained than,
+	// NotifRecurringLeadTime itself, so a lead time of e.g. 2h is actually
+	// caught reasonably close to on time rather than only once a day. A
+	// value <= 0 disables the periodic scan entirely.
+	NotifRecurringScanInterval time.Duration
 }
 
 func Load() Config {
@@ -64,12 +93,27 @@ func Load() Config {
 
 		InstanceName:     envOr("INSTANCE_NAME", "Trakka"),
 		RegistrationOpen: envBool("REGISTRATION_OPEN", true),
+
+		VAPIDPublicKey:  envOr("VAPID_PUBLIC_KEY", ""),
+		VAPIDPrivateKey: envOr("VAPID_PRIVATE_KEY", ""),
+		VAPIDSubject:    envOr("VAPID_SUBJECT", ""),
+
+		NotifRecurringLeadTime:     envDuration("NOTIF_RECURRING_TASK_LEAD_TIME", 24*time.Hour),
+		NotifRecurringScanInterval: time.Duration(envInt("NOTIF_RECURRING_SCAN_INTERVAL_MINUTES", 30)) * time.Minute,
 	}
 }
 
 // OIDCEnabled reports whether all three OIDC env vars are configured.
 func (c Config) OIDCEnabled() bool {
 	return c.OIDCIssuer != "" && c.OIDCClientID != "" && c.OIDCClientSecret != ""
+}
+
+// PushEnabled reports whether all three VAPID env vars are configured —
+// checked before wiring up the push subscribe/vapid-public-key routes and
+// the recurring-due-date scan (see cmd/server/main.go), mirroring how
+// OIDCEnabled gates the OIDC client.
+func (c Config) PushEnabled() bool {
+	return c.VAPIDPublicKey != "" && c.VAPIDPrivateKey != "" && c.VAPIDSubject != ""
 }
 
 // Validate checks cross-field constraints Load() alone can't enforce.
@@ -86,6 +130,17 @@ func (c Config) Validate() error {
 	if c.OIDCEnabled() && c.BaseURL == "" {
 		return errors.New("BASE_URL is required when OIDC is configured")
 	}
+
+	vapidSet := 0
+	for _, v := range []string{c.VAPIDPublicKey, c.VAPIDPrivateKey, c.VAPIDSubject} {
+		if v != "" {
+			vapidSet++
+		}
+	}
+	if vapidSet != 0 && vapidSet != 3 {
+		return errors.New("VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT must all be set together, or none of them")
+	}
+
 	return nil
 }
 
@@ -118,4 +173,32 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := parseDurationWithDays(v)
+	if err != nil {
+		return fallback
+	}
+	return d
+}
+
+// parseDurationWithDays extends time.ParseDuration with a whole-number "Nd"
+// day suffix (e.g. "1d", "3d") — Go's own parser has no day unit, and
+// NOTIF_RECURRING_TASK_LEAD_TIME is meant to be set in days as often as in
+// hours (see its own doc comment above), so a bare "1d" needs to work
+// without operators having to spell out "24h" themselves.
+func parseDurationWithDays(s string) (time.Duration, error) {
+	if days, ok := strings.CutSuffix(s, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil || n < 0 {
+			return 0, fmt.Errorf("invalid day duration %q", s)
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
 }

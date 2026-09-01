@@ -298,6 +298,11 @@
       "keepLastPageHint": "Reopens Trakka directly on the last list or tab you visited, instead of the dashboard.",
       "submit": "Save",
       "saved": "Preferences saved.",
+      "pushToggleLabel": "Enable push notifications",
+      "pushToggleHint": "Get notified when a shared list changes, and before a recurring task is due.",
+      "pushUnsupported": "Push notifications aren't supported by this browser.",
+      "pushNotConfigured": "Push notifications aren't configured on this instance.",
+      "pushPermissionDenied": "Permission denied. Change this site's permissions in your browser settings to re-enable.",
       "installHelpButton": "How do I install the app on my phone?"
     },
     "installHelp": {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -21,11 +22,17 @@ import (
 	"trakka/internal/db"
 	"trakka/internal/handlers"
 	"trakka/internal/settings"
+	"trakka/internal/webpush"
 )
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe the local /healthz endpoint and exit (used by HEALTHCHECK)")
+	generateVAPIDKeys := flag.Bool("generate-vapid-keys", false, "print a fresh VAPID key pair for VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY and exit")
 	flag.Parse()
+
+	if *generateVAPIDKeys {
+		os.Exit(runGenerateVAPIDKeys())
+	}
 
 	cfg := config.Load()
 
@@ -115,6 +122,15 @@ func main() {
 		go runPriceAlertScanLoop(priceScanCtx, app, cfg.PriceCheckInterval, logger)
 	}
 
+	// The recurring-task due-date reminder scan (Web Push "Use Case 2")
+	// shares the same detached-context/immediate-first-run pattern as the
+	// price scan above, and is gated on both a positive scan interval and
+	// push actually being configured — with no VAPID keys, RunRecurringDueScan
+	// would just no-op on every tick, so there is no reason to run it at all.
+	if cfg.NotifRecurringScanInterval > 0 && cfg.PushEnabled() {
+		go runRecurringNotifyScanLoop(priceScanCtx, app, cfg.NotifRecurringScanInterval, logger)
+	}
+
 	// Expired sessions are swept on the same detached-context pattern as the
 	// price scan above: nothing deleted them before, so the table grew for
 	// the life of the instance (see db.DeleteExpiredSessions).
@@ -176,6 +192,30 @@ func runPriceAlertScanLoop(ctx context.Context, app *handlers.Application, inter
 	}
 }
 
+// runRecurringNotifyScanLoop periodically checks every recurring item's due
+// date against its (instance-default or per-item) lead time and sends a
+// reminder push once it falls within it (see
+// handlers.Application.RunRecurringDueScan), stopping once ctx is canceled
+// during shutdown. Runs an initial scan immediately, same reasoning as
+// runPriceAlertScanLoop: a freshly deployed instance shouldn't sit with a
+// backlog of overdue reminders for up to a full NOTIF_RECURRING_SCAN_INTERVAL_MINUTES
+// before its first check.
+func runRecurringNotifyScanLoop(ctx context.Context, app *handlers.Application, interval time.Duration, logger *slog.Logger) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	logger.Info("starting periodic recurring due-date notification scan", "interval", interval)
+	app.RunRecurringDueScan(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			app.RunRecurringDueScan(ctx)
+		}
+	}
+}
+
 // sessionCleanupInterval is how often expired session rows are swept. Hourly
 // is far more often than strictly necessary for correctness — an expired
 // session is already rejected by GetSessionByHash's own WHERE clause, so this
@@ -210,6 +250,23 @@ func runSessionCleanupLoop(ctx context.Context, database *db.DB, logger *slog.Lo
 			sweep()
 		}
 	}
+}
+
+// runGenerateVAPIDKeys implements `trakka -generate-vapid-keys`: a one-time
+// setup convenience for an operator standing up Web Push, printing a fresh
+// key pair to stdout in exactly the form VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY
+// expect. Deliberately runs before config.Load()/cfg.Validate() — it needs
+// no configuration at all, and must work even on a completely unconfigured
+// instance (that is the point of it).
+func runGenerateVAPIDKeys() int {
+	keys, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "generating VAPID key pair:", err)
+		return 1
+	}
+	fmt.Printf("VAPID_PUBLIC_KEY=%s\n", keys.PublicKeyB64)
+	fmt.Printf("VAPID_PRIVATE_KEY=%s\n", keys.PrivateKeyB64)
+	return 0
 }
 
 // probeHealthz is invoked as `trakka -healthcheck` from the container
