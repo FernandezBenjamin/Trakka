@@ -10,6 +10,7 @@
 const listEls = {
   itemsSection: document.getElementById('items-section'),
   itemsHeading: document.getElementById('items-heading'),
+  listSyncIndicator: document.getElementById('list-sync-indicator'),
   itemsRemainingCount: document.getElementById('items-remaining-count'),
   backButton: document.getElementById('back-button'),
   editListButton: document.getElementById('edit-list-button'),
@@ -292,13 +293,13 @@ function formatEuro(amount) {
 function typeLabel(type) {
   switch (type) {
     case 'todo':
-      return 'tâches';
+      return t('items.typeLabelTasks');
     case 'recurring_shopping':
-      return 'abonnements';
+      return t('items.typeLabelSubscriptions');
     case 'custom':
-      return 'notes';
+      return t('items.typeLabelNotes');
     default:
-      return 'courses';
+      return t('items.typeLabelShopping');
   }
 }
 
@@ -542,6 +543,29 @@ function buildUrgentBadge() {
   return badge;
 }
 
+// A discreet, non-interactive badge (⏳ + "Non synchronisé") shown on an
+// item that either was itself created while offline and hasn't reached the
+// server yet (isOfflineQueuedItem) or has some other write (an edit, a
+// toggle, a delete) still sitting in the offline sync queue
+// (hasPendingItemChanges, defined in app.js — see the "Network status +
+// offline sync indicators" section there). animate-pulse (Tailwind's
+// built-in utility, no custom CSS needed) gives it a gentle "still waiting"
+// motion, same as buildPendingPriceBadge's own pending-price badge above.
+function buildUnsyncedItemBadge(item) {
+  const badge = document.createElement('span');
+  badge.className =
+    'flex shrink-0 animate-pulse items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300';
+  badge.setAttribute('aria-label', t('sync.itemBadgeAriaLabel', { title: item.title }));
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '⏳';
+  const text = document.createElement('span');
+  text.textContent = t('sync.listBadgeLabel');
+  badge.appendChild(icon);
+  badge.appendChild(text);
+  return badge;
+}
+
 function emptyItemsRow(message) {
   const li = document.createElement('li');
   li.className = 'rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-sm text-slate-500';
@@ -562,8 +586,8 @@ function emptyItemsRow(message) {
 function buildItemThumbnail(item) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.title = 'Agrandir l’image';
-  button.setAttribute('aria-label', `Agrandir l'image de ${item.title}`);
+  button.title = t('items.enlargeImageAriaLabel', { title: item.title });
+  button.setAttribute('aria-label', t('items.enlargeImageAriaLabel', { title: item.title }));
   button.className =
     'block h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition duration-150 hover:z-10 hover:scale-150 hover:shadow-lg focus-visible:z-10 focus-visible:scale-150';
 
@@ -668,8 +692,8 @@ function buildPriceBlock(item) {
     if (item.price_auto) {
       const autoBadge = document.createElement('button');
       autoBadge.type = 'button';
-      autoBadge.title = 'Prix détecté automatiquement — cliquer pour modifier';
-      autoBadge.setAttribute('aria-label', `Prix détecté automatiquement pour ${item.title}, cliquer pour modifier`);
+      autoBadge.title = t('items.autoPriceAriaLabel', { title: item.title });
+      autoBadge.setAttribute('aria-label', t('items.autoPriceAriaLabel', { title: item.title }));
       autoBadge.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/20';
       autoBadge.innerHTML = AUTO_PRICE_ICON_SVG;
       autoBadge.addEventListener('click', (event) => {
@@ -689,9 +713,9 @@ function buildPriceBlock(item) {
     }
   } else if (item.url) {
     if (isOfflineQueuedItem(item)) {
-      block.appendChild(buildPendingPriceBadge('Prix en attente de synchro', 'bg-amber-500/10 text-amber-700 dark:text-amber-300'));
+      block.appendChild(buildPendingPriceBadge(t('items.priceSyncPending'), 'bg-amber-500/10 text-amber-700 dark:text-amber-300'));
     } else if (item.priceScrapePending) {
-      block.appendChild(buildPendingPriceBadge('Détection du prix…', 'animate-pulse bg-sky-500/10 text-sky-600 dark:text-sky-300'));
+      block.appendChild(buildPendingPriceBadge(t('items.priceDetecting'), 'animate-pulse bg-sky-500/10 text-sky-600 dark:text-sky-300'));
     }
   }
 
@@ -734,6 +758,14 @@ function buildSecondaryRow(item, { showQuantity }) {
     secondary.appendChild(buildUrgentBadge());
   }
 
+  // hasPendingItemChanges is defined in app.js; isOfflineQueuedItem (above)
+  // already covers an item still carrying its temp-item-* id — this also
+  // catches an already-synced item with some other write (an edit, a
+  // toggle, a delete) still sitting in the offline sync queue.
+  if (hasPendingItemChanges(item.id) || isOfflineQueuedItem(item)) {
+    secondary.appendChild(buildUnsyncedItemBadge(item));
+  }
+
   return secondary.children.length > 0 ? secondary : null;
 }
 
@@ -771,7 +803,9 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
     checkbox.type = 'checkbox';
     checkbox.checked = item.done;
     checkbox.className = 'h-5 w-5 rounded-full border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40';
-    checkbox.setAttribute('aria-label', `Marquer « ${item.title} » comme terminé`);
+    // Reuses urgent.js's own key: identical text/purpose ("mark X as done"),
+    // no need for a second near-duplicate.
+    checkbox.setAttribute('aria-label', t('urgent.markDoneAriaLabel', { title: item.title }));
     checkbox.addEventListener('change', () => toggleDone(item));
     checkboxLabel.appendChild(checkbox);
     lead.appendChild(checkboxLabel);
@@ -831,7 +865,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
 
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
-  editBtn.setAttribute('aria-label', `Modifier ${item.title}`);
+  editBtn.setAttribute('aria-label', t('items.editItemAriaLabel', { title: item.title }));
   editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400';
   editBtn.innerHTML = PENCIL_ICON_SVG;
   editBtn.addEventListener('click', () => openEditItemModal(item));
@@ -839,7 +873,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
 
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
-  deleteBtn.setAttribute('aria-label', `Supprimer ${item.title}`);
+  deleteBtn.setAttribute('aria-label', t('items.deleteItemAriaLabel', { title: item.title }));
   deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
   deleteBtn.innerHTML = TRASH_ICON_SVG;
   deleteBtn.addEventListener('click', () => removeItem(item));
@@ -879,10 +913,28 @@ function renderItems() {
   const list = state.currentList;
   if (!list) return;
 
+  // isReorderModeActive/renderReorderList are defined in reorder.js, loaded
+  // after this file — while the "⇅ Réordonner" mode is active, it fully
+  // owns rendering #items-active instead of the active/done split below.
+  if (isReorderModeActive()) {
+    renderReorderList();
+    return;
+  }
+
   // listIcon is defined in app.js — a list's own icon, falling back to a
   // fixed icon for its type, same as every list card on the dashboard.
   listEls.itemsHeading.textContent = `${listIcon(list)} ${list.name} (${typeLabel(list.type)})`;
   applyListTypeVisibility(list.type);
+
+  // hasPendingListChanges is defined in app.js — see the "Network status +
+  // offline sync indicators" section there. Re-checked on every render
+  // (this function already re-runs on every mutation, and on every
+  // trakka-sync-status broadcast via repaintPendingChangeIndicators), so the
+  // dot appears/clears in step with the offline queue without a dedicated
+  // refresh path of its own.
+  const listHasPendingChanges = hasPendingListChanges(list.id);
+  listEls.listSyncIndicator.hidden = !listHasPendingChanges;
+  listEls.listSyncIndicator.title = listHasPendingChanges ? t('sync.listBadgeAriaLabel', { name: list.name }) : '';
 
   // Items mid-undo-grace-period (see removeItem below) stay in
   // state.currentList.items — so undo can just clear the flag and re-render
@@ -905,9 +957,9 @@ function renderItems() {
 
   listEls.itemsActive.replaceChildren();
   if (items.length === 0) {
-    listEls.itemsActive.appendChild(emptyItemsRow('Aucun élément pour le moment.'));
+    listEls.itemsActive.appendChild(emptyItemsRow(t('items.emptyList')));
   } else if (active.length === 0) {
-    listEls.itemsActive.appendChild(emptyItemsRow('Tout est terminé pour le moment.'));
+    listEls.itemsActive.appendChild(emptyItemsRow(t('items.allDone')));
   } else {
     active.forEach((item, index) => {
       listEls.itemsActive.appendChild(buildItemRow(item, { showCheckbox: visibility.done, index, showQuantity: visibility.quantity }));
@@ -922,8 +974,14 @@ function renderItems() {
   // after the item was already completed) — it still needs a way back to
   // active, which only the checkbox provides.
   for (const item of done) listEls.itemsDone.appendChild(buildItemRow(item, { showCheckbox: true, showQuantity: visibility.quantity }));
-  listEls.doneSummaryLabel.textContent = `Terminés (${done.length})`;
+  listEls.doneSummaryLabel.textContent = t('items.doneCount', { count: done.length });
   listEls.doneSection.hidden = done.length === 0;
+
+  // updateReorderButtonVisibility is defined in reorder.js — re-evaluated on
+  // every normal render so the "⇅ Réordonner" button reflects the current
+  // item count/sync state (e.g. it appears once a temp-item-* id turns into
+  // a real one after the offline queue flushes).
+  updateReorderButtonVisibility();
 }
 
 // Reads a single list (with its items) from the IndexedDB mirror, shaped
@@ -945,6 +1003,10 @@ async function cachedListDetail(id) {
 // optimistically instead of round-tripping through this.
 async function refreshCurrentList() {
   if (state.currentListId === null) return;
+  // exitReorderModeIfActive is defined in reorder.js — state.currentList is
+  // about to be fully replaced below, which would leave an in-progress
+  // reorder draft pointing at stale item objects.
+  exitReorderModeIfActive();
   try {
     state.currentList = await apiRequest(`/lists/${state.currentListId}`);
     renderItems();
@@ -972,6 +1034,10 @@ async function refreshCurrentList() {
 async function selectList(id, opts = {}) {
   const { silent = false } = opts;
   hideError();
+  // exitReorderModeIfActive is defined in reorder.js — opening another list
+  // (or reopening this one) mid-drag must not leave the new view stuck in
+  // reorder mode.
+  exitReorderModeIfActive();
   let list;
   try {
     list = await apiRequest(`/lists/${id}`);
@@ -995,6 +1061,11 @@ async function selectList(id, opts = {}) {
 }
 
 function showDashboard() {
+  // exitReorderModeIfActive is defined in reorder.js — leaving the list
+  // detail view mid-drag must not leave reorder mode's chrome (the bottom
+  // action bar, the hidden quick-add bar/FAB) stuck on for whatever's opened
+  // next.
+  exitReorderModeIfActive();
   state.currentListId = null;
   state.currentList = null;
   listEls.itemsSection.hidden = true;
@@ -1113,7 +1184,7 @@ function buildQuantityStepper(item) {
   decrementBtn.type = 'button';
   decrementBtn.innerHTML = MINUS_ICON_SVG;
   decrementBtn.disabled = quantity <= 1;
-  decrementBtn.setAttribute('aria-label', `Diminuer la quantité de ${item.title}`);
+  decrementBtn.setAttribute('aria-label', t('items.decreaseQuantityAriaLabel', { title: item.title }));
   decrementBtn.className =
     'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent';
   decrementBtn.addEventListener('click', () => changeQuantity(item, quantity - 1));
@@ -1123,7 +1194,7 @@ function buildQuantityStepper(item) {
   input.min = '1';
   input.inputMode = 'numeric';
   input.value = String(quantity);
-  input.setAttribute('aria-label', `Quantité de ${item.title}`);
+  input.setAttribute('aria-label', t('items.quantityForItemAriaLabel', { title: item.title }));
   input.className =
     'w-10 shrink-0 rounded border-0 bg-transparent text-center text-sm font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40';
   input.addEventListener('change', () => {
@@ -1142,7 +1213,7 @@ function buildQuantityStepper(item) {
   const incrementBtn = document.createElement('button');
   incrementBtn.type = 'button';
   incrementBtn.innerHTML = PLUS_ICON_SVG;
-  incrementBtn.setAttribute('aria-label', `Augmenter la quantité de ${item.title}`);
+  incrementBtn.setAttribute('aria-label', t('items.increaseQuantityAriaLabel', { title: item.title }));
   incrementBtn.className =
     'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700';
   incrementBtn.addEventListener('click', () => changeQuantity(item, quantity + 1));
@@ -1186,7 +1257,25 @@ function toggleDone(item) {
         item.done = committedDone;
         showError(err.message);
       } finally {
-        renderItems();
+        // Still on this list (or some other one): a plain local re-render is
+        // enough, and — critically — must not be replaced by a network
+        // refetch here, since that could clobber a *different* item's still-
+        // pending optimistic toggle (its own commit hasn't landed yet
+        // either) with the server's not-yet-updated view of it. Only once
+        // the user has actually left the list entirely (state.currentListId
+        // === null, e.g. back to the dashboard) is there anything else on
+        // screen that this commit could have made stale — a dashboard card's
+        // count, an Urgent/Planning/Spaces/Shared tab — and refreshVisibleView
+        // (app.js) is what refreshes whichever of those is actually visible.
+        // Without this, checking an item off and navigating away inside the
+        // 5s undo window left the previous view's counters stuck until a
+        // full page reload, since nothing else ever re-ran its fetch once
+        // this deferred PATCH finally went out.
+        if (state.currentListId !== null) {
+          renderItems();
+        } else {
+          refreshVisibleView();
+        }
       }
       await refreshPendingBadge();
     },
@@ -1205,6 +1294,17 @@ function toggleDone(item) {
 function removeItem(item) {
   hideError();
 
+  // Captured now, at call time, rather than re-read as state.currentList
+  // inside onCommit below: removeItem is only ever invoked from a row
+  // rendered for the currently open list, so this is guaranteed to be that
+  // same list's object — whereas by the time the deferred commit actually
+  // fires (5s later), the user may have navigated to a different list or
+  // away from any list entirely, at which point state.currentList would no
+  // longer be this item's list (or would be null), and splicing into
+  // whatever it happens to hold then would either corrupt an unrelated
+  // list's items or throw outright.
+  const list = state.currentList;
+
   const pendingToggle = pendingToggles.get(item);
   if (pendingToggle) {
     pendingToggle.dismiss();
@@ -1222,7 +1322,7 @@ function removeItem(item) {
       renderItems();
     },
     onCommit: async () => {
-      const items = state.currentList.items;
+      const items = list.items;
       const index = items.indexOf(item);
       if (index !== -1) items.splice(index, 1);
 
@@ -1233,7 +1333,17 @@ function removeItem(item) {
         delete item.pendingDelete;
         showError(err.message);
       }
-      renderItems();
+      // Same reasoning as toggleDone's onCommit above: only fall back to
+      // refreshVisibleView() (a real refetch) when the list this item
+      // belonged to isn't the one currently on screen any more — otherwise
+      // a plain local re-render already reflects the deletion without
+      // risking clobbering some other item's still-pending optimistic
+      // change with stale server data.
+      if (state.currentList === list) {
+        renderItems();
+      } else {
+        refreshVisibleView();
+      }
       await refreshPendingBadge();
     },
   });
@@ -1520,7 +1630,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     } else {
       const parsed = Number.parseFloat(raw);
       if (!Number.isFinite(parsed) || parsed < 0) {
-        showError('Le prix doit être un nombre positif.');
+        showError(t('items.priceValidationError'));
         return;
       }
       payload.price = parsed;

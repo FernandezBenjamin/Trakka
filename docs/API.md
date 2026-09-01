@@ -298,6 +298,21 @@ Full replace of `name`, `type`, `custom_category_id`, and `icon` (same validatio
 
 `204` on success. Deleting a list **cascades** to delete all its items (`ON DELETE CASCADE`). `404` if not found, `403` if the caller isn't a member of the list's house — deliberately **not** extended to a `write` Space/List share the way `PUT` and the [items](#items) endpoints are, since deleting a list outright is a house-management-level action, not just editing it (see [Sharing](#sharing)).
 
+### `PUT /api/v1/lists/{id}/reorder`
+
+Applies a manual drag-and-drop reordering of every item in the list — the frontend's "⇅ Réordonner" mode (`static/js/reorder.js`). `item_ids` must be the **complete** new ordering: every item currently in the list, each listed exactly once. A partial list, a duplicate, or an id belonging to a different list is rejected outright (`400`) rather than partially applied — accepting a subset would leave the positions of the items left out ambiguous relative to the reordered ones.
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/lists/1/reorder \
+  -d '{"item_ids": [3, 1, 2]}'
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `item_ids` | array of integers | yes | must be exactly a permutation of the list's current item ids, else `400` |
+
+`200` with the list's items in their new order (same shape as the `items` array embedded by `GET /api/v1/lists/{id}`), each now carrying its updated `position`. `404` if the list doesn't exist. `403` unless the caller has **write** [access](#sharing) to the list — reordering is an editing action on the list's contents, the same bar `PUT`/`PATCH` on an [item](#items) already require, not a house-management-level action like deleting the list itself.
+
 ## Sharing
 
 Beyond house membership, a [Space](#custom-categories) or an individual [List](#lists) can be shared directly with one other user by email, granting `read` or `write` access to it without adding them to the whole parent house. A user's effective access level to a list is the highest of: house membership (always `write`), a `list_shares` grant on the list itself, and a `space_shares` grant on the list's attached custom category, if any. See the "granular sharing" design in [CLAUDE.md](../CLAUDE.md) and [docs/DATABASE.md](DATABASE.md#space_shares-and-list_shares) for the full model.

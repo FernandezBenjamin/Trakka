@@ -169,7 +169,26 @@ func TestRequireSameOriginWrite(t *testing.T) {
 		{"same-origin POST with port", http.MethodPost, "localhost:8080", "http://localhost:8080", "", http.StatusNoContent, ""},
 		{"cross-origin POST", http.MethodPost, "trakka.example.com", "https://evil.example", "", http.StatusForbidden, ""},
 		{"cross-origin DELETE", http.MethodDelete, "trakka.example.com", "https://evil.example", "", http.StatusForbidden, ""},
-		{"opaque null origin", http.MethodPost, "trakka.example.com", "null", "", http.StatusForbidden, ""},
+		// A same-origin navigational POST (an HTML <form>, not fetch()) under
+		// Referrer-Policy: no-referrer legitimately carries Origin: null per
+		// the Fetch spec — see the dedicated comment in requireSameOriginWrite.
+		// This is exactly what /auth/login's own <form> sends in every real
+		// browser, and must be let through when Sec-Fetch-Site vouches for it.
+		{"opaque null origin, same-origin fetch metadata", http.MethodPost, "trakka.example.com", "null", "same-origin", http.StatusNoContent, "a real browser's no-referrer-policy navigation must not be rejected"},
+		// An opaque origin (a sandboxed iframe forging Origin: null the same
+		// way) is never same-site with anything, so Sec-Fetch-Site still
+		// correctly reads cross-site here — the case this check originally
+		// existed to catch is still caught.
+		{"opaque null origin, cross-site fetch metadata", http.MethodPost, "trakka.example.com", "null", "cross-site", http.StatusForbidden, "an opaque-origin CSRF attempt must still be rejected"},
+		// No Sec-Fetch-Site at all alongside Origin: null only happens on a
+		// browser old enough to lack Fetch Metadata support entirely — the
+		// same "no usable signal -> allow" trade-off already accepted for
+		// "no headers at all (curl)" below. /auth/login and /auth/register
+		// are additionally covered by their own double-submit csrf_token
+		// (checkCSRFToken), and every /api/v1/... write still requires the
+		// SameSite=Lax session cookie, which such a request would not carry
+		// cross-site either way — so this narrow gap grants nothing usable.
+		{"opaque null origin, no fetch metadata at all", http.MethodPost, "trakka.example.com", "null", "", http.StatusNoContent, "very old browsers with no Sec-Fetch-Site are the same accepted gap as a non-browser client"},
 		{"proxied host, BASE_URL origin", http.MethodPost, "trakka-internal", "https://trakka.example.com", "", http.StatusNoContent, ""},
 		{"no origin, cross-site fetch metadata", http.MethodPost, "trakka.example.com", "", "cross-site", http.StatusForbidden, ""},
 		{"no origin, same-origin fetch metadata", http.MethodPost, "trakka.example.com", "", "same-origin", http.StatusNoContent, ""},

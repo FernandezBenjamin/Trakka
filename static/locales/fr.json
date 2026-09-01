@@ -6,7 +6,8 @@
     "pinList": "Épingler {name} au tableau de bord",
     "unpinList": "Retirer {name} du tableau de bord",
     "listActionsAriaLabel": "Plus d'actions pour {name}",
-    "removeMember": "Retirer {email}"
+    "removeMember": "Retirer {email}",
+    "networkError": "Impossible de contacter le serveur. Vérifiez votre connexion."
   },
   "header": {
     "backToDashboard": "Retour au tableau de bord",
@@ -17,6 +18,8 @@
     "online": "En ligne",
     "offline": "Hors-ligne",
     "pending": "{count} en attente",
+    "syncing": "Synchronisation…",
+    "synced": "Synchronisé",
     "adminSettings": "Paramètres du Système",
     "userSettings": "Paramètres",
     "themeSwitcher": "Changer de thème",
@@ -46,12 +49,21 @@
     "listTypeRecurring": "Récurrence",
     "listTypeGroceries": "Courses",
     "listTypeTodo": "Tâches",
-    "listTypeCustom": "Notes / Libre"
+    "listTypeCustom": "Notes / Libre",
+    "todoProgress": "{done}/{total} terminées",
+    "emptyShopping": "Aucune liste de courses pour le moment.",
+    "emptyTodo": "Aucun espace tâches pour le moment.",
+    "emptyCustom": "Aucune liste libre pour le moment."
   },
   "items": {
     "back": "Retour au tableau de bord",
     "editList": "Modifier la liste",
     "shareList": "Partager la liste",
+    "reorderList": "Réordonner les articles",
+    "reorderHint": "Faites glisser ☰ pour réorganiser, puis validez.",
+    "reorderCancel": "Annuler",
+    "reorderConfirm": "Valider l'ordre",
+    "reorderSuccess": "Ordre des articles enregistré.",
     "financeSummaryLabel": "Résumé du budget",
     "financeTotal": "Total estimé",
     "financeSpent": "Déjà dépensé",
@@ -93,7 +105,26 @@
     "urgentBadgeLabel": "Urgent",
     "urgentBadgeAriaLabel": "Article urgent",
     "add": "Ajouter",
-    "doneDefault": "Terminés (0)"
+    "doneDefault": "Terminés (0)",
+    "doneCount": "Terminés ({count})",
+    "remainingCountOne": "{count} restant",
+    "remainingCountOther": "{count} restants",
+    "typeLabelShopping": "courses",
+    "typeLabelTasks": "tâches",
+    "typeLabelSubscriptions": "abonnements",
+    "typeLabelNotes": "notes",
+    "emptyList": "Aucun élément pour le moment.",
+    "allDone": "Tout est terminé pour le moment.",
+    "enlargeImageAriaLabel": "Agrandir l'image de {title}",
+    "autoPriceAriaLabel": "Prix détecté automatiquement pour {title}, cliquer pour modifier",
+    "priceSyncPending": "Prix en attente de synchro",
+    "priceDetecting": "Détection du prix…",
+    "editItemAriaLabel": "Modifier {title}",
+    "deleteItemAriaLabel": "Supprimer {title}",
+    "decreaseQuantityAriaLabel": "Diminuer la quantité de {title}",
+    "quantityForItemAriaLabel": "Quantité de {title}",
+    "increaseQuantityAriaLabel": "Augmenter la quantité de {title}",
+    "priceValidationError": "Le prix doit être un nombre positif."
   },
   "planning": {
     "tabTitle": "Budget & Prévisions",
@@ -154,6 +185,11 @@
     "pinnedBadge": "Épinglée",
     "pinnedToast": "« {name} » épinglée sur le tableau de bord",
     "unpinnedToast": "« {name} » retirée du tableau de bord"
+  },
+  "sync": {
+    "listBadgeLabel": "Non synchronisé",
+    "listBadgeAriaLabel": "« {name} » a des modifications en attente de synchronisation",
+    "itemBadgeAriaLabel": "« {title} » a une modification en attente de synchronisation"
   },
   "modals": {
     "close": "Fermer",

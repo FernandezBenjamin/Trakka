@@ -15,3 +15,10 @@ var ErrDuplicateEmail = errors.New("email already registered")
 // member of the house (detected from the house_members composite primary
 // key constraint).
 var ErrAlreadyMember = errors.New("already a member")
+
+// ErrInvalidReorder is returned by ReorderItems when the given item ids
+// aren't exactly a permutation of the target list's current items (missing
+// an item, repeating one, or naming one that belongs to a different list) —
+// a partial or foreign set would leave positions ambiguous, so the whole
+// request is rejected rather than applying whatever prefix does match.
+var ErrInvalidReorder = errors.New("invalid reorder: item_ids must exactly match the list's current items")

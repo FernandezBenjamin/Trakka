@@ -100,12 +100,15 @@ func checkCSRFToken(r *http.Request) bool {
 //     TLS-terminating reverse proxy the browser's Origin says "https" while
 //     r.Host carries only the hostname, and requiring a scheme match would
 //     break every such deployment for no security gain.
-//   - Sec-Fetch-Site, checked when Origin is absent.
+//   - Sec-Fetch-Site, checked when Origin is absent OR is the literal
+//     opaque value "null" — see the dedicated comment below for why "null"
+//     needs its own fallback rather than being rejected outright the moment
+//     it's seen.
 //
-// A request with neither header is allowed through: that is a non-browser
-// client (curl, a script, the container healthcheck), which is not a CSRF
-// vector — CSRF is by definition an attack that borrows a browser's ambient
-// credentials.
+// A request with neither usable signal is allowed through: that is a
+// non-browser client (curl, a script, the container healthcheck), which is
+// not a CSRF vector — CSRF is by definition an attack that borrows a
+// browser's ambient credentials.
 func requireSameOriginWrite(allowedHost string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -115,7 +118,32 @@ func requireSameOriginWrite(allowedHost string, next http.Handler) http.Handler 
 			return
 		}
 
-		if origin := r.Header.Get("Origin"); origin != "" {
+		origin := r.Header.Get("Origin")
+		// The literal string "null" is Origin's serialization for an opaque
+		// origin — sent not only by an attacker's sandboxed iframe (the case
+		// the comment on originMatchesHost already calls out) but also by
+		// every standards-compliant browser on a perfectly legitimate
+		// same-origin *navigation* (an HTML <form method=post>, as opposed to
+		// fetch()) whenever the page's Referrer-Policy is "no-referrer" — see
+		// the Fetch spec's "Origin header" algorithm, step 3.1: a
+		// non-GET/HEAD request whose referrer policy is "no-referrer" has its
+		// Origin unconditionally serialized as "null", regardless of whether
+		// the request is actually same-origin. SecurityHeaders sets
+		// Referrer-Policy: no-referrer on every response, and /auth/login and
+		// /auth/register are the only two navigational (non-fetch()) POSTs in
+		// this app — every /api/v1/... write goes through apiRequest()'s
+		// fetch(), whose response tainting is always "cors" and so always
+		// carries the real Origin regardless of referrer policy (same spec,
+		// step 2) — which is exactly why this was only ever reachable from
+		// the login/register forms, in literally every browser, and not from
+		// the rest of the app. Treating "null" as unusable and falling back
+		// to Sec-Fetch-Site below (rather than rejecting on the spot) fixes
+		// that false positive without reopening the sandboxed-iframe case it
+		// was meant to catch: an opaque origin is by definition never
+		// "same-site" with anything, so a genuine cross-site attacker
+		// (sandboxed iframe or otherwise) still gets Sec-Fetch-Site:
+		// cross-site and is still rejected below.
+		if origin != "" && origin != "null" {
 			if !originMatchesHost(origin, r.Host, allowedHost) {
 				writeError(w, http.StatusForbidden, "cross-origin request rejected")
 				return

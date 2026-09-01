@@ -6,7 +6,8 @@
     "pinList": "Pin {name} to dashboard",
     "unpinList": "Unpin {name} from dashboard",
     "listActionsAriaLabel": "More actions for {name}",
-    "removeMember": "Remove {email}"
+    "removeMember": "Remove {email}",
+    "networkError": "Could not reach the server. Check your connection."
   },
   "header": {
     "backToDashboard": "Back to dashboard",
@@ -17,6 +18,8 @@
     "online": "Online",
     "offline": "Offline",
     "pending": "{count} pending",
+    "syncing": "Syncing…",
+    "synced": "Synced",
     "adminSettings": "System Settings",
     "userSettings": "Settings",
     "themeSwitcher": "Change theme",
@@ -46,12 +49,21 @@
     "listTypeRecurring": "Recurring",
     "listTypeGroceries": "Groceries",
     "listTypeTodo": "Tasks",
-    "listTypeCustom": "Notes / Free"
+    "listTypeCustom": "Notes / Free",
+    "todoProgress": "{done}/{total} completed",
+    "emptyShopping": "No shopping lists yet.",
+    "emptyTodo": "No task spaces yet.",
+    "emptyCustom": "No free lists yet."
   },
   "items": {
     "back": "Back to dashboard",
     "editList": "Edit list",
     "shareList": "Share list",
+    "reorderList": "Reorder items",
+    "reorderHint": "Drag ☰ to reorder, then confirm.",
+    "reorderCancel": "Cancel",
+    "reorderConfirm": "Confirm order",
+    "reorderSuccess": "Item order saved.",
     "financeSummaryLabel": "Budget summary",
     "financeTotal": "Estimated total",
     "financeSpent": "Already spent",
@@ -93,7 +105,26 @@
     "urgentBadgeLabel": "Urgent",
     "urgentBadgeAriaLabel": "Urgent item",
     "add": "Add",
-    "doneDefault": "Completed (0)"
+    "doneDefault": "Completed (0)",
+    "doneCount": "Completed ({count})",
+    "remainingCountOne": "{count} remaining",
+    "remainingCountOther": "{count} remaining",
+    "typeLabelShopping": "shopping",
+    "typeLabelTasks": "tasks",
+    "typeLabelSubscriptions": "subscriptions",
+    "typeLabelNotes": "notes",
+    "emptyList": "No items yet.",
+    "allDone": "Everything is done for now.",
+    "enlargeImageAriaLabel": "Enlarge {title}'s image",
+    "autoPriceAriaLabel": "Automatically detected price for {title}, click to edit",
+    "priceSyncPending": "Price pending sync",
+    "priceDetecting": "Detecting price…",
+    "editItemAriaLabel": "Edit {title}",
+    "deleteItemAriaLabel": "Delete {title}",
+    "decreaseQuantityAriaLabel": "Decrease {title}'s quantity",
+    "quantityForItemAriaLabel": "{title}'s quantity",
+    "increaseQuantityAriaLabel": "Increase {title}'s quantity",
+    "priceValidationError": "Price must be a positive number."
   },
   "planning": {
     "tabTitle": "Budget & Forecast",
@@ -154,6 +185,11 @@
     "pinnedBadge": "Pinned",
     "pinnedToast": "\"{name}\" pinned to the dashboard",
     "unpinnedToast": "\"{name}\" removed from the dashboard"
+  },
+  "sync": {
+    "listBadgeLabel": "Unsynced",
+    "listBadgeAriaLabel": "\"{name}\" has changes pending sync",
+    "itemBadgeAriaLabel": "\"{title}\" has a change pending sync"
   },
   "modals": {
     "close": "Close",
