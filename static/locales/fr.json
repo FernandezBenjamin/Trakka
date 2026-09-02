@@ -12,7 +12,6 @@
   "header": {
     "backToDashboard": "Retour au tableau de bord",
     "logout": "Se déconnecter",
-    "langSwitcher": "Changer de langue",
     "langFr": "Français",
     "langEn": "English",
     "online": "En ligne",
@@ -22,7 +21,6 @@
     "synced": "Synchronisé",
     "adminSettings": "Paramètres du Système",
     "userSettings": "Paramètres",
-    "themeSwitcher": "Changer de thème",
     "themeLight": "Clair",
     "themeDark": "Sombre",
     "themeAuto": "Système"
@@ -303,6 +301,10 @@
     },
     "userSettings": {
       "title": "Paramètres",
+      "appearanceLabel": "Apparence",
+      "appearanceHint": "Choisissez l'apparence de l'application.",
+      "languageLabel": "Langue",
+      "languageHint": "Choisissez la langue de l'interface.",
       "keepLastPageLabel": "Conserver la dernière page ouverte au lancement",
       "keepLastPageHint": "Rouvre Trakka directement sur la dernière liste ou le dernier onglet consulté, plutôt que sur le tableau de bord.",
       "submit": "Enregistrer",

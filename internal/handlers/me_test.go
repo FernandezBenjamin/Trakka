@@ -1,0 +1,94 @@
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// TestHandleMeResolvesDefaultLanguage exercises resolveUserLanguage: an
+// account that never set its own language preference (users.language still
+// "") must come back from GET /api/v1/me carrying the instance's configured
+// DEFAULT_APP_LANGUAGE, not an empty string.
+func TestHandleMeResolvesDefaultLanguage(t *testing.T) {
+	app := newTestApplication(t)
+	app.Config.DefaultAppLanguage = "en"
+
+	user := mustCreateTestUser(t, app, "default-lang@example.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req = req.WithContext(context.WithValue(req.Context(), userContextKey, user))
+	rec := httptest.NewRecorder()
+	app.handleMe(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleMe: %d %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Language string `json:"language"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got.Language != "en" {
+		t.Fatalf("expected the instance default %q for an account with no preference, got %q", "en", got.Language)
+	}
+}
+
+// TestHandleMeUpdateSetsLanguage exercises PATCH /api/v1/me's language field:
+// a valid choice is persisted and echoed back verbatim (no default
+// substitution needed once the account has an explicit preference), and an
+// unsupported value is rejected with 400 rather than silently stored.
+func TestHandleMeUpdateSetsLanguage(t *testing.T) {
+	app := newTestApplication(t)
+	app.Config.DefaultAppLanguage = "en"
+
+	user := mustCreateTestUser(t, app, "patch-lang@example.com")
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/me", strings.NewReader(`{"language":"fr"}`))
+	req = req.WithContext(context.WithValue(req.Context(), userContextKey, user))
+	rec := httptest.NewRecorder()
+	app.handleMeUpdate(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleMeUpdate: %d %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Language string `json:"language"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got.Language != "fr" {
+		t.Fatalf("expected the persisted choice %q, got %q", "fr", got.Language)
+	}
+
+	reloaded, err := app.DB.GetUser(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("reloading user: %v", err)
+	}
+	if reloaded.Language != "fr" {
+		t.Fatalf("expected users.language to persist as %q, got %q", "fr", reloaded.Language)
+	}
+
+	badReq := httptest.NewRequest(http.MethodPatch, "/api/v1/me", strings.NewReader(`{"language":"de"}`))
+	badReq = badReq.WithContext(context.WithValue(badReq.Context(), userContextKey, user))
+	badRec := httptest.NewRecorder()
+	app.handleMeUpdate(badRec, badReq)
+	if badRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an unsupported language, got %d %s", badRec.Code, badRec.Body.String())
+	}
+
+	// The rejected request must not have overwritten the earlier, valid
+	// choice.
+	stillFrench, err := app.DB.GetUser(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("reloading user: %v", err)
+	}
+	if stillFrench.Language != "fr" {
+		t.Fatalf("expected the rejected PATCH to leave language as %q, got %q", "fr", stillFrench.Language)
+	}
+}

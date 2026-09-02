@@ -59,8 +59,8 @@ func (d *DB) GetUser(ctx context.Context, id int64) (*models.User, error) {
 	u := &models.User{}
 	var isAdmin, keepLastPage int
 	err := d.conn.QueryRowContext(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page FROM users WHERE id = ?`, id,
-	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage)
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language FROM users WHERE id = ?`, id,
+	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -91,12 +91,33 @@ func (d *DB) UpdateUserKeepLastPage(ctx context.Context, id int64, keepLastPage 
 	return d.GetUser(ctx, id)
 }
 
+// UpdateUserLanguage sets the caller's own UI-language preference (see
+// models.User.Language) to lang, which the caller (internal/handlers) must
+// already have validated against validate.SupportedLanguages — this method
+// doesn't re-validate, mirroring UpdateUserKeepLastPage's own division of
+// responsibility. Returns ErrNotFound if no such user exists.
+func (d *DB) UpdateUserLanguage(ctx context.Context, id int64, lang string) (*models.User, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE users SET language = ? WHERE id = ?`, lang, id)
+	if err != nil {
+		return nil, fmt.Errorf("updating user %d language: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected updating user %d language: %w", id, err)
+	}
+	if affected == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetUser(ctx, id)
+}
+
 // GetUserByEmail fetches a user (with credentials, for authentication) by
 // email, compared case-insensitively. Returns ErrNotFound if no such user
 // exists.
 func (d *DB) GetUserByEmail(ctx context.Context, email string) (*models.UserWithCredentials, error) {
 	return d.getUserWithCredentials(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, password_hash, oidc_subject, oidc_issuer
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, password_hash, oidc_subject, oidc_issuer
 		 FROM users WHERE email = ?`, email)
 }
 
@@ -104,7 +125,7 @@ func (d *DB) GetUserByEmail(ctx context.Context, email string) (*models.UserWith
 // identity (issuer + subject). Returns ErrNotFound if no such user exists.
 func (d *DB) GetUserByOIDCSubject(ctx context.Context, issuer, subject string) (*models.UserWithCredentials, error) {
 	return d.getUserWithCredentials(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, password_hash, oidc_subject, oidc_issuer
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, password_hash, oidc_subject, oidc_issuer
 		 FROM users WHERE oidc_issuer = ? AND oidc_subject = ?`, issuer, subject)
 }
 
@@ -112,7 +133,7 @@ func (d *DB) getUserWithCredentials(ctx context.Context, query string, args ...a
 	u := &models.UserWithCredentials{}
 	var isAdmin, keepLastPage int
 	err := d.conn.QueryRowContext(ctx, query, args...).Scan(
-		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.PasswordHash, &u.OIDCSubject, &u.OIDCIssuer)
+		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language, &u.PasswordHash, &u.OIDCSubject, &u.OIDCIssuer)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

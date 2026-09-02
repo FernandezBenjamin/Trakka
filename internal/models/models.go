@@ -209,6 +209,15 @@ type User struct {
 	// dashboard tab/list the user had open (static/js/settings.js) instead
 	// of always landing on the dashboard. Settable via PATCH /api/v1/me.
 	KeepLastPage bool `json:"keep_last_page"`
+	// Language is the account's own UI-language preference ("fr" or "en"),
+	// set from the "Langue" section of the "Paramètres" modal
+	// (static/js/i18n.js/settings.js) and settable via PATCH /api/v1/me.
+	// Never empty in an API response: internal/handlers.resolveUserLanguage
+	// fills in the instance's DEFAULT_APP_LANGUAGE (internal/config) before
+	// this struct is ever marshaled to JSON, whenever the account itself has
+	// no explicit preference recorded — internal/db.GetUser can still read
+	// the underlying users.language column as "" for such an account.
+	Language string `json:"language"`
 }
 
 // UserWithCredentials is returned by db lookups used for authentication

@@ -1890,6 +1890,20 @@ async function init() {
       /* private mode / storage denied — the purge above still ran */
     }
     setKeepLastPagePreference(state.currentUser.keep_last_page);
+    // Reconcile the account's own language preference (server-authoritative
+    // — always "fr"/"en", never empty, see internal/handlers.resolveUserLanguage)
+    // against whatever i18n.js already applied from localStorage/browser-
+    // language guessing before this resolved, e.g. a brand new account whose
+    // instance-wide default (DEFAULT_APP_LANGUAGE) differs from the
+    // browser's own language. Own try/catch so a failed locale fetch can't
+    // be mistaken for the session check above having failed.
+    if (window.TrakkaI18n && state.currentUser.language !== TrakkaI18n.getLang()) {
+      try {
+        await TrakkaI18n.setLang(state.currentUser.language);
+      } catch {
+        // Locale fetch failed — keep whatever language was already applied.
+      }
+    }
   } catch (err) {
     console.warn('Session non vérifiée (probablement hors ligne) :', err);
   }

@@ -10,6 +10,7 @@ import (
 	"trakka/internal/db"
 	"trakka/internal/models"
 	"trakka/internal/settings"
+	"trakka/internal/validate"
 )
 
 // loginPageData is what templates/login.html renders. Error is always
@@ -348,7 +349,22 @@ func (app *Application) handleOIDCCallback(w http.ResponseWriter, r *http.Reques
 func (app *Application) handleMe(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r)
 	app.materializeInvitations(r, user)
+	app.resolveUserLanguage(user)
 	writeJSON(w, http.StatusOK, user)
+}
+
+// resolveUserLanguage fills in user.Language with the instance-wide
+// DEFAULT_APP_LANGUAGE (internal/config) whenever the account itself has no
+// explicit preference recorded (an empty users.language column, the state
+// every account — new or pre-existing — starts in). Applied here, at the
+// point of every JSON response carrying a User, rather than baked into the
+// column at account-creation time, so raising or changing that env var also
+// takes effect retroactively for every account that never set its own
+// language, not just new ones created after the change.
+func (app *Application) resolveUserLanguage(user *models.User) {
+	if user.Language == "" {
+		user.Language = app.Config.DefaultAppLanguage
+	}
 }
 
 // materializeInvitations applies any invitations waiting for this user's
@@ -365,30 +381,52 @@ func (app *Application) materializeInvitations(r *http.Request, user *models.Use
 }
 
 // handleMeUpdate applies a partial update to the caller's own profile
-// preferences. Currently just keep_last_page (see the "keep last page on
-// launch" feature in static/js/settings.js) — the same "absent = untouched"
-// PATCH convention as handleItemsPatch.
+// preferences: keep_last_page (see the "keep last page on launch" feature in
+// static/js/settings.js) and language (the account's own UI-language
+// preference, set from the "Langue" section of the "Paramètres" modal — see
+// static/js/i18n.js/settings.js). Both follow the same "absent = untouched"
+// PATCH convention as handleItemsPatch; either, both, or neither may be
+// present in a single request.
 func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		KeepLastPage *bool `json:"keep_last_page"`
+		KeepLastPage *bool   `json:"keep_last_page"`
+		Language     *string `json:"language"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
 	}
 
 	user := userFromContext(r)
-	if in.KeepLastPage == nil {
-		writeJSON(w, http.StatusOK, user)
-		return
+
+	if in.Language != nil {
+		lang, ok := validate.Language(*in.Language)
+		if !ok {
+			writeError(w, http.StatusBadRequest, `language must be "fr" or "en"`)
+			return
+		}
+		updated, err := app.DB.UpdateUserLanguage(r.Context(), user.ID, lang)
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		} else if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		user = updated
 	}
 
-	updated, err := app.DB.UpdateUserKeepLastPage(r.Context(), user.ID, *in.KeepLastPage)
-	if errors.Is(err, db.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "user not found")
-		return
-	} else if err != nil {
-		app.serverError(w, r, err)
-		return
+	if in.KeepLastPage != nil {
+		updated, err := app.DB.UpdateUserKeepLastPage(r.Context(), user.ID, *in.KeepLastPage)
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		} else if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		user = updated
 	}
-	writeJSON(w, http.StatusOK, updated)
+
+	app.resolveUserLanguage(user)
+	writeJSON(w, http.StatusOK, user)
 }
