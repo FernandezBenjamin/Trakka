@@ -223,21 +223,35 @@ body {
 }
 
 /* Item cards (static/js/list_view.js's buildItemRow) are a single ~56px-tall
-   flex row at every breakpoint — checkbox/marker, an optional thumbnail, the
-   title (truncated, flex-1), the quantity stepper, a compact price cell
-   (line total plus single-glyph ⚡/🔥/⏳ indicators — see buildPriceBlock), a
-   small unsynced dot, the inline 🔗 link icon, then edit/delete/kebab at the
-   trailing edge, all built with Tailwind's own flex/gap/truncate utilities
-   directly in buildItemRow (`px-3 py-1.5` padding, `gap-2` between children —
-   see the .item-card class string there for the exact figures). There is no
-   second line any more: target month, recurrence, and the price-alert
-   threshold — anything that doesn't fit on one line — moved into
-   #item-actions-sheet instead (buildItemActionsMeta), the single sheet every
-   "act on this item" entry point already funnels into (a tap on the title,
-   the [⋮] kebab, or a long press), including its own Ouvrir/Copier/Partager
-   link group. `.item-card__actions` (✏️/🗑️) and `.item-card__kebab` (⋮) are
-   both always built by buildItemRow; which one is actually visible is a pure
-   CSS/Tailwind concern (`hidden md:flex` / `flex md:hidden` on the two,
+   flex row from Tailwind's `sm` breakpoint (640px) up — checkbox/marker, an
+   optional thumbnail, the title (truncated, flex-1), the quantity stepper, a
+   compact price cell (line total plus single-glyph ⚡/🔥/⏳ indicators — see
+   buildPriceBlock), a small unsynced dot, the inline 🔗 link icon, then
+   edit/delete/kebab at the trailing edge. Below `sm`, the card is two
+   stacked rows instead — `rowTop` (checkbox/marker + thumbnail + title +
+   edit/delete + kebab) above `rowBottom` (quantity stepper + unsynced dot +
+   price cell + link icon) — since packing every one of those fixed-width
+   slots onto a single line simply doesn't fit a phone-width screen: the
+   title (the only flexible element) would be squeezed to nothing while the
+   price/link/kebab group at the trailing edge overflows the card's own
+   right edge, which is exactly the bug this two-row split fixes. Both the
+   single-line and two-row shapes are built from the same fixed append order
+   in buildItemRow, purely via Tailwind's responsive `flex-col`/`sm:flex-row
+   sm:items-center` on the card and `sm:flex-1` on `rowTop` (`px-3 py-1.5`
+   padding, `gap-2` between children within each row — see the .item-card
+   class string there for the exact figures) — no separate mobile-only code
+   path, and no custom CSS needed here at all; see buildItemRow's own header
+   comment for the full design and the exact widths that motivated the `sm`
+   breakpoint choice.
+
+   Either way, target month, recurrence, and the price-alert threshold —
+   anything that doesn't fit even on two lines — live in #item-actions-sheet
+   instead (buildItemActionsMeta), the single sheet every "act on this item"
+   entry point already funnels into (a tap on the title, the [⋮] kebab, or a
+   long press), including its own Ouvrir/Copier/Partager link group.
+   `.item-card__actions` (✏️/🗑️) and `.item-card__kebab` (⋮) are both always
+   built by buildItemRow, inside `rowTop`; which one is actually visible is a
+   pure CSS/Tailwind concern (`hidden md:flex` / `flex md:hidden` on the two,
    respectively) — see buildItemRow for why the sheet exists at all on narrow
    screens where two more 44px tap targets on the card would crowd the row. */
 @media (max-width: 768px) {
