@@ -847,21 +847,45 @@ function buildItemActionsMeta(item) {
   return fragment;
 }
 
-// buildItemRow lays out one card as a single ~56px-tall line — checkbox/
-// marker, an optional thumbnail, the title (truncated, flex-1 so it's the
-// one thing that actually gives way on a narrow screen), the quantity
-// stepper, the price cell (with its own compact ⚡/🔥/⏳ glyphs — see
-// buildPriceBlock), a small unsynced-status dot, the 🔗 link icon, then
-// edit/delete/kebab at the trailing edge — rather than the old two-line
-// "title row + badges row" shape. Everything that doesn't fit on one line
-// (target month, recurrence, the price-alert threshold) moved into
-// #item-actions-sheet instead — see buildItemActionsMeta above and
-// openItemActionsSheet below — the single sheet every "act on this item"
-// entry point (a tap on the title, the [⋮] kebab, or a long press) already
-// funnels into. `.item-card__actions` (✏️/🗑️) and `.item-card__kebab` (⋮)
-// are both always built; base.css's `hidden md:flex`/`flex md:hidden`
-// decide which one is actually visible per breakpoint — see the comment
-// above that block for why.
+// buildItemRow lays out one card as a single ~56px-tall line on a wide
+// enough screen (Tailwind's `sm` breakpoint, 640px, up) — checkbox/marker,
+// an optional thumbnail, the title (truncated, flex-1 so it's the one thing
+// that actually gives way on a narrow screen), the quantity stepper, the
+// price cell (with its own compact ⚡/🔥/⏳ glyphs — see buildPriceBlock), a
+// small unsynced-status dot, the 🔗 link icon, then edit/delete/kebab at the
+// trailing edge. Below `sm`, that single line simply doesn't fit: adding up
+// every fixed-width slot (checkbox 44px + quantity stepper ~90px + price
+// cell ~116px + unsynced dot 8px + link icon 32px + kebab 44px, plus the
+// gaps between them) comfortably exceeds a 375px phone's own width before
+// the title — the one flexible element — gets anything at all, which is
+// exactly the "title squeezed to nothing, price/link/kebab clipped off the
+// right edge" overflow this two-row split fixes.
+//
+// Every child buildItemRow appends is grouped into two always-present
+// wrapper `<div>`s, `rowTop` (checkbox/marker + thumbnail + title +
+// edit/delete + kebab) and `rowBottom` (quantity stepper + unsynced dot +
+// price cell + link icon), each its own `flex items-center gap-2` row
+// internally — not just below `sm`, but at every width, so there's exactly
+// one place the child-append order is decided rather than two diverging
+// code paths to keep in sync. What changes per breakpoint is purely how `li`
+// itself lays those two wrappers out: `flex-col` (stacked, one row above the
+// other) below `sm`, `sm:flex-row sm:items-center` (side by side, i.e. one
+// visual line again — rowTop's `sm:flex-1` is what lets it claim the
+// leftover width for its own title to truncate into, with rowBottom staying
+// at its natural content width on the right) from `sm` up. This is why
+// rowTop needs `min-w-0` unconditionally: it's title's actual flex ancestor
+// now (previously `li` filled that role directly), and `flex-1` without a
+// `min-w-0` companion can't shrink past its content's own auto min-width —
+// the same reason `title` itself already carries `min-w-0`.
+//
+// Everything that doesn't fit even on two lines (target month, recurrence,
+// the price-alert threshold) still lives in #item-actions-sheet instead —
+// see buildItemActionsMeta above and openItemActionsSheet below — the
+// single sheet every "act on this item" entry point (a tap on the title,
+// the [⋮] kebab, or a long press) already funnels into. `.item-card__actions`
+// (✏️/🗑️) and `.item-card__kebab` (⋮) are both always built; Tailwind's
+// `hidden md:flex`/`flex md:hidden` on the two decide which one is actually
+// visible per breakpoint — see the comment above that CSS block for why.
 //
 // showQuantity/showPrice/showLink (all list-type-level, from
 // fieldVisibilityFor — see renderItems' two call sites) each gate whether
@@ -874,22 +898,34 @@ function buildItemActionsMeta(item) {
 // whether *this* item happens to have a link, a price, or a price-status
 // glyph absolutely does vary row to row, and reserving that slot's width
 // unconditionally (leaving it empty rather than absent) is what keeps the
-// stepper/price/link/kebab group aligned from one card to the next — see
-// buildPriceBlock's own PRICE_STATUS_SLOT_CLASS comment for the mechanism
-// (every element after the flex-1 title shares the same "give way" sibling,
-// so any per-row width difference among them shifts the whole group).
+// stepper/price/link/kebab group aligned from one card to the next within
+// rowBottom — see buildPriceBlock's own PRICE_STATUS_SLOT_CLASS comment for
+// the mechanism.
 function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, showPrice = true, showLink = true } = {}) {
   const li = document.createElement('li');
   // An unfinished urgent item gets a distinctive rose border so it stands
   // out at a glance in the (already sorted-to-top, see renderItems) active
   // list — a completed urgent item just reverts to the normal styling since
   // it no longer needs attention. py-1.5 (6px) plus the 44px checkbox/kebab
-  // touch targets below is what keeps the whole row within the ~56px
-  // height budget this redesign targets.
+  // touch targets below is what keeps a single-line row (`sm` and up) within
+  // the ~56px height budget this redesign targets; below `sm`, `flex-col`
+  // stacks rowTop/rowBottom instead — see the header comment above.
   li.className =
     item.is_urgent && !item.done
-      ? 'item-card flex items-center gap-2 rounded-xl border-2 border-rose-500/60 bg-rose-500/5 px-3 py-1.5'
-      : 'item-card flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 px-3 py-1.5';
+      ? 'item-card flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2 rounded-xl border-2 border-rose-500/60 bg-rose-500/5 px-3 py-1.5'
+      : 'item-card flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 px-3 py-1.5';
+
+  // rowTop: checkbox/marker + thumbnail + title + edit/delete + kebab — see
+  // the header comment above for why this wrapper exists and why it needs
+  // `min-w-0` alongside `sm:flex-1`.
+  const rowTop = document.createElement('div');
+  rowTop.className = 'item-card__row-top flex min-w-0 items-center gap-2 sm:flex-1';
+
+  // rowBottom: quantity stepper + unsynced dot + price cell + link icon —
+  // stays at its own natural content width rather than growing, both
+  // stacked under rowTop (mobile) and sitting to its right (`sm` and up).
+  const rowBottom = document.createElement('div');
+  rowBottom.className = 'item-card__row-bottom flex shrink-0 items-center gap-2';
 
   if (showCheckbox) {
     const checkboxLabel = document.createElement('label');
@@ -903,9 +939,9 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
     checkbox.setAttribute('aria-label', t('urgent.markDoneAriaLabel', { title: item.title }));
     checkbox.addEventListener('change', () => toggleDone(item));
     checkboxLabel.appendChild(checkbox);
-    li.appendChild(checkboxLabel);
+    rowTop.appendChild(checkboxLabel);
   } else {
-    li.appendChild(buildLineMarker(index));
+    rowTop.appendChild(buildLineMarker(index));
   }
 
   // A thumbnail only ever appears when a product image was actually found
@@ -914,18 +950,18 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // and shopping items with no matched image just skip straight to the
   // title, unchanged from before this feature existed.
   if (item.image_url && isSafeHttpUrl(item.image_url)) {
-    li.appendChild(buildItemThumbnail(item));
+    rowTop.appendChild(buildItemThumbnail(item));
   }
 
   const title = document.createElement('span');
   // `truncate` (Tailwind's overflow-hidden/text-overflow-ellipsis/
   // whitespace-nowrap shorthand) needs a `min-w-0` flex ancestor to actually
-  // clip instead of forcing the row wider — `li` itself, as the row, is that
-  // ancestor — so a long title on a narrow screen never pushes the
-  // stepper/price/actions groups out of the card instead of just eliding.
-  // A tap on the title itself opens the same item-actions sheet as the [⋮]
-  // kebab button, the mobile-first "tap the item" entry point the pencil/
-  // trash buttons already cover on wider screens.
+  // clip instead of forcing the row wider — `rowTop` (itself `min-w-0`,
+  // and `flex-1` from `sm` up) is that ancestor, so a long title on a
+  // narrow screen never pushes the edit/kebab group out of the card instead
+  // of just eliding. A tap on the title itself opens the same item-actions
+  // sheet as the [⋮] kebab button, the mobile-first "tap the item" entry
+  // point the pencil/trash buttons already cover on wider screens.
   title.className = item.done
     ? 'min-w-0 flex-1 cursor-pointer truncate text-sm font-semibold text-slate-500 line-through opacity-60'
     : 'min-w-0 flex-1 cursor-pointer truncate text-sm font-semibold text-slate-900 dark:text-slate-100';
@@ -935,46 +971,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // form, still used as a compact read-only summary in urgent.js/planning.js.
   title.textContent = !showQuantity && item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
   title.addEventListener('click', () => openItemActionsSheet(item));
-  li.appendChild(title);
-
-  if (showQuantity) {
-    li.appendChild(buildQuantityStepper(item));
-  }
-
-  const priceBlock = buildPriceBlock(item, { showPrice });
-  if (priceBlock) li.appendChild(priceBlock);
-
-  // hasPendingItemChanges is defined in app.js; isOfflineQueuedItem (above)
-  // already covers an item still carrying its temp-item-* id — this also
-  // catches an already-synced item with some other write (an edit, a
-  // toggle, a delete) still sitting in the offline sync queue. Always
-  // reserved (a bare dot, or its same-size empty stand-in) rather than only
-  // appended when pending — see buildItemRow's own header comment on why an
-  // absent-vs-present slot here would misalign every row after it.
-  li.appendChild(
-    hasPendingItemChanges(item.id) || isOfflineQueuedItem(item) ? buildUnsyncedDot(item) : buildEmptySlot('h-2 w-2')
-  );
-
-  const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
-  if (showLink) {
-    if (hasLink) {
-      const linkIcon = buildInlineLinkIcon(item);
-      li.appendChild(linkIcon);
-      // A long press (~500ms touch hold, desktop mouse unaffected — see
-      // attachLongPress) on either the title or the link icon itself opens
-      // the very same #item-actions-sheet a short tap does, just pre-focused
-      // on its Ouvrir/Copier/Partager link group — the "appui long sur
-      // l'item ou le lien" gesture, without a second sheet to keep in sync.
-      attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
-      attachLongPress(linkIcon, () => openItemActionsSheet(item, { focusLink: true }));
-    } else {
-      // Same h-8 w-8 footprint as buildInlineLinkIcon's own <a> so a list
-      // where only some items carry a url (the common case) still keeps
-      // every row's trailing group aligned — see buildItemRow's header
-      // comment.
-      li.appendChild(buildEmptySlot('h-8 w-8'));
-    }
-  }
+  rowTop.appendChild(title);
 
   const actions = document.createElement('div');
   actions.className = 'item-card__actions hidden shrink-0 items-center gap-1 md:flex';
@@ -995,7 +992,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   deleteBtn.addEventListener('click', () => removeItem(item));
   actions.appendChild(deleteBtn);
 
-  li.appendChild(actions);
+  rowTop.appendChild(actions);
 
   const kebabBtn = document.createElement('button');
   kebabBtn.type = 'button';
@@ -1003,13 +1000,57 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   kebabBtn.className = 'item-card__kebab flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 md:hidden';
   kebabBtn.innerHTML = KEBAB_ICON_SVG;
   kebabBtn.addEventListener('click', () => openItemActionsSheet(item));
-  li.appendChild(kebabBtn);
+  rowTop.appendChild(kebabBtn);
+
+  if (showQuantity) {
+    rowBottom.appendChild(buildQuantityStepper(item));
+  }
+
+  // hasPendingItemChanges is defined in app.js; isOfflineQueuedItem (above)
+  // already covers an item still carrying its temp-item-* id — this also
+  // catches an already-synced item with some other write (an edit, a
+  // toggle, a delete) still sitting in the offline sync queue. Always
+  // reserved (a bare dot, or its same-size empty stand-in) rather than only
+  // appended when pending — see buildItemRow's own header comment on why an
+  // absent-vs-present slot here would misalign every row after it.
+  rowBottom.appendChild(
+    hasPendingItemChanges(item.id) || isOfflineQueuedItem(item) ? buildUnsyncedDot(item) : buildEmptySlot('h-2 w-2')
+  );
+
+  const priceBlock = buildPriceBlock(item, { showPrice });
+  if (priceBlock) rowBottom.appendChild(priceBlock);
+
+  const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
+  if (showLink) {
+    if (hasLink) {
+      const linkIcon = buildInlineLinkIcon(item);
+      rowBottom.appendChild(linkIcon);
+      // A long press (~500ms touch hold, desktop mouse unaffected — see
+      // attachLongPress) on either the title or the link icon itself opens
+      // the very same #item-actions-sheet a short tap does, just pre-focused
+      // on its Ouvrir/Copier/Partager link group — the "appui long sur
+      // l'item ou le lien" gesture, without a second sheet to keep in sync.
+      attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
+      attachLongPress(linkIcon, () => openItemActionsSheet(item, { focusLink: true }));
+    } else {
+      // Same h-8 w-8 footprint as buildInlineLinkIcon's own <a> so a list
+      // where only some items carry a url (the common case) still keeps
+      // every row's trailing group aligned — see buildItemRow's header
+      // comment.
+      rowBottom.appendChild(buildEmptySlot('h-8 w-8'));
+    }
+  }
+
+  li.appendChild(rowTop);
+  li.appendChild(rowBottom);
 
   // attachItemSwipeGestures is defined in gestures.js — swipe right to
   // toggle done (only when this list type actually shows the checkbox at
   // all), swipe left to delete, both reusing toggleDone/removeItem exactly
   // as the checkbox/trash button above already do. Touch-only and a no-op
   // on a device with no touchscreen — see that file's own header comment.
+  // It moves every child of `li` (i.e. rowTop and rowBottom themselves) into
+  // its own foreground wrapper, so it needs no changes for this split.
   attachItemSwipeGestures(li, item, { canToggleDone: showCheckbox });
 
   return li;
@@ -1346,9 +1387,14 @@ function toggleUrgent(item) {
 function buildQuantityStepper(item) {
   const quantity = item.quantity > 0 ? item.quantity : 1;
 
+  // max-w-[90px] (mobile) / sm:max-w-none is a hard cap on top of the
+  // already-compact 28px buttons + narrower input below — see buildItemRow's
+  // header comment on the two-row mobile layout this stepper now sits
+  // inside as part of rowBottom, where it no longer has to share a line
+  // with the title at all.
   const wrap = document.createElement('div');
   wrap.className =
-    'flex shrink-0 items-center gap-0.5 rounded-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-0.5';
+    'flex max-w-[90px] shrink-0 items-center gap-0.5 rounded-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-0.5 sm:max-w-none';
 
   const decrementBtn = document.createElement('button');
   decrementBtn.type = 'button';
@@ -1366,7 +1412,7 @@ function buildQuantityStepper(item) {
   input.value = String(quantity);
   input.setAttribute('aria-label', t('items.quantityForItemAriaLabel', { title: item.title }));
   input.className =
-    'w-10 shrink-0 rounded border-0 bg-transparent text-center text-sm font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40';
+    'w-8 shrink-0 rounded border-0 bg-transparent text-center text-sm font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40 sm:w-10';
   input.addEventListener('change', () => {
     const parsed = Number.parseInt(input.value, 10);
     if (Number.isFinite(parsed) && parsed >= 1) {
