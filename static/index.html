@@ -343,10 +343,18 @@
         </div>
       </details>
 
-      <div id="create-item-form-anchor" class="mb-4">
+      <!-- Quick-add bar: pinned to the bottom of the viewport below Tailwind's
+           `md` breakpoint (a "sticky bottom bar", replacing the old always-
+           inline top form + FAB-opened sheet on mobile — see base.css for the
+           safe-area padding and #items-section's matching bottom padding so
+           the last item can scroll clear above it) and reverts to its
+           original in-flow placement above the item list at `md:` and up,
+           unchanged from before. -->
+      <div id="create-item-form-anchor"
+           class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 px-3 pt-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur md:static md:inset-auto md:z-auto md:mb-4 md:border-0 md:bg-transparent md:px-0 md:pt-0 md:shadow-none md:backdrop-blur-none">
         <form id="create-item-form">
           <div class="flex items-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-2 shadow-sm">
-            <input type="text" id="item-title" required maxlength="500" data-i18n-placeholder="items.titlePlaceholder" placeholder="Article ou tâche"
+            <input type="text" id="item-title" required maxlength="500" data-i18n-placeholder="items.titlePlaceholder" placeholder="Ajouter un article ou une tâche…"
                    class="min-w-0 flex-1 rounded-xl border-0 bg-transparent px-3 py-2.5 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
             <button type="button" id="quick-add-toggle" aria-expanded="false" aria-controls="quick-add-advanced" data-i18n-aria-label="items.advancedToggleAriaLabel" aria-label="Options avancées"
                     class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
@@ -396,11 +404,6 @@
         </summary>
         <ul id="items-done" class="mt-2 space-y-2"></ul>
       </details>
-
-      <button type="button" id="add-item-fab" data-i18n-aria-label="items.addFabAriaLabel" aria-label="Ajouter un article"
-              class="fixed z-30 flex h-14 w-14 items-center justify-center rounded-full bg-sky-500 text-white shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 active:scale-95 md:hidden">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-      </button>
 
       <!-- Shown only while reorder mode is active (static/js/reorder.js) — a
            fixed bottom bar with the "Valider l'ordre"/"Annuler" pair the
@@ -911,24 +914,6 @@
 
         <button type="submit" data-i18n="modals.editItem.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
       </form>
-    </div>
-  </div>
-
-  <!-- Bottom sheet opened by the FAB (#add-item-fab, mobile only): #create-item-form
-       is relocated here (and back to #create-item-form-anchor on close) by
-       openAddItemSheet/closeAddItemSheet in list_view.js, rather than duplicated,
-       so there is exactly one form/one set of listeners regardless of where it's
-       currently rendered. -->
-  <div id="add-item-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
-    <div role="dialog" aria-modal="true" aria-labelledby="add-item-sheet-title" class="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 id="add-item-sheet-title" data-i18n="items.addSheetTitle" class="text-lg font-semibold">Ajouter un article</h2>
-        <button type="button" id="close-add-item-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
-                class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <div id="add-item-sheet-body"></div>
     </div>
   </div>
 

@@ -11,10 +11,10 @@
 // renderReorderList below (see the branch added at renderItems' own top):
 // every item — active and done alike, flattened into one column — is shown
 // with a ☰ handle, and everything else that could mutate the list mid-drag
-// (the quick-add bar, the FAB, the done/finance sections) is hidden. Nothing
-// is sent to the server until "Valider l'ordre" is pressed (commitReorder);
-// "Annuler" (or navigating back to the dashboard) discards the draft order
-// and leaves the list exactly as it was.
+// (the quick-add bar, the done/finance sections) is hidden. Nothing is sent
+// to the server until "Valider l'ordre" is pressed (commitReorder); "Annuler"
+// (or navigating back to the dashboard) discards the draft order and leaves
+// the list exactly as it was.
 //
 // Desktop uses the native HTML5 Drag and Drop API (draggable="true" +
 // dragstart/dragover/dragend, delegated once on the shared container rather
@@ -94,7 +94,6 @@ function exitReorderMode(opts = {}) {
   reorderDraftOrder = null;
   reorderEls.actionsBar.hidden = true;
   listEls.createItemFormAnchor.hidden = false;
-  listEls.addItemFab.hidden = false;
   if (render) renderItems();
 }
 
@@ -171,7 +170,6 @@ function renderReorderList() {
 
   listEls.financeSummary.hidden = true;
   listEls.createItemFormAnchor.hidden = true;
-  listEls.addItemFab.hidden = true;
   listEls.doneSection.hidden = true;
   reorderEls.toggleButton.hidden = true;
 

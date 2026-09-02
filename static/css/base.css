@@ -263,21 +263,36 @@ body {
   user-select: none;
 }
 
-/* The FAB (#add-item-fab, shown only below Tailwind's `md` breakpoint — see
-   its `md:hidden` class in index.html) sits above the home-indicator/gesture
-   area on a notched phone in fullscreen PWA mode, the same
-   env(safe-area-inset-*) reasoning as the header's padding-top above. Bottom
-   position only (not left/right, which stay Tailwind's ordinary `right-6`/
-   `bottom-6`-equivalent fixed spacing) needs the inset added in, since only
-   the bottom edge is ever obscured by a device's own chrome here. */
-#add-item-fab {
-  right: 1.5rem;
-  bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+/* The quick-add bar (#create-item-form-anchor) is pinned to the bottom of
+   the viewport only below Tailwind's `md` breakpoint (see its `md:static`
+   override in index.html, which reverts it to its original in-flow
+   placement above the item list on wider screens) — this sits above the
+   home-indicator/gesture area on a notched phone in fullscreen PWA mode,
+   the same env(safe-area-inset-*) reasoning as the header's padding-top
+   above and the reorder bar's own padding-bottom below. Scoped to the same
+   768px breakpoint the anchor itself switches position at: paired with
+   `md:static`, an unscoped rule here would just add unwanted extra bottom
+   spacing to the ordinary in-flow desktop layout, where nothing needs
+   clearing. */
+@media (max-width: 768px) {
+  #create-item-form-anchor {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  /* Gives the item list room to scroll its last row clear above the fixed
+     quick-add bar above (roughly its own height plus the safe-area inset it
+     already reserves) — #items-section is the whole detail-view container
+     (header, finance summary, item list, done section), so padding it at
+     the bottom extends the page's own scrollable height rather than
+     clipping anything inside a shorter inner scroll region. */
+  #items-section {
+    padding-bottom: 90px;
+  }
 }
 
-/* Same env(safe-area-inset-bottom) reasoning as the FAB above, applied to
-   the fixed "Valider l'ordre"/"Annuler" bar shown while reorder mode
-   (static/js/reorder.js) is active, so its buttons never sit under a
+/* Same env(safe-area-inset-bottom) reasoning as the quick-add bar above,
+   applied to the fixed "Valider l'ordre"/"Annuler" bar shown while reorder
+   mode (static/js/reorder.js) is active, so its buttons never sit under a
    notched phone's home-indicator/gesture area in fullscreen PWA mode. */
 #reorder-actions-bar {
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));

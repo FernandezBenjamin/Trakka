@@ -32,10 +32,6 @@ const listEls = {
   itemTargetMonth: document.getElementById('item-target-month'),
   itemRecurrence: document.getElementById('item-recurrence'),
   itemUrgent: document.getElementById('item-urgent'),
-  addItemFab: document.getElementById('add-item-fab'),
-  addItemSheet: document.getElementById('add-item-sheet'),
-  addItemSheetBody: document.getElementById('add-item-sheet-body'),
-  closeAddItemSheetButton: document.getElementById('close-add-item-sheet-button'),
   itemsActive: document.getElementById('items-active'),
   itemsDone: document.getElementById('items-done'),
   doneSection: document.getElementById('done-section'),
@@ -397,7 +393,12 @@ function hasAdvancedFields(visibility) {
 
 // Expands/collapses the quick-add bar's advanced panel (URL/quantity/price/
 // target month/recurrence/urgent) — collapsed is the default "épuré" state;
-// expanding it is what the [⚙️] toggle and the FAB's add-item sheet do.
+// expanding it is what the [⚙️] toggle does. The bar itself (#create-item-
+// form-anchor) is pinned to the bottom of the viewport on mobile and sits
+// in its original in-flow spot above the item list at `md:` and up — see
+// its responsive classes in index.html and the safe-area/#items-section
+// padding in base.css — so there is exactly one form/one set of listeners
+// regardless of viewport width, nothing to relocate between two DOM slots.
 function setQuickAddAdvancedExpanded(expanded) {
   listEls.quickAddAdvanced.hidden = !expanded;
   listEls.quickAddToggle.setAttribute('aria-expanded', String(expanded));
@@ -408,39 +409,6 @@ function setQuickAddAdvancedExpanded(expanded) {
 
 listEls.quickAddToggle.addEventListener('click', () => {
   setQuickAddAdvancedExpanded(listEls.quickAddAdvanced.hidden);
-});
-
-// The FAB (#add-item-fab, mobile only — see its md:hidden class in
-// index.html) opens #create-item-form as a bottom sheet instead of a second,
-// duplicated form: openAddItemSheet/closeAddItemSheet simply relocate the
-// one real <form> (and its already-attached listeners) between its normal
-// inline slot (#create-item-form-anchor) and the sheet's body — plain
-// `appendChild` on an already-attached node moves it rather than cloning it,
-// so nothing about the submit handler below needs to know or care where the
-// form currently lives.
-function openAddItemSheet() {
-  const visibility = fieldVisibilityFor(state.currentList && state.currentList.type);
-  setQuickAddAdvancedExpanded(hasAdvancedFields(visibility));
-  listEls.addItemSheetBody.appendChild(listEls.createItemForm);
-  listEls.addItemSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
-  listEls.itemTitle.focus();
-}
-
-function closeAddItemSheet() {
-  listEls.createItemFormAnchor.appendChild(listEls.createItemForm);
-  listEls.addItemSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
-  setQuickAddAdvancedExpanded(false);
-}
-
-listEls.addItemFab.addEventListener('click', openAddItemSheet);
-listEls.closeAddItemSheetButton.addEventListener('click', closeAddItemSheet);
-listEls.addItemSheet.addEventListener('click', (event) => {
-  if (event.target === listEls.addItemSheet) closeAddItemSheet();
-});
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !listEls.addItemSheet.hidden) closeAddItemSheet();
 });
 
 // Recomputes the financial summary bar directly from state.currentList.items
@@ -1549,23 +1517,16 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     done: false,
     position: 0,
   };
-  // Captured before the form/sheet state changes below: an add made from the
-  // FAB's bottom sheet closes it afterward (the "add one item" mobile flow
-  // this sheet exists for — see openAddItemSheet), while an add made from
-  // the always-visible inline quick-add bar just collapses its advanced
-  // panel back to the default "épuré" state for the next entry.
-  const sheetWasOpen = !listEls.addItemSheet.hidden;
-
   state.currentList.items = [...(state.currentList.items || []), optimisticItem];
   renderItems();
+  // Resets the text field and collapses the advanced panel back to its
+  // default "épuré" state, but keeps focus in the (now-empty) title input —
+  // so tapping [+] or pressing Enter never dismisses the mobile keyboard,
+  // letting several items be added back-to-back without re-tapping the field.
   listEls.createItemForm.reset();
   listEls.itemQuantity.value = '1';
-  if (sheetWasOpen) {
-    closeAddItemSheet();
-  } else {
-    setQuickAddAdvancedExpanded(false);
-    listEls.itemTitle.focus();
-  }
+  setQuickAddAdvancedExpanded(false);
+  listEls.itemTitle.focus();
 
   try {
     const created = await apiRequest('/items', { method: 'POST', body: JSON.stringify(payload) });
