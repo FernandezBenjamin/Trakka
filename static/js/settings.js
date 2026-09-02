@@ -85,7 +85,7 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   try {
     user = await apiRequest('/me', { method: 'PATCH', body: JSON.stringify({ keep_last_page: keepLastPage }) });
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
     return;
   }
 
@@ -127,6 +127,6 @@ userSettingsEls.languageSelect.addEventListener('change', async () => {
       state.currentUser = user;
     }
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 });

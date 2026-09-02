@@ -169,7 +169,7 @@ if (pushEls.toggle) {
       }
     } catch (err) {
       pushEls.toggle.checked = !wantEnabled;
-      showError(err.message);
+      if (!isNetworkError(err)) showError(err.message);
     } finally {
       pushEls.toggle.disabled = false;
     }

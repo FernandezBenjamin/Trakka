@@ -392,7 +392,27 @@ async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     const message = body && typeof body.error === 'string' ? body.error : `Erreur ${response.status}`;
-    throw new Error(message);
+    const err = new Error(message);
+    // sw.js's offlineReadFallback answers a GET it has no explicit
+    // IndexedDB mirror for (/me, /admin/settings, /price-alerts,
+    // /push/vapid-public-key, a house's /members, a list's/category's
+    // /share roster, ...) with a real HTTP 503 rather than letting fetch()
+    // throw — every one of its responses carries this header. Without this
+    // check, that 503 resolves normally and skips the catch block above
+    // entirely, so it was never tagged isNetworkError and slipped straight
+    // past every "if (!isNetworkError(err)) showError(...)" guard already in
+    // place across the app (loadMembers, loadShareRoster, ...), surfacing a
+    // blocking "hors ligne" banner during perfectly ordinary offline
+    // navigation. Tagging it here the same way as a genuine fetch()-level
+    // failure is what makes those existing guards actually work. This never
+    // fires for the deliberate "this action requires connectivity" 503s
+    // queueOfflineWrite returns for houses/admin-settings/shares/
+    // invitations — those don't carry this header, so they still surface as
+    // real, actionable errors.
+    if (response.headers.get('X-Trakka-Offline') === 'true') {
+      err.isNetworkError = true;
+    }
+    throw err;
   }
 
   // This response came from the service worker's offline queue (queued,
@@ -767,7 +787,7 @@ els.createHouseForm.addEventListener('submit', async (event) => {
     closeNewHouseModal();
     await refreshVisibleView();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 });
 
@@ -827,7 +847,7 @@ els.renameHouseInlineForm.addEventListener('submit', async (event) => {
   try {
     house = await apiRequest(`/houses/${state.currentHouseId}`, { method: 'PUT', body: JSON.stringify({ name }) });
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
     return;
   }
 
@@ -892,7 +912,7 @@ async function revokeHouseInvitation(email) {
     });
     await loadMembers();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 }
 
@@ -951,7 +971,7 @@ els.inviteMemberForm.addEventListener('submit', async (event) => {
     els.inviteMemberForm.reset();
     await loadMembers();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 });
 
@@ -961,7 +981,7 @@ async function removeMember(userId) {
     await apiRequest(`/houses/${state.currentHouseId}/members/${userId}`, { method: 'DELETE' });
     await loadMembers();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 }
 
@@ -1066,8 +1086,22 @@ function urlBadges(items) {
   // call here since this only ever runs at render time, well after every
   // script has finished loading (same deferred-call pattern buildItemRow
   // already uses for monthLabel/buildRecurrenceBadge from planning.js).
+  // Deliberately the same 'emerald' palette as every other money-positive
+  // accent in the app (the auto-detected-price sparkle icon, the
+  // all-items-done todo badge, ...) rather than a neutral/gray pill, so a
+  // list card's price total reads as "money" at a glance instead of
+  // blending in with the plain domain/type badges around it — this is a
+  // deliberate exception to --tk-money-total (tokens.css), which still
+  // backs every *other* money figure (the finance summary, item rows, the
+  // budget-planning totals), where "Total estimé" needs to stay visually
+  // distinct from "Déjà dépensé"/"Reste à dépenser" within the same view.
+  // font-semibold (Tailwind's 600) is bumped explicitly since badge()'s
+  // shared font-medium (500) reads too light for a figure meant to be
+  // spotted quickly.
   if (hasPrice) {
-    frag.appendChild(badge(formatEuro(total), 'emerald'));
+    const totalBadge = badge(formatEuro(total), 'emerald');
+    totalBadge.classList.add('font-semibold');
+    frag.appendChild(totalBadge);
   }
   return frag;
 }
@@ -1489,7 +1523,7 @@ function removeList(list) {
       try {
         await apiRequest(`/lists/${list.id}`, { method: 'DELETE' });
       } catch (err) {
-        showError(err.message);
+        if (!isNetworkError(err)) showError(err.message);
       }
       pendingDeletedListIds.delete(list.id);
       await loadDashboard();
@@ -1526,7 +1560,7 @@ async function toggleListPin(list) {
     if (!isDashboardTabActive()) await loadDashboard();
     TrakkaToast.success(t(pinning ? 'shares.pinnedToast' : 'shares.unpinnedToast', { name: list.name }));
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 }
 
@@ -1709,7 +1743,7 @@ els.createListForm.addEventListener('submit', async (event) => {
     // null) — see list_view.js.
     await refreshCurrentList();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
   await refreshPendingBadge();
 });

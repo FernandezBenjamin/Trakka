@@ -222,21 +222,24 @@ body {
   }
 }
 
-/* Item cards (static/js/list_view.js's buildItemRow) use one layout at every
-   breakpoint, Todoist/Notion-style: a top .item-card__row (checkbox/marker +
-   optional thumbnail + title + inline 🔗 link icon, then a trailing price and
-   the edit/delete/kebab controls, all built with Tailwind's own flex/gap/
-   truncate utilities directly in buildItemRow) and, only when there's
-   something to show, a secondary line below it (.item-card__secondary: the
-   quantity stepper plus the month/recurrence/urgent badges) indented to align
-   under the title rather than the checkbox. `.item-card__actions` (✏️/🗑️)
-   and `.item-card__kebab` (⋮, opening #item-actions-sheet — the single sheet
-   every "act on this item" entry point funnels into, including its own
-   Ouvrir/Copier/Partager link group) are both always built by buildItemRow;
-   which one is actually visible is a pure CSS/Tailwind concern (`hidden
-   md:flex` / `flex md:hidden` on the two, respectively) — see buildItemRow
-   for why the sheet exists at all on narrow screens where two more 44px tap
-   targets on the card would crowd the price/title. */
+/* Item cards (static/js/list_view.js's buildItemRow) are a single ~56px-tall
+   flex row at every breakpoint — checkbox/marker, an optional thumbnail, the
+   title (truncated, flex-1), the quantity stepper, a compact price cell
+   (line total plus single-glyph ⚡/🔥/⏳ indicators — see buildPriceBlock), a
+   small unsynced dot, the inline 🔗 link icon, then edit/delete/kebab at the
+   trailing edge, all built with Tailwind's own flex/gap/truncate utilities
+   directly in buildItemRow (`px-3 py-1.5` padding, `gap-2` between children —
+   see the .item-card class string there for the exact figures). There is no
+   second line any more: target month, recurrence, and the price-alert
+   threshold — anything that doesn't fit on one line — moved into
+   #item-actions-sheet instead (buildItemActionsMeta), the single sheet every
+   "act on this item" entry point already funnels into (a tap on the title,
+   the [⋮] kebab, or a long press), including its own Ouvrir/Copier/Partager
+   link group. `.item-card__actions` (✏️/🗑️) and `.item-card__kebab` (⋮) are
+   both always built by buildItemRow; which one is actually visible is a pure
+   CSS/Tailwind concern (`hidden md:flex` / `flex md:hidden` on the two,
+   respectively) — see buildItemRow for why the sheet exists at all on narrow
+   screens where two more 44px tap targets on the card would crowd the row. */
 @media (max-width: 768px) {
   /* Edit/delete/kebab are already 44x44px (Tailwind's h-11 w-11) — this is a
      defensive floor tied directly to the "safe touch target" requirement,
@@ -247,6 +250,17 @@ body {
     min-width: 44px;
   }
 }
+
+/* .item-card itself is deliberately excluded from the 44px floor above: at
+   its ~56px row height (checkbox/kebab already at 44px, plus px-3 py-1.5
+   padding — see the comment above), a compact WCAG 2.2 AA target (24x24px
+   minimum, not the stricter AAA 44x44px) is the right trade-off for the
+   quantity stepper's [-]/[+] buttons (28px, static/js/list_view.js's
+   buildQuantityStepper) and the inline 🔗 link icon (32px,
+   buildInlineLinkIcon) — both already comfortably clear 24px, and both
+   remain reachable at full 44px size from the edit-item modal/actions sheet
+   either way, satisfying WCAG 2.2 SC 2.5.8's "equivalent control elsewhere"
+   exception for a link inline with text. */
 
 /* Long-press targets (an item's title and its inline 🔗 link icon — see
    attachLongPress/buildItemRow in list_view.js) must not also trigger the

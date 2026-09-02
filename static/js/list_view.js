@@ -20,6 +20,9 @@ const listEls = {
   financeTotalCompact: document.getElementById('finance-total-compact'),
   financeSpent: document.getElementById('finance-spent'),
   financeRemaining: document.getElementById('finance-remaining'),
+  financeTotalCollapsed: document.getElementById('finance-total-collapsed'),
+  financeSpentCollapsed: document.getElementById('finance-spent-collapsed'),
+  financeRemainingCollapsed: document.getElementById('finance-remaining-collapsed'),
   createItemFormAnchor: document.getElementById('create-item-form-anchor'),
   createItemForm: document.getElementById('create-item-form'),
   itemTitle: document.getElementById('item-title'),
@@ -49,6 +52,7 @@ const listEls = {
   editItemUrgent: document.getElementById('edit-item-urgent'),
   itemActionsSheet: document.getElementById('item-actions-sheet'),
   itemActionsSheetTitle: document.getElementById('item-actions-sheet-title'),
+  itemActionsSheetMeta: document.getElementById('item-actions-sheet-meta'),
   closeItemActionsSheetButton: document.getElementById('close-item-actions-sheet-button'),
   itemActionsEditButton: document.getElementById('item-actions-edit-button'),
   itemActionsLinkGroup: document.getElementById('item-actions-link-group'),
@@ -271,15 +275,19 @@ function isOfflineQueuedItem(item) {
   return typeof item.id === 'string' && item.id.startsWith('temp-item');
 }
 
-// A small non-interactive badge for a price that isn't known yet — either
-// because the item is still offline-queued (waiting on connectivity) or
-// because the server's bounded synchronous lookup (see scrapePrice in
-// internal/handlers/scrape.go) didn't finish in time and is still running
-// in the background (see scheduleAutoPriceRefresh below).
-function buildPendingPriceBadge(label, palette) {
+// A small non-interactive icon-only indicator for a price that isn't known
+// yet — either because the item is still offline-queued (waiting on
+// connectivity) or because the server's bounded synchronous lookup (see
+// scrapePrice in internal/handlers/scrape.go) didn't finish in time and is
+// still running in the background (see scheduleAutoPriceRefresh below). Kept
+// to a single glyph with a title/aria-label tooltip, not a text pill, so a
+// pending price never grows the item's single-line row.
+function buildPendingPriceIcon(glyph, label, extraClass) {
   const span = document.createElement('span');
-  span.className = `shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${palette}`;
-  span.textContent = label;
+  span.className = `flex h-5 w-5 shrink-0 items-center justify-center text-sm ${extraClass}`;
+  span.textContent = glyph;
+  span.title = label;
+  span.setAttribute('aria-label', label);
   return span;
 }
 
@@ -426,10 +434,19 @@ function updateFinanceSummary(items) {
     total += line;
     if (item.done) spent += line;
   }
+  const remaining = total - spent;
   listEls.financeTotal.textContent = formatEuro(total);
   listEls.financeTotalCompact.textContent = formatEuro(total);
   listEls.financeSpent.textContent = formatEuro(spent);
-  listEls.financeRemaining.textContent = formatEuro(total - spent);
+  listEls.financeRemaining.textContent = formatEuro(remaining);
+  // Collapsed-header compact figures (see the #finance-summary markup in
+  // index.html) mirror the same three numbers so the accordion stays
+  // informative without needing to be expanded. Every figure's color is a
+  // static --tk-money-* token (tokens.css) — no JS ever sets a color here,
+  // regardless of remaining's sign.
+  listEls.financeTotalCollapsed.textContent = formatEuro(total);
+  listEls.financeSpentCollapsed.textContent = formatEuro(spent);
+  listEls.financeRemainingCollapsed.textContent = formatEuro(remaining);
 }
 
 // #finance-summary is a plain <details> (same collapsible idiom as
@@ -500,34 +517,29 @@ function buildRecurrenceBadge(item) {
 // user-set "notify me when the price drops" threshold currently holds —
 // alerting opted in, a threshold set, a price present, and that price at
 // or below the threshold. Used both to decide whether to render
-// buildPriceAlertBadge below and, in app.js/reorder.js's dashboard/Espaces
+// buildPriceAlertIcon below and, in app.js/reorder.js's dashboard/Espaces
 // card badges, whether to show the same highlighted state there.
 function priceAlertCondition(item) {
   return Boolean(item.alert_on_price_drop) && item.target_price != null && item.price != null && item.price <= item.target_price;
 }
 
-// A highlighted, eye-catching badge (🔥 "Bonne affaire") shown once an
-// item's price has reached the threshold set via its "Déclencher une
-// alerte si le prix descend en dessous de" field — deliberately styled in
-// the same amber palette as a "deal found" state rather than the more
-// muted badges around it (target month, recurrence, urgent), since this is
-// meant to actually catch the eye the moment it appears, mirroring the
-// in-app toast/push notification checkPriceDropAlert fires server-side the
-// moment this condition first becomes true (see items.js's price_alert_
-// triggered handling on create/update/patch).
-function buildPriceAlertBadge(item) {
-  const badge = document.createElement('span');
-  badge.className =
-    'flex shrink-0 items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300';
-  badge.title = t('items.priceAlertBadge', { price: formatEuro(item.price), target: formatEuro(item.target_price) });
+// A single eye-catching 🔥 glyph shown once an item's price has reached the
+// threshold set via its "Déclencher une alerte si le prix descend en
+// dessous de" field — an icon rather than the old full-text "Bonne affaire"
+// pill, so it reads at a glance without competing for width on the item's
+// single-line row; the full detail (both prices) is still available as a
+// title/aria-label tooltip on hover/focus, and was already announced once,
+// in full, via the in-app toast/push notification checkPriceDropAlert fires
+// server-side the moment this condition first becomes true (see items.js's
+// price_alert_triggered handling on create/update/patch).
+function buildPriceAlertIcon(item) {
+  const label = t('items.priceAlertBadge', { price: formatEuro(item.price), target: formatEuro(item.target_price) });
   const icon = document.createElement('span');
-  icon.setAttribute('aria-hidden', 'true');
+  icon.className = 'flex h-5 w-5 shrink-0 items-center justify-center text-sm';
   icon.textContent = '🔥';
-  const text = document.createElement('span');
-  text.textContent = t('items.priceAlertBadge', { price: formatEuro(item.price), target: formatEuro(item.target_price) });
-  badge.appendChild(icon);
-  badge.appendChild(text);
-  return badge;
+  icon.title = label;
+  icon.setAttribute('aria-label', label);
+  return icon;
 }
 
 // Shows the in-app toast half of the "notification (toast + push)"
@@ -561,27 +573,33 @@ function buildUrgentBadge() {
   return badge;
 }
 
-// A discreet, non-interactive badge (⏳ + "Non synchronisé") shown on an
-// item that either was itself created while offline and hasn't reached the
-// server yet (isOfflineQueuedItem) or has some other write (an edit, a
+// A discreet ⏳ dot (not a text pill — see the header comment on buildItemRow
+// for why the single-line card only ever shows single-glyph indicators) for
+// an item that either was itself created while offline and hasn't reached
+// the server yet (isOfflineQueuedItem) or has some other write (an edit, a
 // toggle, a delete) still sitting in the offline sync queue
 // (hasPendingItemChanges, defined in app.js — see the "Network status +
 // offline sync indicators" section there). animate-pulse (Tailwind's
 // built-in utility, no custom CSS needed) gives it a gentle "still waiting"
-// motion, same as buildPendingPriceBadge's own pending-price badge above.
-function buildUnsyncedItemBadge(item) {
-  const badge = document.createElement('span');
-  badge.className =
-    'flex shrink-0 animate-pulse items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300';
-  badge.setAttribute('aria-label', t('sync.itemBadgeAriaLabel', { title: item.title }));
-  const icon = document.createElement('span');
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '⏳';
-  const text = document.createElement('span');
-  text.textContent = t('sync.listBadgeLabel');
-  badge.appendChild(icon);
-  badge.appendChild(text);
-  return badge;
+// motion, same as buildPendingPriceIcon's own pending-price indicator above.
+function buildUnsyncedDot(item) {
+  const dot = document.createElement('span');
+  dot.className = 'h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-500';
+  dot.title = t('sync.itemBadgeAriaLabel', { title: item.title });
+  dot.setAttribute('aria-label', dot.title);
+  return dot;
+}
+
+// A same-size, empty stand-in for buildUnsyncedDot/buildInlineLinkIcon on a
+// row where that particular glyph doesn't currently apply — appended instead
+// of simply omitting the element, so every row reserves the same width for
+// it either way. See PRICE_STATUS_SLOT_CLASS above for why an inconsistent
+// per-row width here would misalign the stepper/price of every row after it.
+function buildEmptySlot(sizeClasses) {
+  const span = document.createElement('span');
+  span.className = `${sizeClasses} shrink-0`;
+  span.setAttribute('aria-hidden', 'true');
+  return span;
 }
 
 function emptyItemsRow(message) {
@@ -591,15 +609,17 @@ function emptyItemsRow(message) {
   return li;
 }
 
-// buildItemThumbnail renders a small (48px) clickable product thumbnail for
-// an item whose image_url passed isSafeHttpUrl. It's a plain <img> (never
-// innerHTML with the URL interpolated) set via the `src` property, which is
-// the same safe pattern app.js already uses for <a href> — the browser
-// treats `src` as a URL attribute, not markup, so this can't inject HTML;
-// isSafeHttpUrl having already rejected non-http(s) schemes is what stops a
-// stray "javascript:" URL from being handed to the image loader at all.
-// Hovering scales it up in place for a quick glance (CSS only, via Tailwind
-// utility classes); clicking (or focusing + Enter/Space, since it's a real
+// buildItemThumbnail renders a small (36px — kept just large enough to
+// recognize a product at a glance without pushing the item's single-line
+// row past its ~56px height budget) clickable product thumbnail for an item
+// whose image_url passed isSafeHttpUrl. It's a plain <img> (never innerHTML
+// with the URL interpolated) set via the `src` property, which is the same
+// safe pattern app.js already uses for <a href> — the browser treats `src`
+// as a URL attribute, not markup, so this can't inject HTML; isSafeHttpUrl
+// having already rejected non-http(s) schemes is what stops a stray
+// "javascript:" URL from being handed to the image loader at all. Hovering
+// scales it up in place for a quick glance (CSS only, via Tailwind utility
+// classes); clicking (or focusing + Enter/Space, since it's a real
 // <button>) opens the full-size lightbox instead of navigating anywhere.
 function buildItemThumbnail(item) {
   const button = document.createElement('button');
@@ -607,7 +627,7 @@ function buildItemThumbnail(item) {
   button.title = t('items.enlargeImageAriaLabel', { title: item.title });
   button.setAttribute('aria-label', t('items.enlargeImageAriaLabel', { title: item.title }));
   button.className =
-    'block h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition duration-150 hover:z-10 hover:scale-150 hover:shadow-lg focus-visible:z-10 focus-visible:scale-150';
+    'block h-9 w-9 shrink-0 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition duration-150 hover:z-10 hover:scale-150 hover:shadow-lg focus-visible:z-10 focus-visible:scale-150';
 
   const img = document.createElement('img');
   img.src = item.image_url;
@@ -665,124 +685,155 @@ function buildLineMarker(index) {
   return span;
 }
 
-// A small inline 🔗 icon-link, appended right after an item's title instead
-// of the old standalone "lien ↗" pill badge — folding it into the title line
-// keeps the row's one-glance hierarchy to "checkbox + thumbnail + title (+
-// price)", with everything else (quantity, badges) pushed down to
-// .item-card__secondary. event.stopPropagation() keeps a tap here from also
-// triggering the title's own "open the actions sheet" handler below.
+// A small inline 🔗 icon-link, sitting among the item's single-line row's
+// trailing action icons (see buildItemRow) rather than the old standalone
+// "lien ↗" pill badge — a real, if compact, 32px tap box rather than a bare
+// glyph, so it stays comfortably tappable even packed in next to the price
+// and kebab. event.stopPropagation() keeps a tap here from also triggering
+// the title's own "open the actions sheet" handler.
 function buildInlineLinkIcon(item) {
   const link = document.createElement('a');
   link.href = item.url;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
-  link.className = 'long-press-target shrink-0 text-sky-500 hover:text-sky-400';
+  link.className =
+    'long-press-target flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sky-500 hover:bg-sky-500/10 hover:text-sky-400';
   link.setAttribute('aria-label', t('items.openLinkAriaLabel', { title: item.title }));
   link.textContent = '🔗';
   link.addEventListener('click', (event) => event.stopPropagation());
   return link;
 }
 
-// The trailing, right-aligned price figure on an item's top row — the "Prix
-// Total Article = Prix Unitaire × Quantité" line subtotal (see lineTotal),
-// the auto-detected-price sparkle badge, and (only once quantity > 1) the
-// per-unit price it was computed from. Falls back to a pending-price badge
-// when there's a url but no price yet (offline-queued, or still being
-// scraped server-side — see isOfflineQueuedItem/priceScrapePending). Returns
-// null when there's nothing price-related to show at all (plain to-do/
-// custom-list items), so buildItemRow can skip appending it entirely.
-function buildPriceBlock(item) {
-  const block = document.createElement('div');
-  block.className = 'item-card__price flex shrink-0 flex-col items-end gap-0.5';
-
-  if (item.price != null) {
-    const priceRow = document.createElement('div');
-    priceRow.className = 'flex items-center gap-1';
-
-    const price = document.createElement('span');
-    price.className = 'text-base font-semibold text-slate-900 dark:text-slate-100';
-    price.textContent = formatEuro(lineTotal(item));
-    priceRow.appendChild(price);
-
-    // Auto-detected prices get a small clickable badge instead of a plain
-    // label — clicking it opens the same edit modal as the actions sheet's
-    // "Modifier" entry, so "modifier en un clic" just reuses the existing
-    // edit flow rather than needing a dedicated inline editor.
-    if (item.price_auto) {
-      const autoBadge = document.createElement('button');
-      autoBadge.type = 'button';
-      autoBadge.title = t('items.autoPriceAriaLabel', { title: item.title });
-      autoBadge.setAttribute('aria-label', t('items.autoPriceAriaLabel', { title: item.title }));
-      autoBadge.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/20';
-      autoBadge.innerHTML = AUTO_PRICE_ICON_SVG;
-      autoBadge.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openEditItemModal(item);
-      });
-      priceRow.appendChild(autoBadge);
-    }
-
-    block.appendChild(priceRow);
-
-    if (item.quantity > 1) {
-      const unitPrice = document.createElement('span');
-      unitPrice.className = 'text-xs text-slate-400 dark:text-slate-500';
-      unitPrice.textContent = `(${formatEuro(item.price)}/u)`;
-      block.appendChild(unitPrice);
-    }
-  } else if (item.url) {
-    if (isOfflineQueuedItem(item)) {
-      block.appendChild(buildPendingPriceBadge(t('items.priceSyncPending'), 'bg-amber-500/10 text-amber-700 dark:text-amber-300'));
-    } else if (item.priceScrapePending) {
-      block.appendChild(buildPendingPriceBadge(t('items.priceDetecting'), 'animate-pulse bg-sky-500/10 text-sky-600 dark:text-sky-300'));
-    }
-  }
-
-  return block.children.length > 0 ? block : null;
+// Builds the small clickable ⚡ sparkle badge marking a price internal/
+// scraper filled in automatically rather than the user having typed it in.
+// Clicking it opens the same edit modal as the actions sheet's "Modifier"
+// entry, so "modifier en un clic" just reuses the existing edit flow rather
+// than needing a dedicated inline editor.
+function buildAutoPriceIcon(item) {
+  const autoBadge = document.createElement('button');
+  autoBadge.type = 'button';
+  autoBadge.title = t('items.autoPriceAriaLabel', { title: item.title });
+  autoBadge.setAttribute('aria-label', t('items.autoPriceAriaLabel', { title: item.title }));
+  autoBadge.className =
+    'flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/20';
+  autoBadge.innerHTML = AUTO_PRICE_ICON_SVG;
+  autoBadge.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openEditItemModal(item);
+  });
+  return autoBadge;
 }
 
-// The secondary line shown under an item's title: the compact [-]/N/[+]
-// quantity stepper (when the list type shows quantity at all — see
-// fieldVisibilityFor) plus the month/recurrence/urgent badges. Indented via
-// Tailwind's pl-[3.5rem] to align under the title rather than the checkbox —
-// approximate (it doesn't account for a thumbnail's extra width) but close
-// enough to read as "belongs to the title above it" either way. Returns null
-// when there's nothing to show (a `custom`-list item has none of these),
-// so buildItemRow can skip reserving an empty row for it.
-function buildSecondaryRow(item, { showQuantity }) {
-  const secondary = document.createElement('div');
-  secondary.className = 'item-card__secondary flex flex-wrap items-center gap-2 pl-[3.5rem] text-sm';
+// A fixed-width (44px — room for up to two 20px glyphs side by side, right-
+// justified) slot for the ⚡/🔥/⏳/🔄 status glyphs, always rendered — empty
+// when none apply — alongside every row of a price-showing list, rather than
+// only when a status glyph actually applies to *this* item. Without this, an
+// item carrying zero, one, or two of these icons contributed a different
+// width to its row than a sibling item carrying a different combination —
+// and since every element after the title shares that same title as its
+// flex-1 "give way" sibling (see buildItemRow), that width difference shifted
+// the *whole* trailing group (stepper, price, link, kebab) left or right
+// from one card to the next, even though the shifted elements themselves
+// never changed. Reserving this slot at a constant width regardless of its
+// content is what keeps every row's trailing group aligned.
+const PRICE_STATUS_SLOT_CLASS = 'flex h-5 w-11 shrink-0 items-center justify-end gap-0.5';
 
-  if (showQuantity) {
-    secondary.appendChild(buildQuantityStepper(item));
+// The trailing price cell on an item's single-line row: a right-aligned,
+// fixed-min-width "Prix Total Article = Prix Unitaire × Quantité" line
+// subtotal (see lineTotal) plus the PRICE_STATUS_SLOT_CLASS status slot
+// above. min-w-[68px] on the price figure is the other half of the same
+// alignment fix — comfortably fits everything up to "999,99 €" at this
+// font size, so two rows showing e.g. "5,00 €" and "129,90 €" still line up
+// their status glyphs identically instead of drifting by digit count (an
+// unusually large total can still grow past it rather than ever being
+// clipped, at the cost of that one row's own alignment). The per-unit price
+// a multi-quantity line was computed from is no longer shown here — it's
+// still visible (and editable) in the edit-item modal, and keeping it off
+// the row is what makes a single 56px-tall line wide enough for the rest of
+// a packed row (checkbox, thumbnail, title, stepper, price, link, actions).
+// Called for every row of a list whose type shows a price at all
+// (`showPrice`, mirroring buildItemRow's own showQuantity/showLink) — even
+// an item with no price (and nothing pending) still renders its two empty,
+// fixed-width cells, so it lines up with priced siblings in the same list
+// rather than collapsing to zero width the way an entirely absent block
+// would. Returns null only when the list type doesn't show price at all
+// (plain to-do/custom-list items), so buildItemRow can skip appending it
+// entirely — every row in *that* list is equally price-less, so there's
+// nothing to misalign.
+function buildPriceBlock(item, { showPrice }) {
+  if (!showPrice) return null;
+
+  const block = document.createElement('div');
+  block.className = 'item-card__price flex shrink-0 items-center gap-1';
+
+  const price = document.createElement('span');
+  // Before it's aggregated into the finance summary, a single item's own
+  // price is just its contribution to the list's TOTAL — never yet
+  // "spent" or "remaining" on its own — so it uses the same
+  // --tk-money-total token those figures use once summed (see
+  // updateFinanceSummary above), not a color of its own.
+  price.className = 'min-w-[68px] text-right text-sm font-semibold tabular-nums text-[color:var(--tk-money-total)]';
+
+  const statusSlot = document.createElement('span');
+  statusSlot.className = PRICE_STATUS_SLOT_CLASS;
+
+  if (item.price != null) {
+    price.textContent = formatEuro(lineTotal(item));
+    if (item.price_auto) statusSlot.appendChild(buildAutoPriceIcon(item));
+    if (priceAlertCondition(item)) statusSlot.appendChild(buildPriceAlertIcon(item));
+  } else if (item.url && isOfflineQueuedItem(item)) {
+    statusSlot.appendChild(buildPendingPriceIcon('⏳', t('items.priceSyncPending'), 'text-amber-600 dark:text-amber-300'));
+  } else if (item.url && item.priceScrapePending) {
+    statusSlot.appendChild(buildPendingPriceIcon('🔄', t('items.priceDetecting'), 'animate-pulse text-sky-600 dark:text-sky-300'));
   }
+  // else: no price yet and nothing pending either — both cells stay empty,
+  // still reserving their usual width so this row lines up with its priced
+  // siblings instead of collapsing.
 
-  // A highlighted "bonne affaire" badge once the item's own price has
-  // actually reached the target price it was set up to watch for — see
-  // priceAlertCondition (mirrors internal/handlers.priceAlertCondition
-  // exactly) and buildPriceAlertBadge below.
-  if (priceAlertCondition(item)) {
-    secondary.appendChild(buildPriceAlertBadge(item));
-  }
+  block.append(price, statusSlot);
+  return block;
+}
 
-  // Only shown once an item has actually been scheduled via the edit
-  // modal's "Mois prévu" field — monthLabel is defined in planning.js,
-  // safe to call here since all script tags finish loading and defining
-  // their top-level functions before any rendering actually runs.
+// One text row (icon + label) for buildItemActionsMeta below.
+function buildMetaRow(icon, label) {
+  const row = document.createElement('div');
+  row.className = 'flex items-center gap-2 px-3 py-1 text-sm text-slate-600 dark:text-slate-300';
+  const iconEl = document.createElement('span');
+  iconEl.setAttribute('aria-hidden', 'true');
+  iconEl.textContent = icon;
+  const text = document.createElement('span');
+  text.textContent = label;
+  row.append(iconEl, text);
+  return row;
+}
+
+// The secondary detail — target month, recurrence, the price-alert
+// threshold, offline-sync status — that used to sit in a second line under
+// an item's title (.item-card__secondary) before the card became a single
+// 56px-tall line. There's no room left on the row itself for any of it, so
+// it's shown instead inside #item-actions-sheet (see openItemActionsSheet
+// below), the one place every "act on this item" entry point already
+// funnels into — exactly the "menu ⋮" this data was asked to move into.
+// Returns a DocumentFragment with one row per applicable field, empty when
+// the item carries none of them (a plain to-do/custom-list item, most
+// commonly).
+function buildItemActionsMeta(item) {
+  const fragment = document.createDocumentFragment();
+
+  // monthLabel is defined in planning.js, safe to call here since all
+  // script tags finish loading and defining their top-level functions
+  // before any rendering actually runs.
   if (item.target_month) {
-    const monthBadge = document.createElement('span');
-    monthBadge.className = 'shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300';
-    monthBadge.textContent = monthLabel(item.target_month, 'short');
-    secondary.appendChild(monthBadge);
+    fragment.appendChild(buildMetaRow('📅', monthLabel(item.target_month, 'long')));
   }
 
-  if (item.recurrence_rule) {
-    const recurrenceBadge = buildRecurrenceBadge(item);
-    if (recurrenceBadge) secondary.appendChild(recurrenceBadge);
+  const recurrenceLabel = recurrenceBadgeLabel(item.recurrence_rule);
+  if (recurrenceLabel) {
+    fragment.appendChild(buildMetaRow('🔄', recurrenceLabel));
   }
 
-  if (item.is_urgent) {
-    secondary.appendChild(buildUrgentBadge());
+  if (item.alert_on_price_drop && item.target_price != null) {
+    fragment.appendChild(buildMetaRow('🔥', t('items.targetPriceInfo', { target: formatEuro(item.target_price) })));
   }
 
   // hasPendingItemChanges is defined in app.js; isOfflineQueuedItem (above)
@@ -790,38 +841,55 @@ function buildSecondaryRow(item, { showQuantity }) {
   // catches an already-synced item with some other write (an edit, a
   // toggle, a delete) still sitting in the offline sync queue.
   if (hasPendingItemChanges(item.id) || isOfflineQueuedItem(item)) {
-    secondary.appendChild(buildUnsyncedItemBadge(item));
+    fragment.appendChild(buildMetaRow('⏳', t('sync.listBadgeLabel')));
   }
 
-  return secondary.children.length > 0 ? secondary : null;
+  return fragment;
 }
 
-// buildItemRow lays out one card as a top .item-card__row (checkbox/marker +
-// optional thumbnail + title + inline 🔗 icon on the left, the price block,
-// then edit/delete/kebab on the right) plus, only when there's something to
-// show, a .item-card__secondary line underneath it (quantity stepper +
-// badges) — the same shape at every breakpoint, Todoist/Notion-style, rather
-// than the single dense desktop row this used to reflow via CSS `order` on a
-// narrow screen. `.item-card__actions` (✏️/🗑️) and `.item-card__kebab` (⋮,
-// opening #item-actions-sheet) are both always built; base.css's `hidden
-// md:flex`/`flex md:hidden` decide which one is actually visible per
-// breakpoint — see the comment above that block for why.
-function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } = {}) {
+// buildItemRow lays out one card as a single ~56px-tall line — checkbox/
+// marker, an optional thumbnail, the title (truncated, flex-1 so it's the
+// one thing that actually gives way on a narrow screen), the quantity
+// stepper, the price cell (with its own compact ⚡/🔥/⏳ glyphs — see
+// buildPriceBlock), a small unsynced-status dot, the 🔗 link icon, then
+// edit/delete/kebab at the trailing edge — rather than the old two-line
+// "title row + badges row" shape. Everything that doesn't fit on one line
+// (target month, recurrence, the price-alert threshold) moved into
+// #item-actions-sheet instead — see buildItemActionsMeta above and
+// openItemActionsSheet below — the single sheet every "act on this item"
+// entry point (a tap on the title, the [⋮] kebab, or a long press) already
+// funnels into. `.item-card__actions` (✏️/🗑️) and `.item-card__kebab` (⋮)
+// are both always built; base.css's `hidden md:flex`/`flex md:hidden`
+// decide which one is actually visible per breakpoint — see the comment
+// above that block for why.
+//
+// showQuantity/showPrice/showLink (all list-type-level, from
+// fieldVisibilityFor — see renderItems' two call sites) each gate whether
+// that field's slot is reserved *at all* for every row of this list, as
+// opposed to hasLink/item.price below, which are per-item and only decide
+// what's actually drawn *inside* an already-reserved slot. That split is
+// deliberate: within one list every row shares the same showQuantity/
+// showPrice/showLink (the list's type doesn't vary row to row), so there's
+// no alignment risk in adding or omitting a whole slot consistently: but
+// whether *this* item happens to have a link, a price, or a price-status
+// glyph absolutely does vary row to row, and reserving that slot's width
+// unconditionally (leaving it empty rather than absent) is what keeps the
+// stepper/price/link/kebab group aligned from one card to the next — see
+// buildPriceBlock's own PRICE_STATUS_SLOT_CLASS comment for the mechanism
+// (every element after the flex-1 title shares the same "give way" sibling,
+// so any per-row width difference among them shifts the whole group).
+function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, showPrice = true, showLink = true } = {}) {
   const li = document.createElement('li');
   // An unfinished urgent item gets a distinctive rose border so it stands
   // out at a glance in the (already sorted-to-top, see renderItems) active
   // list — a completed urgent item just reverts to the normal styling since
-  // it no longer needs attention.
+  // it no longer needs attention. py-1.5 (6px) plus the 44px checkbox/kebab
+  // touch targets below is what keeps the whole row within the ~56px
+  // height budget this redesign targets.
   li.className =
     item.is_urgent && !item.done
-      ? 'item-card flex flex-col gap-1.5 rounded-2xl border-2 border-rose-500/60 bg-rose-500/5 p-3 shadow-sm'
-      : 'item-card flex flex-col gap-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3 shadow-sm';
-
-  const row = document.createElement('div');
-  row.className = 'item-card__row flex items-center gap-2';
-
-  const lead = document.createElement('div');
-  lead.className = 'item-card__lead flex min-w-0 flex-1 items-center gap-3';
+      ? 'item-card flex items-center gap-2 rounded-xl border-2 border-rose-500/60 bg-rose-500/5 px-3 py-1.5'
+      : 'item-card flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 px-3 py-1.5';
 
   if (showCheckbox) {
     const checkboxLabel = document.createElement('label');
@@ -835,9 +903,9 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
     checkbox.setAttribute('aria-label', t('urgent.markDoneAriaLabel', { title: item.title }));
     checkbox.addEventListener('change', () => toggleDone(item));
     checkboxLabel.appendChild(checkbox);
-    lead.appendChild(checkboxLabel);
+    li.appendChild(checkboxLabel);
   } else {
-    lead.appendChild(buildLineMarker(index));
+    li.appendChild(buildLineMarker(index));
   }
 
   // A thumbnail only ever appears when a product image was actually found
@@ -846,46 +914,67 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
   // and shopping items with no matched image just skip straight to the
   // title, unchanged from before this feature existed.
   if (item.image_url && isSafeHttpUrl(item.image_url)) {
-    lead.appendChild(buildItemThumbnail(item));
+    li.appendChild(buildItemThumbnail(item));
   }
 
   const title = document.createElement('span');
   // `truncate` (Tailwind's overflow-hidden/text-overflow-ellipsis/
   // whitespace-nowrap shorthand) needs a `min-w-0` flex ancestor to actually
-  // clip instead of forcing the row wider — `lead` above provides that — so
-  // a long title on a narrow screen never pushes the price/actions groups
-  // out of the card instead of just eliding. A tap on the title itself opens
-  // the same item-actions sheet as the [⋮] kebab button, the mobile-first
-  // "tap the item" entry point the pencil/trash buttons already cover on
-  // wider screens.
+  // clip instead of forcing the row wider — `li` itself, as the row, is that
+  // ancestor — so a long title on a narrow screen never pushes the
+  // stepper/price/actions groups out of the card instead of just eliding.
+  // A tap on the title itself opens the same item-actions sheet as the [⋮]
+  // kebab button, the mobile-first "tap the item" entry point the pencil/
+  // trash buttons already cover on wider screens.
   title.className = item.done
-    ? 'min-w-0 flex-1 cursor-pointer truncate text-base font-semibold text-slate-500 line-through opacity-60'
-    : 'min-w-0 flex-1 cursor-pointer truncate text-base font-semibold text-slate-900 dark:text-slate-100';
+    ? 'min-w-0 flex-1 cursor-pointer truncate text-sm font-semibold text-slate-500 line-through opacity-60'
+    : 'min-w-0 flex-1 cursor-pointer truncate text-sm font-semibold text-slate-900 dark:text-slate-100';
   // When the stepper below is shown, it's the canonical place quantity is
   // displayed/edited, so the title stays plain; otherwise (custom lists,
   // where quantity is hidden entirely) fall back to the old "title × N"
   // form, still used as a compact read-only summary in urgent.js/planning.js.
   title.textContent = !showQuantity && item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
   title.addEventListener('click', () => openItemActionsSheet(item));
-  lead.appendChild(title);
+  li.appendChild(title);
 
-  const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
-  if (hasLink) {
-    const linkIcon = buildInlineLinkIcon(item);
-    lead.appendChild(linkIcon);
-    // A long press (~500ms touch hold, desktop mouse unaffected — see
-    // attachLongPress) on either the title or the link icon itself opens
-    // the very same #item-actions-sheet a short tap does, just pre-focused
-    // on its Ouvrir/Copier/Partager link group — the "appui long sur
-    // l'item ou le lien" gesture, without a second sheet to keep in sync.
-    attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
-    attachLongPress(linkIcon, () => openItemActionsSheet(item, { focusLink: true }));
+  if (showQuantity) {
+    li.appendChild(buildQuantityStepper(item));
   }
 
-  row.appendChild(lead);
+  const priceBlock = buildPriceBlock(item, { showPrice });
+  if (priceBlock) li.appendChild(priceBlock);
 
-  const priceBlock = buildPriceBlock(item);
-  if (priceBlock) row.appendChild(priceBlock);
+  // hasPendingItemChanges is defined in app.js; isOfflineQueuedItem (above)
+  // already covers an item still carrying its temp-item-* id — this also
+  // catches an already-synced item with some other write (an edit, a
+  // toggle, a delete) still sitting in the offline sync queue. Always
+  // reserved (a bare dot, or its same-size empty stand-in) rather than only
+  // appended when pending — see buildItemRow's own header comment on why an
+  // absent-vs-present slot here would misalign every row after it.
+  li.appendChild(
+    hasPendingItemChanges(item.id) || isOfflineQueuedItem(item) ? buildUnsyncedDot(item) : buildEmptySlot('h-2 w-2')
+  );
+
+  const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
+  if (showLink) {
+    if (hasLink) {
+      const linkIcon = buildInlineLinkIcon(item);
+      li.appendChild(linkIcon);
+      // A long press (~500ms touch hold, desktop mouse unaffected — see
+      // attachLongPress) on either the title or the link icon itself opens
+      // the very same #item-actions-sheet a short tap does, just pre-focused
+      // on its Ouvrir/Copier/Partager link group — the "appui long sur
+      // l'item ou le lien" gesture, without a second sheet to keep in sync.
+      attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
+      attachLongPress(linkIcon, () => openItemActionsSheet(item, { focusLink: true }));
+    } else {
+      // Same h-8 w-8 footprint as buildInlineLinkIcon's own <a> so a list
+      // where only some items carry a url (the common case) still keeps
+      // every row's trailing group aligned — see buildItemRow's header
+      // comment.
+      li.appendChild(buildEmptySlot('h-8 w-8'));
+    }
+  }
 
   const actions = document.createElement('div');
   actions.className = 'item-card__actions hidden shrink-0 items-center gap-1 md:flex';
@@ -906,7 +995,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
   deleteBtn.addEventListener('click', () => removeItem(item));
   actions.appendChild(deleteBtn);
 
-  row.appendChild(actions);
+  li.appendChild(actions);
 
   const kebabBtn = document.createElement('button');
   kebabBtn.type = 'button';
@@ -914,12 +1003,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true } 
   kebabBtn.className = 'item-card__kebab flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 md:hidden';
   kebabBtn.innerHTML = KEBAB_ICON_SVG;
   kebabBtn.addEventListener('click', () => openItemActionsSheet(item));
-  row.appendChild(kebabBtn);
-
-  li.appendChild(row);
-
-  const secondary = buildSecondaryRow(item, { showQuantity });
-  if (secondary) li.appendChild(secondary);
+  li.appendChild(kebabBtn);
 
   // attachItemSwipeGestures is defined in gestures.js — swipe right to
   // toggle done (only when this list type actually shows the checkbox at
@@ -989,7 +1073,15 @@ function renderItems() {
     listEls.itemsActive.appendChild(emptyItemsRow(t('items.allDone')));
   } else {
     active.forEach((item, index) => {
-      listEls.itemsActive.appendChild(buildItemRow(item, { showCheckbox: visibility.done, index, showQuantity: visibility.quantity }));
+      listEls.itemsActive.appendChild(
+        buildItemRow(item, {
+          showCheckbox: visibility.done,
+          index,
+          showQuantity: visibility.quantity,
+          showPrice: visibility.price,
+          showLink: visibility.url,
+        })
+      );
     });
   }
 
@@ -1000,7 +1092,16 @@ function renderItems() {
   // bucket only got there some other way (e.g. the list's type was changed
   // after the item was already completed) — it still needs a way back to
   // active, which only the checkbox provides.
-  for (const item of done) listEls.itemsDone.appendChild(buildItemRow(item, { showCheckbox: true, showQuantity: visibility.quantity }));
+  for (const item of done) {
+    listEls.itemsDone.appendChild(
+      buildItemRow(item, {
+        showCheckbox: true,
+        showQuantity: visibility.quantity,
+        showPrice: visibility.price,
+        showLink: visibility.url,
+      })
+    );
+  }
   listEls.doneSummaryLabel.textContent = t('items.doneCount', { count: done.length });
   listEls.doneSection.hidden = done.length === 0;
 
@@ -1192,7 +1293,7 @@ function changeQuantity(item, newQuantity) {
       if (pendingQuantityUpdates.get(item)?.requestId !== requestId) return;
       item.quantity = committedQuantity;
       pendingQuantityUpdates.delete(item);
-      showError(err.message);
+      if (!isNetworkError(err)) showError(err.message);
     } finally {
       renderItems();
     }
@@ -1228,7 +1329,7 @@ function toggleUrgent(item) {
       if (pendingUrgentUpdates.get(item)?.requestId !== requestId) return;
       item.is_urgent = committedUrgent;
       pendingUrgentUpdates.delete(item);
-      showError(err.message);
+      if (!isNetworkError(err)) showError(err.message);
     } finally {
       renderItems();
     }
@@ -1324,7 +1425,7 @@ function toggleDone(item) {
         Object.assign(item, updated);
       } catch (err) {
         item.done = committedDone;
-        showError(err.message);
+        if (!isNetworkError(err)) showError(err.message);
       } finally {
         // Still on this list (or some other one): a plain local re-render is
         // enough, and — critically — must not be replaced by a network
@@ -1400,7 +1501,7 @@ function removeItem(item) {
       } catch (err) {
         if (index !== -1) items.splice(index, 0, item);
         delete item.pendingDelete;
-        showError(err.message);
+        if (!isNetworkError(err)) showError(err.message);
       }
       // Same reasoning as toggleDone's onCommit above: only fall back to
       // refreshVisibleView() (a real refetch) when the list this item
@@ -1536,7 +1637,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     notifyPriceAlertIfTriggered(created);
   } catch (err) {
     state.currentList.items = state.currentList.items.filter((item) => item !== optimisticItem);
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   } finally {
     renderItems();
   }
@@ -1622,6 +1723,8 @@ document.addEventListener('keydown', (event) => {
 function openItemActionsSheet(item, { focusLink = false } = {}) {
   itemActionsSheetItem = item;
   listEls.itemActionsSheetTitle.textContent = item.title;
+  listEls.itemActionsSheetMeta.replaceChildren(buildItemActionsMeta(item));
+  listEls.itemActionsSheetMeta.hidden = listEls.itemActionsSheetMeta.children.length === 0;
   const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
   listEls.itemActionsLinkGroup.hidden = !hasLink;
   listEls.itemActionsUrgentLabel.textContent = t(item.is_urgent ? 'modals.itemActions.unmarkUrgent' : 'modals.itemActions.markUrgent');
@@ -1766,7 +1869,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     notifyPriceAlertIfTriggered(updated);
   } catch (err) {
     Object.assign(item, previous);
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   } finally {
     renderItems();
   }

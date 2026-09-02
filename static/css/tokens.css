@@ -42,6 +42,42 @@
 
   --tk-overlay:       rgb(2 6 23 / 0.4);
 
+  /* Semantic palette for financial figures inside a list's own detail
+   * view — one named source of truth for "Total estimé / Déjà dépensé /
+   * Reste à dépenser", applied via Tailwind's arbitrary-value syntax (e.g.
+   * text-[color:var(--tk-money-spent)]) everywhere those three figures are
+   * shown: the finance summary (open and collapsed headers), item rows,
+   * and the budget-planning month/grand totals. This is a deliberate
+   * exception to the "most colors are plain Tailwind dark: pairs"
+   * convention noted above — these three tokens exist specifically so
+   * every one of those surfaces reads from the same palette instead of
+   * each having independently picked a shade.
+   *
+   * The dashboard/Espaces list-card price badge (static/js/app.js's
+   * urlBadges) deliberately does NOT use --tk-money-total: unlike this
+   * three-way in-list breakdown, a card only ever shows one number (the
+   * list's estimated total), so it's styled with the same plain Tailwind
+   * 'emerald' badge palette every other money-positive accent in the app
+   * uses (the auto-price sparkle icon, the all-done todo badge, ...) —
+   * see the comment above that call site for the full reasoning.
+   *
+   * Fixed by design, on purpose: unlike an earlier version of this
+   * palette, --tk-money-remaining no longer has a separate "positive"/
+   * "negative" variant — every remaining-to-spend figure always renders
+   * in this one color regardless of its sign, and no JS anywhere toggles
+   * it (see list_view.js's updateFinanceSummary, which used to call an
+   * applyRemainingColor() helper here and no longer does).
+   *
+   * These three light-mode values are pinned to specific hexes rather
+   * than reused from another token (e.g. --tk-text for the total) or
+   * picked to clear WCAG AA against this app's card background — #059669
+   * and #dc7120 measure 3.6:1 and 3.1:1 there, both under the 4.5:1
+   * minimum for normal-weight text. Kept anyway, exactly as specified.
+   */
+  --tk-money-total:     #1f2937;
+  --tk-money-spent:     #059669;
+  --tk-money-remaining: #dc7120;
+
   color-scheme: light;
 }
 
@@ -62,6 +98,21 @@
 
     --tk-overlay:       rgb(2 6 23 / 0.7);
 
+    /* Of the three light-mode hexes above, only --tk-money-total and
+     * --tk-money-spent need a dark-mode override. #1f2937 in particular
+     * is a *dark* neutral — used unmodified against this theme's dark
+     * background it measures 1.2:1 (all but invisible) — and #059669 is
+     * lightened here to match this file's existing --tk-success/
+     * --tk-success-light dark-mode convention just above. --tk-money-
+     * remaining (#dc7120) already measures 5.5:1 against this background
+     * unadapted, comfortably clearing WCAG AA, so — like --tk-success
+     * itself — it's deliberately left undeclared here and simply keeps
+     * its :root value; static/js/list_view.js still applies zero JS
+     * color logic to any of these three regardless.
+     */
+    --tk-money-total: #f8fafc;
+    --tk-money-spent: #34d399;
+
     color-scheme: dark;
   }
 }
@@ -81,6 +132,9 @@
   --tk-border-strong: #334155;
 
   --tk-overlay:       rgb(2 6 23 / 0.7);
+
+  --tk-money-total: #f8fafc;
+  --tk-money-spent: #34d399;
 
   color-scheme: dark;
 }

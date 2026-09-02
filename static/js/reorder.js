@@ -118,7 +118,7 @@ async function commitReorder() {
     state.currentList.items = updated;
     TrakkaToast.success(t('items.reorderSuccess'));
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   } finally {
     exitReorderMode();
   }
