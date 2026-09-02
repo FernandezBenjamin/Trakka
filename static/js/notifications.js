@@ -190,7 +190,7 @@ async function resolveAlert(alert, status) {
     notificationAlerts = [...notificationAlerts, alert];
     renderNotificationsList();
     updateNotificationsBadge();
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
     return;
   }
   refreshVisibleView();

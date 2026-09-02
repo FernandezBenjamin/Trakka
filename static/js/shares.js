@@ -134,7 +134,7 @@ async function revokeShare(userId) {
     await apiRequest(`${shareEndpoint()}/${userId}`, { method: 'DELETE' });
     await loadShareRoster();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 }
 
@@ -150,7 +150,7 @@ async function revokeInvitation(email) {
     });
     await loadShareRoster();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 }
 
@@ -176,7 +176,7 @@ sharesEls.shareForm.addEventListener('submit', async (event) => {
     sharesEls.shareForm.reset();
     await loadShareRoster();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 });
 

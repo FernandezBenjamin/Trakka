@@ -147,7 +147,7 @@ async function markUrgentItemDone(entry) {
   } catch (err) {
     urgentEntries = [...urgentEntries, entry];
     renderUrgent();
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
   await refreshPendingBadge();
 }

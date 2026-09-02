@@ -377,7 +377,11 @@ function buildMonthCard(month, entries) {
 
   if (entries.length > 0) {
     const subtotal = document.createElement('span');
-    subtotal.className = 'text-sm font-semibold text-emerald-600 dark:text-emerald-400';
+    // A projected TOTAL for the month, not an amount spent — takes the
+    // same --tk-money-total token as every other total figure (finance
+    // summary, item rows, list-card badges) rather than 'emerald', which
+    // this used to (incorrectly) reuse for both "total" and "spent".
+    subtotal.className = 'text-sm font-semibold text-[color:var(--tk-money-total)]';
     const monthTotal = entries.reduce((sum, entry) => sum + (entry.amount || 0), 0);
     subtotal.textContent = formatEuro(monthTotal);
     header.appendChild(subtotal);
@@ -484,7 +488,7 @@ async function moveItemToMonth(item, newMonth) {
     Object.assign(item, updated);
   } catch (err) {
     item.target_month = previous;
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   } finally {
     // Unscheduling drops the item out of this view entirely, same as any
     // other item that has never had a target_month set.

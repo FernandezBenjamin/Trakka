@@ -163,11 +163,17 @@ if (IS_TOUCH_DEVICE) {
         // enough to the left edge on a narrow phone to fall inside
         // EDGE_BACK_ZONE_PX, and a manual reorder drag must never be
         // hijacked into an edge-back navigation gesture instead.
+        // #create-item-form-anchor (the quick-add bar, pinned to the bottom
+        // of the viewport on mobile — see its responsive classes in
+        // index.html) is excluded too: its text input/buttons span the full
+        // width of that bottom strip, so a tap starting near its left edge
+        // must reach the input, not get hijacked into a back gesture.
         if (
           touch.clientX > EDGE_BACK_ZONE_PX ||
           event.target.closest('.swipe-item') ||
           event.target.closest('.reorder-row') ||
-          event.target.closest('#dashboard-tabs')
+          event.target.closest('#dashboard-tabs') ||
+          event.target.closest('#create-item-form-anchor')
         ) {
           tracking = false;
           return;

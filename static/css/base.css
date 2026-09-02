@@ -222,21 +222,24 @@ body {
   }
 }
 
-/* Item cards (static/js/list_view.js's buildItemRow) use one layout at every
-   breakpoint, Todoist/Notion-style: a top .item-card__row (checkbox/marker +
-   optional thumbnail + title + inline 🔗 link icon, then a trailing price and
-   the edit/delete/kebab controls, all built with Tailwind's own flex/gap/
-   truncate utilities directly in buildItemRow) and, only when there's
-   something to show, a secondary line below it (.item-card__secondary: the
-   quantity stepper plus the month/recurrence/urgent badges) indented to align
-   under the title rather than the checkbox. `.item-card__actions` (✏️/🗑️)
-   and `.item-card__kebab` (⋮, opening #item-actions-sheet — the single sheet
-   every "act on this item" entry point funnels into, including its own
-   Ouvrir/Copier/Partager link group) are both always built by buildItemRow;
-   which one is actually visible is a pure CSS/Tailwind concern (`hidden
-   md:flex` / `flex md:hidden` on the two, respectively) — see buildItemRow
-   for why the sheet exists at all on narrow screens where two more 44px tap
-   targets on the card would crowd the price/title. */
+/* Item cards (static/js/list_view.js's buildItemRow) are a single ~56px-tall
+   flex row at every breakpoint — checkbox/marker, an optional thumbnail, the
+   title (truncated, flex-1), the quantity stepper, a compact price cell
+   (line total plus single-glyph ⚡/🔥/⏳ indicators — see buildPriceBlock), a
+   small unsynced dot, the inline 🔗 link icon, then edit/delete/kebab at the
+   trailing edge, all built with Tailwind's own flex/gap/truncate utilities
+   directly in buildItemRow (`px-3 py-1.5` padding, `gap-2` between children —
+   see the .item-card class string there for the exact figures). There is no
+   second line any more: target month, recurrence, and the price-alert
+   threshold — anything that doesn't fit on one line — moved into
+   #item-actions-sheet instead (buildItemActionsMeta), the single sheet every
+   "act on this item" entry point already funnels into (a tap on the title,
+   the [⋮] kebab, or a long press), including its own Ouvrir/Copier/Partager
+   link group. `.item-card__actions` (✏️/🗑️) and `.item-card__kebab` (⋮) are
+   both always built by buildItemRow; which one is actually visible is a pure
+   CSS/Tailwind concern (`hidden md:flex` / `flex md:hidden` on the two,
+   respectively) — see buildItemRow for why the sheet exists at all on narrow
+   screens where two more 44px tap targets on the card would crowd the row. */
 @media (max-width: 768px) {
   /* Edit/delete/kebab are already 44x44px (Tailwind's h-11 w-11) — this is a
      defensive floor tied directly to the "safe touch target" requirement,
@@ -247,6 +250,17 @@ body {
     min-width: 44px;
   }
 }
+
+/* .item-card itself is deliberately excluded from the 44px floor above: at
+   its ~56px row height (checkbox/kebab already at 44px, plus px-3 py-1.5
+   padding — see the comment above), a compact WCAG 2.2 AA target (24x24px
+   minimum, not the stricter AAA 44x44px) is the right trade-off for the
+   quantity stepper's [-]/[+] buttons (28px, static/js/list_view.js's
+   buildQuantityStepper) and the inline 🔗 link icon (32px,
+   buildInlineLinkIcon) — both already comfortably clear 24px, and both
+   remain reachable at full 44px size from the edit-item modal/actions sheet
+   either way, satisfying WCAG 2.2 SC 2.5.8's "equivalent control elsewhere"
+   exception for a link inline with text. */
 
 /* Long-press targets (an item's title and its inline 🔗 link icon — see
    attachLongPress/buildItemRow in list_view.js) must not also trigger the
@@ -263,21 +277,36 @@ body {
   user-select: none;
 }
 
-/* The FAB (#add-item-fab, shown only below Tailwind's `md` breakpoint — see
-   its `md:hidden` class in index.html) sits above the home-indicator/gesture
-   area on a notched phone in fullscreen PWA mode, the same
-   env(safe-area-inset-*) reasoning as the header's padding-top above. Bottom
-   position only (not left/right, which stay Tailwind's ordinary `right-6`/
-   `bottom-6`-equivalent fixed spacing) needs the inset added in, since only
-   the bottom edge is ever obscured by a device's own chrome here. */
-#add-item-fab {
-  right: 1.5rem;
-  bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+/* The quick-add bar (#create-item-form-anchor) is pinned to the bottom of
+   the viewport only below Tailwind's `md` breakpoint (see its `md:static`
+   override in index.html, which reverts it to its original in-flow
+   placement above the item list on wider screens) — this sits above the
+   home-indicator/gesture area on a notched phone in fullscreen PWA mode,
+   the same env(safe-area-inset-*) reasoning as the header's padding-top
+   above and the reorder bar's own padding-bottom below. Scoped to the same
+   768px breakpoint the anchor itself switches position at: paired with
+   `md:static`, an unscoped rule here would just add unwanted extra bottom
+   spacing to the ordinary in-flow desktop layout, where nothing needs
+   clearing. */
+@media (max-width: 768px) {
+  #create-item-form-anchor {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  /* Gives the item list room to scroll its last row clear above the fixed
+     quick-add bar above (roughly its own height plus the safe-area inset it
+     already reserves) — #items-section is the whole detail-view container
+     (header, finance summary, item list, done section), so padding it at
+     the bottom extends the page's own scrollable height rather than
+     clipping anything inside a shorter inner scroll region. */
+  #items-section {
+    padding-bottom: 90px;
+  }
 }
 
-/* Same env(safe-area-inset-bottom) reasoning as the FAB above, applied to
-   the fixed "Valider l'ordre"/"Annuler" bar shown while reorder mode
-   (static/js/reorder.js) is active, so its buttons never sit under a
+/* Same env(safe-area-inset-bottom) reasoning as the quick-add bar above,
+   applied to the fixed "Valider l'ordre"/"Annuler" bar shown while reorder
+   mode (static/js/reorder.js) is active, so its buttons never sit under a
    notched phone's home-indicator/gesture area in fullscreen PWA mode. */
 #reorder-actions-bar {
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));

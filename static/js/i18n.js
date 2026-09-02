@@ -63,7 +63,7 @@
       financeTotal: 'Total estimé',
       financeSpent: 'Déjà dépensé',
       financeRemaining: 'Reste à dépenser',
-      titlePlaceholder: 'Article ou tâche',
+      titlePlaceholder: 'Ajouter un article ou une tâche…',
       urlPlaceholder: 'URL (optionnel)',
       quantityAriaLabel: 'Quantité',
       pricePlaceholder: 'Prix € (optionnel)',

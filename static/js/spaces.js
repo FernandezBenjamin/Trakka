@@ -622,7 +622,7 @@ async function toggleSpacePin(category) {
     await loadDashboard();
     TrakkaToast.success(t(pinning ? 'spaces.pinnedToast' : 'spaces.unpinnedToast', { name: category.name }));
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 }
 
@@ -651,7 +651,7 @@ function deleteCategory(category) {
       try {
         await apiRequest(`/custom-categories/${category.id}`, { method: 'DELETE' });
       } catch (err) {
-        showError(err.message);
+        if (!isNetworkError(err)) showError(err.message);
       }
       await loadCustomCategories();
       await refreshSpacesIfActive();
@@ -750,6 +750,6 @@ spacesEls.categoryForm.addEventListener('submit', async (event) => {
     if (callback) callback(category);
     await refreshSpacesIfActive();
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
   }
 });

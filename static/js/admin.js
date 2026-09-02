@@ -46,7 +46,9 @@ async function loadAdminSettings() {
   try {
     settings = await apiRequest('/admin/settings');
   } catch (err) {
-    showError(err.message);
+    // No offline mirror for admin settings — same "leave the modal empty
+    // without a blocking banner" reasoning as app.js's loadMembers.
+    if (!isNetworkError(err)) showError(err.message);
     return;
   }
   adminEls.instanceName.value = settings.instance_name;
@@ -102,7 +104,7 @@ adminEls.form.addEventListener('submit', async (event) => {
   try {
     settings = await apiRequest('/admin/settings', { method: 'PATCH', body: JSON.stringify(body) });
   } catch (err) {
-    showError(err.message);
+    if (!isNetworkError(err)) showError(err.message);
     return;
   }
 
