@@ -61,3 +61,26 @@ func TestConfigValidateVAPIDAllOrNothing(t *testing.T) {
 		t.Error("PushEnabled() = true for an empty config")
 	}
 }
+
+// TestDefaultAppLanguage exercises Load()'s DEFAULT_APP_LANGUAGE handling:
+// unset falls back to "en", a valid value ("fr") is honored, and an
+// unsupported value falls back to "en" the same way an invalid duration or
+// int env var already falls back to its own default elsewhere in this file.
+func TestDefaultAppLanguage(t *testing.T) {
+	cases := []struct {
+		env  string
+		want string
+	}{
+		{"", "en"},
+		{"fr", "fr"},
+		{"en", "en"},
+		{"FR", "fr"},
+		{"de", "en"},
+	}
+	for _, tc := range cases {
+		t.Setenv("DEFAULT_APP_LANGUAGE", tc.env)
+		if got := Load().DefaultAppLanguage; got != tc.want {
+			t.Errorf("DEFAULT_APP_LANGUAGE=%q: DefaultAppLanguage = %q, want %q", tc.env, got, tc.want)
+		}
+	}
+}

@@ -95,3 +95,51 @@ func TestKeepLastPagePreference(t *testing.T) {
 		t.Fatalf("expected ErrNotFound updating a nonexistent user, got %v", err)
 	}
 }
+
+// TestUserLanguagePreference exercises the users.language column (migration
+// 0017): a new user starts with no explicit preference recorded (an empty
+// string — internal/handlers.resolveUserLanguage, not this layer, is what
+// falls that back to the instance's DEFAULT_APP_LANGUAGE), and
+// UpdateUserLanguage must persist a real choice visible through both GetUser
+// and GetUserByEmail.
+func TestUserLanguagePreference(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	hash := "x"
+	user, err := d.CreateUser(ctx, "language@example.com", &hash, nil, nil, "Test")
+	if err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	if user.Language != "" {
+		t.Fatalf("expected a new user's language to start empty (no explicit preference), got %q", user.Language)
+	}
+
+	updated, err := d.UpdateUserLanguage(ctx, user.ID, "en")
+	if err != nil {
+		t.Fatalf("setting language: %v", err)
+	}
+	if updated.Language != "en" {
+		t.Fatalf("expected UpdateUserLanguage to report language %q, got %q", "en", updated.Language)
+	}
+
+	reloaded, err := d.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("reloading user: %v", err)
+	}
+	if reloaded.Language != "en" {
+		t.Fatalf("expected GetUser to report the persisted language %q, got %q", "en", reloaded.Language)
+	}
+
+	byEmail, err := d.GetUserByEmail(ctx, "language@example.com")
+	if err != nil {
+		t.Fatalf("reloading user by email: %v", err)
+	}
+	if byEmail.Language != "en" {
+		t.Fatalf("expected GetUserByEmail to report the persisted language %q, got %q", "en", byEmail.Language)
+	}
+
+	if _, err := d.UpdateUserLanguage(ctx, 999999, "fr"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound updating a nonexistent user, got %v", err)
+	}
+}

@@ -3,6 +3,12 @@
 // Ultra-light i18n engine: no build step, no dependencies. Loaded as a
 // classic <script> before app.js/list_view.js so `window.TrakkaI18n` is
 // available to them (mirrors how those two files already share globals).
+// The interactive picker itself is the #user-settings-language <select>
+// inside #user-settings-modal, owned and wired by static/js/settings.js
+// (this file only exposes window.TrakkaI18n.setLang/getLang for it to
+// call) — there used to be a header dropdown here instead; see CLAUDE.md's
+// session-handoff log for the cleanup that moved it into the "Paramètres"
+// modal alongside the theme picker.
 //
 // Static markup is translated declaratively via data-i18n* attributes:
 //   data-i18n="path.to.key"            -> element.textContent
@@ -33,13 +39,11 @@
     header: {
       backToDashboard: 'Retour au tableau de bord',
       logout: 'Se déconnecter',
-      langSwitcher: 'Changer de langue',
       langFr: 'Français',
       langEn: 'English',
       online: 'En ligne',
       offline: 'Hors-ligne',
       pending: '{count} en attente',
-      themeSwitcher: 'Changer de thème',
       themeLight: 'Clair',
       themeDark: 'Sombre',
       themeAuto: 'Système',
@@ -180,7 +184,6 @@
     translations = await response.json();
     currentLang = lang;
     applyTranslations();
-    updateLangButton();
     // Skip the event on the very first call (the page-load bootstrap at
     // the bottom of this IIFE) — app.js's trakka:lang-changed listener
     // re-renders dynamic, network-driven content (the dashboard grids,
@@ -211,56 +214,7 @@
     await loadLang(lang);
   }
 
-  // ---------------------------------------------------------------------
-  // Discreet FR/EN dropdown in the header. Wired here rather than app.js
-  // so the whole feature (dictionaries + engine + selector) stays in this
-  // one file, following the same close-on-Escape/click-outside pattern
-  // already used by every modal in app.js/list_view.js.
-  // ---------------------------------------------------------------------
-
-  function updateLangButton() {
-    const label = document.getElementById('lang-button-label');
-    if (label) label.textContent = currentLang.toUpperCase();
-    document.querySelectorAll('#lang-menu [data-lang]').forEach((btn) => {
-      btn.setAttribute('aria-current', btn.getAttribute('data-lang') === currentLang ? 'true' : 'false');
-    });
-  }
-
-  function wireLangSwitcher() {
-    const button = document.getElementById('lang-button');
-    const menu = document.getElementById('lang-menu');
-    if (!button || !menu) return;
-
-    function closeMenu() {
-      menu.hidden = true;
-      button.setAttribute('aria-expanded', 'false');
-    }
-    function toggleMenu() {
-      const willOpen = menu.hidden;
-      menu.hidden = !willOpen;
-      button.setAttribute('aria-expanded', String(willOpen));
-    }
-
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      toggleMenu();
-    });
-    menu.querySelectorAll('[data-lang]').forEach((option) => {
-      option.addEventListener('click', () => {
-        setLang(option.getAttribute('data-lang'));
-        closeMenu();
-      });
-    });
-    document.addEventListener('click', (event) => {
-      if (!menu.hidden && !menu.contains(event.target) && event.target !== button) closeMenu();
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !menu.hidden) closeMenu();
-    });
-  }
-
   window.TrakkaI18n = { t, setLang, getLang: () => currentLang, applyTranslations };
 
-  document.addEventListener('DOMContentLoaded', wireLangSwitcher);
   window.TrakkaI18n.ready = loadLang(detectLang());
 })();

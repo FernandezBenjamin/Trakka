@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"trakka/internal/validate"
 )
 
 type Config struct {
@@ -84,6 +86,18 @@ type Config struct {
 	// caught reasonably close to on time rather than only once a day. A
 	// value <= 0 disables the periodic scan entirely.
 	NotifRecurringScanInterval time.Duration
+
+	// DefaultAppLanguage is the UI language (see static/locales/{fr,en}.json)
+	// shown to any account that has never set its own preference — a brand
+	// new registration (users.language starts out empty) and any
+	// pre-existing account that never touched the Language section of the
+	// "Paramètres" modal both resolve to this at read time (see
+	// internal/handlers.resolveUserLanguage and models.User.Language),
+	// rather than the instance's admin having to change it per account.
+	// Defaults to "en"; an unrecognized value falls back to "en" too, the
+	// same "invalid env var falls back to the fallback" convention as
+	// envBool/envInt below.
+	DefaultAppLanguage string
 }
 
 func Load() Config {
@@ -115,6 +129,8 @@ func Load() Config {
 
 		NotifRecurringLeadTime:     envDuration("NOTIF_RECURRING_TASK_LEAD_TIME", 24*time.Hour),
 		NotifRecurringScanInterval: time.Duration(envInt("NOTIF_RECURRING_SCAN_INTERVAL_MINUTES", 30)) * time.Minute,
+
+		DefaultAppLanguage: envLanguage("DEFAULT_APP_LANGUAGE", "en"),
 	}
 }
 
@@ -188,6 +204,18 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// envLanguage reads key and validates it against validate.SupportedLanguages
+// (case-insensitively, trimmed), falling back — same as every other envXxx
+// helper here — when the variable is unset or isn't one of them.
+func envLanguage(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		if lang, ok := validate.Language(v); ok {
+			return lang
+		}
+	}
+	return fallback
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {

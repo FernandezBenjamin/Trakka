@@ -52,20 +52,22 @@ curl -b cookies.txt http://localhost:8080/api/v1/me
 Returns the authenticated user. `401 {"error": "authentication required"}` if the session cookie is missing, invalid, or expired.
 
 ```json
-{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "..." }
+{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "...", "keep_last_page": true, "language": "en" }
 ```
 
 `is_admin` grants access to the [Admin settings](#admin-settings) endpoints below. The very first account ever created on an instance (local or OIDC-provisioned) becomes an admin automatically — see `internal/db.CreateUser` in [CLAUDE.md](../CLAUDE.md) — and there is currently no endpoint to grant or revoke it for any other account.
 
 `keep_last_page` (`bool`, defaults to `true`) controls whether the frontend reopens on the last dashboard tab or list the user had open instead of always landing on the dashboard — see the "keep last page on launch" feature in [CLAUDE.md](../CLAUDE.md). The actual last-visited view itself is tracked purely client-side (`localStorage`, per browser, never sent to the server); only this on/off preference is part of the user's profile.
 
+`language` (`string`, `"fr"` or `"en"`) is the account's own UI-language preference, set from the "Langue" section of the "Paramètres" modal (`static/js/i18n.js`/`settings.js`). Never empty in this response: an account that has never set its own preference resolves to the instance's `DEFAULT_APP_LANGUAGE` env var (default `"en"`, see [CLAUDE.md](../CLAUDE.md)) rather than the field being omitted or blank.
+
 ### `PATCH /api/v1/me`
 
-Partial update of the caller's own profile preferences — currently just `keep_last_page` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`. Returns the updated user (same shape as `GET /api/v1/me`).
+Partial update of the caller's own profile preferences — `keep_last_page` and/or `language` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`; either, both, or neither may be present in one request. Returns the updated user (same shape as `GET /api/v1/me`). `language` must be `"fr"` or `"en"`, or the request is rejected with `400`.
 
 ```bash
 curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
-  -H 'Content-Type: application/json' -d '{"keep_last_page": false}'
+  -H 'Content-Type: application/json' -d '{"keep_last_page": false, "language": "fr"}'
 ```
 
 **CSRF**: `/auth/login`/`/auth/register` each require the `csrf_token` form field described above — a double-submit token, minted and set as an HttpOnly `trakka_csrf` cookie by `GET /auth/login`, that the submitted form field must match (`internal/handlers/csrf.go`). This defends specifically against "login CSRF" (a cross-site POST silently signing a victim into an attacker-controlled account) — a threat `SameSite` alone can't prevent here, since neither of these requests carries a pre-existing session cookie for `SameSite` to withhold. Every subsequent state-changing call instead goes through `/api/v1/...`, protected by the session cookie's `SameSite=Lax` attribute plus an `Origin`/`Sec-Fetch-Site` check (`requireSameOriginWrite`, same file): a cross-site request never carries the session cookie, and the same middleware also rejects a cross-site `/auth/logout` POST, which carries no session cookie either but would still be a nuisance if forgeable.

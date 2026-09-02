@@ -209,12 +209,12 @@ func (app *Application) sendToUsers(ctx context.Context, userIDs []int64, payloa
 // work — so a slow push delivery can never delay the response to the
 // request that triggered it.
 //
-// The notification text is always composed in French: unlike the rest of
-// this app's UI, there is no per-user language preference stored
-// server-side to localize it with (static/js/i18n.js's FR/EN toggle is a
-// client-side-only localStorage choice — see CLAUDE.md's "UI language"
-// convention), the same reasoning that already leaves templates/login.html
-// French-only.
+// The notification text is always composed in French, regardless of the
+// recipient's own language preference: although users.language (see
+// models.User.Language) now exists, wiring push notification text through
+// per-recipient localization is out of scope here — the same reasoning that
+// already leaves templates/login.html French-only, per CLAUDE.md's "UI
+// language" convention.
 func (app *Application) notifyListChange(list *models.List, actor *models.User, itemTitle string, checkedOff bool) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), pushSendTimeout)

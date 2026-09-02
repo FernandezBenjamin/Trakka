@@ -1,0 +1,16 @@
+-- Migration 17: per-account UI-language preference (users.language), the
+-- backend counterpart to the FR/EN toggle in static/js/i18n.js. Now set from
+-- a dedicated "Langue" section in the "Paramètres" (Settings) modal rather
+-- than a header dropdown (see CLAUDE.md's session-handoff log for the
+-- header-cleanup session that moved it there, alongside the Light/Dark/Auto
+-- theme picker).
+--
+-- An empty string means "no explicit preference" and is resolved to the
+-- instance-wide DEFAULT_APP_LANGUAGE env var (internal/config) at read time
+-- — see internal/handlers.resolveUserLanguage — rather than being baked in
+-- at account-creation time, so raising or changing that env var also takes
+-- effect retroactively for every account that never set its own preference
+-- (new or pre-existing), exactly as the feature request asked. This is why
+-- CreateUser itself needed no change: a brand new account simply starts
+-- with the column at its default, empty value.
+ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT '';

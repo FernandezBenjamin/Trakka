@@ -5,17 +5,20 @@
 // in static/index.html's <head> (it has to run before tokens.css and the
 // dark: Tailwind utilities are applied, which is earlier than this file —
 // loaded as a classic <script> at the bottom of <body> — could ever run).
-// This file owns everything after that first paint: persistence, the
-// header dropdown (mirrors static/js/i18n.js's lang-button/lang-menu
-// pattern), keeping <meta name="theme-color"> in sync, and — the one
-// thing the inline bootstrap can't do — staying live-updated against the
-// OS setting for as long as "Auto" stays selected.
+// This file owns everything after that first paint: persistence, keeping
+// <meta name="theme-color"> in sync, and — the one thing the inline
+// bootstrap can't do — staying live-updated against the OS setting for as
+// long as "Auto" stays selected. The interactive picker itself is the
+// #user-settings-theme <select> inside #user-settings-modal, owned and
+// wired by static/js/settings.js (this file only exposes window.TrakkaTheme
+// for it to call) — there used to be a header dropdown here instead; see
+// CLAUDE.md's session-handoff log for the cleanup that moved it into the
+// "Paramètres" modal alongside the language picker.
 (function () {
   const THEME_STORAGE_KEY = 'trakka:theme';
   const THEME_OPTIONS = ['light', 'dark', 'auto'];
   const DEFAULT_THEME = 'auto';
   const THEME_COLOR = { light: '#ffffff', dark: '#0f172a' };
-  const THEME_ICON = { light: '☀️', dark: '🌙' };
 
   const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
@@ -34,11 +37,6 @@
     document.documentElement.setAttribute('data-theme', resolved);
     const meta = document.getElementById('theme-color-meta');
     if (meta) meta.setAttribute('content', THEME_COLOR[resolved]);
-    const icon = document.getElementById('theme-button-icon');
-    if (icon) icon.textContent = THEME_ICON[resolved];
-    document.querySelectorAll('#theme-menu [data-theme-option]').forEach((btn) => {
-      btn.setAttribute('aria-current', btn.getAttribute('data-theme-option') === pref ? 'true' : 'false');
-    });
   }
 
   function setTheme(pref) {
@@ -56,43 +54,9 @@
     });
   }
 
-  function wireThemeSwitcher() {
-    const button = document.getElementById('theme-button');
-    const menu = document.getElementById('theme-menu');
-    if (!button || !menu) return;
-
-    function closeMenu() {
-      menu.hidden = true;
-      button.setAttribute('aria-expanded', 'false');
-    }
-    function toggleMenu() {
-      const willOpen = menu.hidden;
-      menu.hidden = !willOpen;
-      button.setAttribute('aria-expanded', String(willOpen));
-    }
-
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      toggleMenu();
-    });
-    menu.querySelectorAll('[data-theme-option]').forEach((option) => {
-      option.addEventListener('click', () => {
-        setTheme(option.getAttribute('data-theme-option'));
-        closeMenu();
-      });
-    });
-    document.addEventListener('click', (event) => {
-      if (!menu.hidden && !menu.contains(event.target) && event.target !== button) closeMenu();
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !menu.hidden) closeMenu();
-    });
-  }
-
   window.TrakkaTheme = { get: getStoredPref, set: setTheme };
 
   document.addEventListener('DOMContentLoaded', () => {
     applyTheme(getStoredPref());
-    wireThemeSwitcher();
   });
 })();
