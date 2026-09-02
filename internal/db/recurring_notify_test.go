@@ -26,27 +26,27 @@ func TestListItemsForRecurringNotifyScan(t *testing.T) {
 	rule := "WEEKLY"
 	due := "2026-01-10"
 	lead := 120
-	recurring, err := d.CreateItem(ctx, list.ID, "Sortir les poubelles", nil, 1, nil, false, 0, nil, &due, &rule, nil, false, &lead)
+	recurring, err := d.CreateItem(ctx, list.ID, "Sortir les poubelles", nil, 1, nil, false, 0, nil, &due, &rule, nil, false, &lead, nil, false)
 	if err != nil {
 		t.Fatalf("creating recurring item: %v", err)
 	}
 
 	// A non-recurring item, a recurring-but-already-done item, and a
 	// recurring item with no due date yet must never show up in the scan.
-	if _, err := d.CreateItem(ctx, list.ID, "Tâche ponctuelle", nil, 1, nil, false, 0, nil, &due, nil, nil, false, nil); err != nil {
+	if _, err := d.CreateItem(ctx, list.ID, "Tâche ponctuelle", nil, 1, nil, false, 0, nil, &due, nil, nil, false, nil, nil, false); err != nil {
 		t.Fatalf("creating one-off item: %v", err)
 	}
 	doneRule := "DAILY"
-	doneItem, err := d.CreateItem(ctx, list.ID, "Déjà faite", nil, 1, nil, false, 0, nil, &due, &doneRule, nil, false, nil)
+	doneItem, err := d.CreateItem(ctx, list.ID, "Déjà faite", nil, 1, nil, false, 0, nil, &due, &doneRule, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating done recurring item: %v", err)
 	}
 	if _, err := d.UpdateItem(ctx, doneItem.ID, doneItem.Title, doneItem.URL, doneItem.Quantity, doneItem.Price, doneItem.PriceAuto, doneItem.ImageURL,
-		true, doneItem.Position, doneItem.TargetMonth, doneItem.DueDate, doneItem.RecurrenceRule, doneItem.RecurrenceEndDate, doneItem.IsUrgent, doneItem.RecurrenceLeadMinutes); err != nil {
+		true, doneItem.Position, doneItem.TargetMonth, doneItem.DueDate, doneItem.RecurrenceRule, doneItem.RecurrenceEndDate, doneItem.IsUrgent, doneItem.RecurrenceLeadMinutes, nil, false); err != nil {
 		t.Fatalf("marking item done: %v", err)
 	}
 	noDueRule := "MONTHLY"
-	if _, err := d.CreateItem(ctx, list.ID, "Sans échéance", nil, 1, nil, false, 0, nil, nil, &noDueRule, nil, false, nil); err != nil {
+	if _, err := d.CreateItem(ctx, list.ID, "Sans échéance", nil, 1, nil, false, 0, nil, nil, &noDueRule, nil, false, nil, nil, false); err != nil {
 		t.Fatalf("creating no-due-date recurring item: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestListItemsForRecurringNotifyScan(t *testing.T) {
 		t.Fatalf("GetItem: %v", err)
 	}
 	if _, err := d.UpdateItem(ctx, refetched.ID, refetched.Title, refetched.URL, refetched.Quantity, refetched.Price, refetched.PriceAuto, refetched.ImageURL,
-		refetched.Done, refetched.Position, refetched.TargetMonth, &newDue, refetched.RecurrenceRule, refetched.RecurrenceEndDate, refetched.IsUrgent, refetched.RecurrenceLeadMinutes); err != nil {
+		refetched.Done, refetched.Position, refetched.TargetMonth, &newDue, refetched.RecurrenceRule, refetched.RecurrenceEndDate, refetched.IsUrgent, refetched.RecurrenceLeadMinutes, nil, false); err != nil {
 		t.Fatalf("advancing due date: %v", err)
 	}
 	rearmed, err := d.ListItemsForRecurringNotifyScan(ctx)

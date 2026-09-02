@@ -16,7 +16,7 @@ func setupPriceAlertItem(t *testing.T, ctx context.Context, d *DB, price float64
 		t.Fatalf("creating list: %v", err)
 	}
 	url = "https://example.com/product"
-	item, err := d.CreateItem(ctx, list.ID, "Article", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil)
+	item, err := d.CreateItem(ctx, list.ID, "Article", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating item: %v", err)
 	}
@@ -153,22 +153,22 @@ func TestListItemsForPriceScan(t *testing.T) {
 	url := "https://example.com/product"
 	price := 10.0
 
-	eligible, err := d.CreateItem(ctx, list.ID, "Éligible", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil)
+	eligible, err := d.CreateItem(ctx, list.ID, "Éligible", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating eligible item: %v", err)
 	}
-	if _, err := d.CreateItem(ctx, list.ID, "Sans URL", nil, 1, &price, false, 0, nil, nil, nil, nil, false, nil); err != nil {
+	if _, err := d.CreateItem(ctx, list.ID, "Sans URL", nil, 1, &price, false, 0, nil, nil, nil, nil, false, nil, nil, false); err != nil {
 		t.Fatalf("creating url-less item: %v", err)
 	}
-	if _, err := d.CreateItem(ctx, list.ID, "Sans prix", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil); err != nil {
+	if _, err := d.CreateItem(ctx, list.ID, "Sans prix", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false); err != nil {
 		t.Fatalf("creating price-less item: %v", err)
 	}
-	done, err := d.CreateItem(ctx, list.ID, "Terminé", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil)
+	done, err := d.CreateItem(ctx, list.ID, "Terminé", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating done item: %v", err)
 	}
 	if _, err := d.UpdateItem(ctx, done.ID, done.Title, done.URL, done.Quantity, done.Price, done.PriceAuto, done.ImageURL,
-		true, done.Position, done.TargetMonth, done.DueDate, done.RecurrenceRule, done.RecurrenceEndDate, false, done.RecurrenceLeadMinutes); err != nil {
+		true, done.Position, done.TargetMonth, done.DueDate, done.RecurrenceRule, done.RecurrenceEndDate, false, done.RecurrenceLeadMinutes, nil, false); err != nil {
 		t.Fatalf("marking item done: %v", err)
 	}
 

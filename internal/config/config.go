@@ -37,6 +37,19 @@ type Config struct {
 	// POST /api/v1/items/{id}/price-check still work regardless).
 	PriceCheckInterval time.Duration
 
+	// TargetPriceScrapeInterval is how often the target-price background
+	// worker (internal/handlers.RunTargetPriceScan) re-scrapes every item
+	// with an active "notify me when the price drops" threshold (see
+	// models.Item.TargetPrice/AlertOnPriceDrop) and applies whatever current
+	// price it finds. This is distinct from PriceCheckInterval above: that
+	// scan compares a scraped price against the item's own current price and
+	// only ever proposes a price_alerts row for the user to accept/reject,
+	// while this one compares against the user's own explicit threshold and,
+	// once crossed, writes items.price directly and notifies immediately
+	// with no accept/reject step. A value <= 0 disables the periodic scan
+	// entirely.
+	TargetPriceScrapeInterval time.Duration
+
 	// InstanceName and RegistrationOpen are the env-var defaults for two of
 	// the settings manageable at runtime via the admin-only
 	// PATCH /api/v1/admin/settings endpoint (see internal/settings.Resolve).
@@ -90,6 +103,8 @@ func Load() Config {
 		SessionTTL:          time.Duration(envInt("SESSION_TTL_HOURS", 720)) * time.Hour,
 
 		PriceCheckInterval: time.Duration(envInt("PRICE_CHECK_INTERVAL_HOURS", 24)) * time.Hour,
+
+		TargetPriceScrapeInterval: envDuration("SCRAPE_INTERVAL", 12*time.Hour),
 
 		InstanceName:     envOr("INSTANCE_NAME", "Trakka"),
 		RegistrationOpen: envBool("REGISTRATION_OPEN", true),

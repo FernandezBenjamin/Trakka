@@ -29,11 +29,11 @@ func TestHandleListsReorder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}
-	itemA, err := app.DB.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+	itemA, err := app.DB.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating item A: %v", err)
 	}
-	itemB, err := app.DB.CreateItem(ctx, list.ID, "Pain", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+	itemB, err := app.DB.CreateItem(ctx, list.ID, "Pain", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating item B: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestHandleListsReorderRequiresWriteAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}
-	item, err := app.DB.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+	item, err := app.DB.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating item: %v", err)
 	}
@@ -116,11 +116,11 @@ func TestHandleListsReorderRejectsPartialSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating list: %v", err)
 	}
-	itemA, err := app.DB.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+	itemA, err := app.DB.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating item A: %v", err)
 	}
-	if _, err := app.DB.CreateItem(ctx, list.ID, "Pain", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil); err != nil {
+	if _, err := app.DB.CreateItem(ctx, list.ID, "Pain", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false); err != nil {
 		t.Fatalf("creating item B: %v", err)
 	}
 

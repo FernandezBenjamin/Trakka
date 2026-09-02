@@ -28,6 +28,7 @@ const listEls = {
   itemUrl: document.getElementById('item-url'),
   itemQuantity: document.getElementById('item-quantity'),
   itemPrice: document.getElementById('item-price'),
+  itemTargetPrice: document.getElementById('item-target-price'),
   itemTargetMonth: document.getElementById('item-target-month'),
   itemRecurrence: document.getElementById('item-recurrence'),
   itemUrgent: document.getElementById('item-urgent'),
@@ -46,6 +47,7 @@ const listEls = {
   editItemUrl: document.getElementById('edit-item-url'),
   editItemPrice: document.getElementById('edit-item-price'),
   editItemPriceAutoBadge: document.getElementById('edit-item-price-auto-badge'),
+  editItemTargetPrice: document.getElementById('edit-item-target-price'),
   editItemTargetMonth: document.getElementById('edit-item-target-month'),
   editItemRecurrence: document.getElementById('edit-item-recurrence'),
   editItemUrgent: document.getElementById('edit-item-urgent'),
@@ -526,6 +528,54 @@ function buildRecurrenceBadge(item) {
   return badge;
 }
 
+// Mirrors internal/handlers.priceAlertCondition exactly: whether item's own
+// user-set "notify me when the price drops" threshold currently holds —
+// alerting opted in, a threshold set, a price present, and that price at
+// or below the threshold. Used both to decide whether to render
+// buildPriceAlertBadge below and, in app.js/reorder.js's dashboard/Espaces
+// card badges, whether to show the same highlighted state there.
+function priceAlertCondition(item) {
+  return Boolean(item.alert_on_price_drop) && item.target_price != null && item.price != null && item.price <= item.target_price;
+}
+
+// A highlighted, eye-catching badge (🔥 "Bonne affaire") shown once an
+// item's price has reached the threshold set via its "Déclencher une
+// alerte si le prix descend en dessous de" field — deliberately styled in
+// the same amber palette as a "deal found" state rather than the more
+// muted badges around it (target month, recurrence, urgent), since this is
+// meant to actually catch the eye the moment it appears, mirroring the
+// in-app toast/push notification checkPriceDropAlert fires server-side the
+// moment this condition first becomes true (see items.js's price_alert_
+// triggered handling on create/update/patch).
+function buildPriceAlertBadge(item) {
+  const badge = document.createElement('span');
+  badge.className =
+    'flex shrink-0 items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300';
+  badge.title = t('items.priceAlertBadge', { price: formatEuro(item.price), target: formatEuro(item.target_price) });
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🔥';
+  const text = document.createElement('span');
+  text.textContent = t('items.priceAlertBadge', { price: formatEuro(item.price), target: formatEuro(item.target_price) });
+  badge.appendChild(icon);
+  badge.appendChild(text);
+  return badge;
+}
+
+// Shows the in-app toast half of the "notification (toast + push)"
+// requirement — the push half is sent server-side by
+// internal/handlers.checkPriceDropAlert regardless of whether this tab is
+// even open. `price_alert_triggered` (models.Item.PriceAlertTriggered) is a
+// transient, response-only field set exactly once per genuine crossing —
+// see its own doc comment — so this never re-fires on an unrelated edit or
+// a plain GET. Called from the create-item form and edit-item form submit
+// handlers, the only two places an item's price-mutating fields reach the
+// server synchronously enough to read this back from the response.
+function notifyPriceAlertIfTriggered(item) {
+  if (!item || !item.price_alert_triggered) return;
+  window.TrakkaToast?.success(t('items.priceAlertToast', { title: item.title, price: formatEuro(item.price), target: formatEuro(item.target_price) }));
+}
+
 // A discreet, non-interactive badge (🚨 + "Urgent") shown on an item flagged
 // is_urgent, regardless of done state — mirrors buildRecurrenceBadge's shape
 // but in the rose palette used everywhere else for "needs attention".
@@ -737,6 +787,14 @@ function buildSecondaryRow(item, { showQuantity }) {
 
   if (showQuantity) {
     secondary.appendChild(buildQuantityStepper(item));
+  }
+
+  // A highlighted "bonne affaire" badge once the item's own price has
+  // actually reached the target price it was set up to watch for — see
+  // priceAlertCondition (mirrors internal/handlers.priceAlertCondition
+  // exactly) and buildPriceAlertBadge below.
+  if (priceAlertCondition(item)) {
+    secondary.appendChild(buildPriceAlertBadge(item));
   }
 
   // Only shown once an item has actually been scheduled via the edit
@@ -1437,12 +1495,18 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   const quantity = visibility.quantity ? Number.parseInt(listEls.itemQuantity.value, 10) || 1 : 1;
   const url = visibility.url ? listEls.itemUrl.value.trim() : '';
   let price = null;
+  let targetPrice = null;
   let targetMonth = '';
   if (visibility.price) {
     const raw = listEls.itemPrice.value.trim();
     if (raw !== '') {
       const parsed = Number.parseFloat(raw);
       if (Number.isFinite(parsed) && parsed >= 0) price = parsed;
+    }
+    const rawTarget = listEls.itemTargetPrice.value.trim();
+    if (rawTarget !== '') {
+      const parsedTarget = Number.parseFloat(rawTarget);
+      if (Number.isFinite(parsedTarget) && parsedTarget >= 0) targetPrice = parsedTarget;
     }
   }
   if (visibility.targetMonth) targetMonth = listEls.itemTargetMonth.value;
@@ -1453,6 +1517,15 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   const payload = { list_id: state.currentListId, title, quantity };
   if (url) payload.url = url;
   if (price !== null) payload.price = price;
+  // A target price with no separate opt-in checkbox in the UI: typing one
+  // in implicitly opts the item into the alert, mirroring
+  // internal/handlers.checkPriceDropAlert's two-field model server-side
+  // (target_price/alert_on_price_drop) while keeping the form itself down
+  // to the single field the feature's own request described.
+  if (targetPrice !== null) {
+    payload.target_price = targetPrice;
+    payload.alert_on_price_drop = true;
+  }
   if (targetMonth) payload.target_month = targetMonth;
   if (recurrenceRule) payload.recurrence_rule = recurrenceRule;
   if (isUrgent) payload.is_urgent = true;
@@ -1468,6 +1541,8 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     url: url || null,
     quantity,
     price,
+    target_price: targetPrice,
+    alert_on_price_drop: targetPrice !== null,
     target_month: targetMonth || null,
     recurrence_rule: recurrenceRule || null,
     is_urgent: isUrgent,
@@ -1497,6 +1572,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     Object.assign(optimisticItem, created);
     optimisticItem.priceScrapePending = created.price_status === 'pending';
     if (optimisticItem.priceScrapePending) scheduleAutoPriceRefresh(optimisticItem);
+    notifyPriceAlertIfTriggered(created);
   } catch (err) {
     state.currentList.items = state.currentList.items.filter((item) => item !== optimisticItem);
     showError(err.message);
@@ -1533,6 +1609,7 @@ function openEditItemModal(item) {
   listEls.editItemUrl.value = item.url || '';
   listEls.editItemPrice.value = item.price != null ? item.price : '';
   listEls.editItemPriceAutoBadge.hidden = !item.price_auto;
+  listEls.editItemTargetPrice.value = item.target_price != null ? item.target_price : '';
   listEls.editItemTargetMonth.value = item.target_month || '';
   listEls.editItemRecurrence.value = item.recurrence_rule || '';
   listEls.editItemUrgent.checked = Boolean(item.is_urgent);
@@ -1678,6 +1755,22 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
       }
       payload.price = parsed;
     }
+    // Same implicit-opt-in convention as the create-item form above: a
+    // filled-in target price opts the item into the alert, an emptied one
+    // clears both fields together — no separate checkbox in the UI.
+    const rawTarget = listEls.editItemTargetPrice.value.trim();
+    if (rawTarget === '') {
+      payload.target_price = null;
+      payload.alert_on_price_drop = false;
+    } else {
+      const parsedTarget = Number.parseFloat(rawTarget);
+      if (!Number.isFinite(parsedTarget) || parsedTarget < 0) {
+        showError(t('items.targetPriceValidationError'));
+        return;
+      }
+      payload.target_price = parsedTarget;
+      payload.alert_on_price_drop = true;
+    }
   }
   if (visibility.targetMonth) payload.target_month = listEls.editItemTargetMonth.value;
   if (visibility.recurrence) payload.recurrence_rule = listEls.editItemRecurrence.value;
@@ -1687,6 +1780,8 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     title: item.title,
     url: item.url,
     price: item.price,
+    target_price: item.target_price,
+    alert_on_price_drop: item.alert_on_price_drop,
     target_month: item.target_month,
     recurrence_rule: item.recurrence_rule,
     is_urgent: item.is_urgent,
@@ -1694,6 +1789,8 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   item.title = title;
   item.url = url || null;
   if ('price' in payload) item.price = payload.price;
+  if ('target_price' in payload) item.target_price = payload.target_price;
+  if ('alert_on_price_drop' in payload) item.alert_on_price_drop = payload.alert_on_price_drop;
   if ('target_month' in payload) item.target_month = payload.target_month || null;
   if ('recurrence_rule' in payload) item.recurrence_rule = payload.recurrence_rule || null;
   item.is_urgent = payload.is_urgent;
@@ -1705,6 +1802,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     Object.assign(item, updated);
     item.priceScrapePending = updated.price_status === 'pending';
     if (item.priceScrapePending) scheduleAutoPriceRefresh(item);
+    notifyPriceAlertIfTriggered(updated);
   } catch (err) {
     Object.assign(item, previous);
     showError(err.message);

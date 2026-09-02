@@ -16,7 +16,7 @@ All responses are `application/json; charset=utf-8`. Every `/api/v1/...` endpoin
 
 ## Authentication
 
-Trakka supports two ways to establish a session, both ending in the same HTTP-only, `SameSite=Strict` `trakka_session` cookie:
+Trakka supports two ways to establish a session, both ending in the same HTTP-only, `SameSite=Lax` `trakka_session` cookie (see the "Mobile/PWA login loop fix" entry in [CLAUDE.md](../CLAUDE.md) for why this is `Lax` rather than `Strict`):
 
 - **Local**: email + password (bcrypt-hashed server-side).
 - **OIDC / OAuth2**: a generic Authorization Code + PKCE flow against any standards-compliant provider (Authelia, Authentik, Keycloak, Google, ...), configured via `OIDC_ISSUER`/`OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`/`BASE_URL` (see [docs/DEPLOYMENT.md](DEPLOYMENT.md)). Only enabled when all three `OIDC_*` variables are set.
@@ -25,18 +25,25 @@ These are classic server-rendered, form-POST endpoints (not JSON) — `/auth/log
 
 | Endpoint | Method | Notes |
 |---|---|---|
-| `/auth/login` | `GET` | Renders the login/register page. Redirects to `/` if already authenticated. |
-| `/auth/login` | `POST` | Form fields: `email`, `password`. On success, sets the session cookie and redirects to `/`; on failure, redirects to `/auth/login?error=invalid_credentials`. |
-| `/auth/register` | `POST` | Form fields: `email`, `password`, `password_confirm`, `display_name`. Creates the account, a personal house ("Ma Maison") owned by the new user, a session, then redirects to `/`. `email_taken` on a duplicate email; `registration_closed` (both here and on `GET /auth/login?mode=register`) if an admin has closed registration via [Admin settings](#admin-settings). |
+| `/auth/login` | `GET` | Renders the login/register page, including a hidden `csrf_token` field (see CSRF below) paired with a `trakka_csrf` cookie set on this same response. Redirects to `/` if already authenticated. |
+| `/auth/login` | `POST` | Form fields: `email`, `password`, `csrf_token`. On success, sets the session cookie and redirects to `/`; on failure, redirects to `/auth/login?error=invalid_credentials` (or `?error=csrf_failed` if `csrf_token` is missing or doesn't match the `trakka_csrf` cookie). |
+| `/auth/register` | `POST` | Form fields: `email`, `password`, `password_confirm`, `display_name`, `csrf_token`. Creates the account, a personal house ("Ma Maison") owned by the new user, a session, then redirects to `/`. `email_taken` on a duplicate email; `registration_closed` (both here and on `GET /auth/login?mode=register`) if an admin has closed registration via [Admin settings](#admin-settings); `csrf_failed` under the same condition as `/auth/login` above. |
 | `/auth/logout` | `POST` | Revokes the session and redirects to `/auth/login`. |
 | `/auth/oidc/login` | `GET` | Redirects to the configured OIDC provider. `404` if OIDC isn't configured. |
 | `/auth/oidc/callback` | `GET` | The provider's redirect target. Verifies the id_token, provisions the account on first login (with a personal house, same as local registration), sets the session cookie, redirects to `/`. |
 
 A first-time OIDC login is rejected (`?error=email_taken`) if the claimed email already belongs to a different account (local, or a different OIDC issuer) — accounts are never silently auto-linked by email, since an OIDC provider's email claim isn't guaranteed to be verified.
 
+Both `/auth/login` and `/auth/register` require a `csrf_token` form field matching the `trakka_csrf` cookie set by a prior `GET /auth/login` — see the CSRF paragraph below. There is no way to submit either form correctly without first loading the page, so a scripted login/registration (curl, a test harness) must fetch the page first and extract the token:
+
 ```bash
-# example: local login via curl, using a cookie jar
-curl -c cookies.txt -X POST http://localhost:8080/auth/login -d "email=alice@example.com&password=secret1234"
+# 1. load the login page to get a trakka_csrf cookie and the matching token
+curl -c cookies.txt -s http://localhost:8080/auth/login -o login.html
+CSRF_TOKEN=$(grep -o 'name="csrf_token" value="[^"]*"' login.html | head -1 | sed -E 's/.*value="([^"]*)"/\1/')
+
+# 2. submit the login form, cookie jar and token both included
+curl -b cookies.txt -c cookies.txt -X POST http://localhost:8080/auth/login \
+  -d "email=alice@example.com&password=secret1234&csrf_token=${CSRF_TOKEN}"
 curl -b cookies.txt http://localhost:8080/api/v1/me
 ```
 
@@ -61,7 +68,7 @@ curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
   -H 'Content-Type: application/json' -d '{"keep_last_page": false}'
 ```
 
-**CSRF**: the login/register forms carry no CSRF token — there's no pre-existing session for a forged POST to hijack at that point, so there's nothing for an attacker to gain. Every subsequent state-changing call goes through `/api/v1/...`, which is protected by the session cookie's `SameSite=Strict` attribute: it's never attached to a cross-site request (form or `fetch`), which closes the standard CSRF vector without a separate token.
+**CSRF**: `/auth/login`/`/auth/register` each require the `csrf_token` form field described above — a double-submit token, minted and set as an HttpOnly `trakka_csrf` cookie by `GET /auth/login`, that the submitted form field must match (`internal/handlers/csrf.go`). This defends specifically against "login CSRF" (a cross-site POST silently signing a victim into an attacker-controlled account) — a threat `SameSite` alone can't prevent here, since neither of these requests carries a pre-existing session cookie for `SameSite` to withhold. Every subsequent state-changing call instead goes through `/api/v1/...`, protected by the session cookie's `SameSite=Lax` attribute plus an `Origin`/`Sec-Fetch-Site` check (`requireSameOriginWrite`, same file): a cross-site request never carries the session cookie, and the same middleware also rejects a cross-site `/auth/logout` POST, which carries no session cookie either but would still be a nuisance if forgeable.
 
 ## Health
 
@@ -284,7 +291,7 @@ Returns the list **with its items embedded**, ordered by `position` then `id`.
     "id": 1, "house_id": 1, "name": "Courses", "type": "shopping",
     "created_at": "...", "updated_at": "...",
     "items": [
-      { "id": 1, "list_id": 1, "title": "Lait", "url": "https://...", "quantity": 2, "price": 1.85, "price_auto": false, "image_url": "https://...", "done": false, "position": 0, "target_month": "2026-11", "due_date": null, "is_recurring": false, "recurrence_rule": null, "recurrence_end_date": null, "is_urgent": false, "created_at": "...", "updated_at": "..." }
+      { "id": 1, "list_id": 1, "title": "Lait", "url": "https://...", "quantity": 2, "price": 1.85, "price_auto": false, "image_url": "https://...", "done": false, "position": 0, "target_month": "2026-11", "due_date": null, "is_recurring": false, "recurrence_rule": null, "recurrence_end_date": null, "is_urgent": false, "target_price": null, "alert_on_price_drop": false, "created_at": "...", "updated_at": "..." }
     ]
   }
   ```
@@ -425,6 +432,8 @@ curl -X POST http://localhost:8080/api/v1/items \
 | `recurrence_end_date` | string | no | `YYYY-MM-DD`; the last date a recurring item should recur on. `400` if given but not a real calendar date |
 | `is_urgent` | boolean | no | flags the item as needing attention right away (e.g. "out of toilet paper"); defaults to `false`. Independent of every other field — no validation beyond being a boolean |
 | `recurrence_lead_minutes` | integer | no | overrides `NOTIF_RECURRING_TASK_LEAD_TIME` (see [Push notifications](#push-notifications)) for this item alone — how long before `due_date` a reminder push is sent, in minutes; `400` if negative. Meaningless unless `recurrence_rule` is also set |
+| `target_price` | number | no | a price threshold in euros; `400` if negative. See [Price drop alerts](#price-drop-alerts) below |
+| `alert_on_price_drop` | boolean | no | opts the item into a notification once `price` reaches `target_price`; defaults to `false`. Independent of `target_price` itself being set — see [Price drop alerts](#price-drop-alerts) |
 
 `400` if `list_id` doesn't reference an existing list. `403` unless the caller has **write** [access](#sharing) to the list. `201` with the created item. If `url` is given, the server kicks off a **best-effort** lookup against that URL (see `internal/scraper` in [CLAUDE.md](../CLAUDE.md)) for whichever of `price`/`image_url` the item is still missing (an explicit `price` in the request skips price detection but the image is still looked up), and waits up to ~2.5s for it before responding: if it finishes in time, the `201` response already carries `price` (with `price_auto: true`) and `image_url`, and reports `price_status: "found"`; if the site is slow to respond, the lookup keeps running in the background and the response instead carries `price_status: "pending"` — poll `GET /api/v1/items/{id}` (or re-fetch the list) a few seconds later to pick it up. `price_status: "none"` means there was no `url` to scrape or no price was found in time — this is unaffected by whether an image was found. `image_url`, when present, is always an absolute `http://`/`https://` URL. `price_status` is response-only — it's never persisted and never appears on a plain `GET`.
 
@@ -450,20 +459,39 @@ curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"done": true}'
 curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"is_urgent": true}'
 ```
 
+### Price drop alerts
+
+`target_price`/`alert_on_price_drop` (`POST`, `PUT`, or `PATCH`) let a user watch an individual item's own price and be notified once it reaches a threshold they set — distinct from the automatic deal-detection scan behind [`/api/v1/price-alerts`](#price-alerts), which compares an item's price against a *lower price found on its page*, not against a user-chosen number. The two are independent fields ("has a threshold" vs. "wants to be notified about it") rather than one implying the other, the same relationship `recurrence_rule`/`due_date` have to each other — a target price can be set before deciding whether to actually enable the alert for it.
+
+After any request that changes an item's `price` (this endpoint, `PUT`, an in-time scraper result on `POST`/`PUT`/`PATCH`, the background scraper filling in a still-missing price later, or accepting a [price alert](#price-alerts)) or its `target_price`/`alert_on_price_drop`, the server checks whether `alert_on_price_drop` is true, `target_price` is set, and `price <= target_price` — and, only on the **first** request where that becomes true (not on every subsequent read or unrelated edit while it stays true), two things happen: the response carries `price_alert_triggered: true` (a transient, response-only field, the `target_price` counterpart to `price_status` — never persisted, never present on a plain `GET`) so the frontend can show an immediate in-app toast, and every user with access to the item's list gets a push notification (see [Push notifications](#push-notifications)) — regardless of whether this tab is even open, since a price drop found by the background scraper happens after the request that triggered it has already responded.
+
+```bash
+# watch this item and be notified once its price drops to 15€ or below
+curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"target_price": 15, "alert_on_price_drop": true}'
+
+# a later price update that crosses the threshold reports it in the response
+curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"price": 12.99}'
+# => {"id": 1, ..., "price": 12.99, "target_price": 15, "alert_on_price_drop": true, "price_alert_triggered": true}
+```
+
+In addition to the request-time paths above, a periodic background worker (`internal/handlers.RunTargetPriceScan`, every `SCRAPE_INTERVAL`, default `12h`; see [docs/DEPLOYMENT.md](DEPLOYMENT.md)) independently re-scrapes every not-done item that has a `url`, `alert_on_price_drop: true`, and a `target_price` set (`db.ListItemsForTargetPriceScan`), regardless of whether anyone has touched it recently — this is what catches a price drop on a tracked item nobody happens to edit or re-open. It waits 5 seconds between items (a fixed, not-yet-configurable delay) specifically to avoid hammering a merchant's site with a burst of near-simultaneous requests from this server's IP. Applying a newly-scraped price is a compare-and-swap against the price/url the scan read at the start of that item's check (`db.UpdateItemPriceFromScan`), so a user's own concurrent edit — or a different scan resolving the same item first — is never clobbered; a lost race is silently skipped, the same "not an error" contract every other scraper-driven path in this app follows. A price change that's actually applied runs through the exact same false→true threshold check described above, so it triggers a push notification the same way a manual edit does — there is just no HTTP response for this path to attach an in-app toast to.
+
+See [docs/DOC_TEST_PRICE_ALERTS.md](DOC_TEST_PRICE_ALERTS.md) for a step-by-step manual QA recipe covering this feature end to end (badge, toast, push, and the scraper-driven path).
+
 ### `GET /api/v1/items/{id}`
 
 `200` with the item, `404` if not found, `403` unless the caller has at least read [access](#sharing) to the item's list.
 
 ### `PUT /api/v1/items/{id}`
 
-Full replace — every field below is required except `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`, `recurrence_lead_minutes` fall back to their zero/default value if omitted (note: unlike `PATCH`, omitting a field here **resets** it, since this is a full replace — an omitted `price` clears any previously recorded price, an omitted `target_month` unschedules the item, an omitted `recurrence_rule` turns off recurrence, an omitted `is_urgent` clears the urgent flag, and an omitted `recurrence_lead_minutes` reverts to the instance-wide default lead time). `list_id` cannot be changed via this endpoint.
+Full replace — every field below is required except `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`, `recurrence_lead_minutes`, `target_price`, `alert_on_price_drop` fall back to their zero/default value if omitted (note: unlike `PATCH`, omitting a field here **resets** it, since this is a full replace — an omitted `price` clears any previously recorded price, an omitted `target_month` unschedules the item, an omitted `recurrence_rule` turns off recurrence, an omitted `is_urgent` clears the urgent flag, an omitted `recurrence_lead_minutes` reverts to the instance-wide default lead time, and an omitted `target_price`/`alert_on_price_drop` clears the price-drop threshold and turns the alert off). `list_id` cannot be changed via this endpoint.
 
 ```bash
 curl -X PUT http://localhost:8080/api/v1/items/1 \
   -d '{"title": "Lait", "url": "https://example.com/lait", "quantity": 2, "price": 1.85, "done": true, "position": 0, "target_month": "2026-11", "recurrence_rule": "WEEKLY"}'
 ```
 
-`404` if not found. `400` if `price` is negative, `target_month` isn't `YYYY-MM`, `due_date`/`recurrence_end_date` isn't `YYYY-MM-DD`, or `recurrence_rule` isn't a recognized form. `403` unless the caller has **write** [access](#sharing) to the item's list. `price_auto` is always reset to `false` by this endpoint (a full replace is always an explicit, manual value, even when `price` is omitted). If `url` changes to something new, `image_url` is cleared (a scraped image is tied to the `url` it was found on) and the same bounded lookup as `POST` above kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response. If `done` transitions from `false` to `true` on a recurring item (`recurrence_rule` set, after this request's changes are applied), see "Recurring items" above — the response's `done`/`due_date` may not match what was sent.
+`404` if not found. `400` if `price`/`target_price` is negative, `target_month` isn't `YYYY-MM`, `due_date`/`recurrence_end_date` isn't `YYYY-MM-DD`, or `recurrence_rule` isn't a recognized form. `403` unless the caller has **write** [access](#sharing) to the item's list. `price_auto` is always reset to `false` by this endpoint (a full replace is always an explicit, manual value, even when `price` is omitted). If `url` changes to something new, `image_url` is cleared (a scraped image is tied to the `url` it was found on) and the same bounded lookup as `POST` above kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response. If `done` transitions from `false` to `true` on a recurring item (`recurrence_rule` set, after this request's changes are applied), see "Recurring items" above — the response's `done`/`due_date` may not match what was sent. See [Price drop alerts](#price-drop-alerts) for `target_price`/`alert_on_price_drop`/`price_alert_triggered`.
 
 ### `PATCH /api/v1/items/{id}`
 
@@ -473,7 +501,7 @@ Partial update — only send the fields you want to change. This is the endpoint
 curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"done": true}'
 ```
 
-All fields (`title`, `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`, `recurrence_lead_minutes`) are optional. `title`, if given, cannot be empty; `quantity`, if given, must be positive; `price`, if given, must be a non-negative number or `null` (unlike the other fields, `price` distinguishes "omitted" — leave unchanged — from an explicit `null` — clear the recorded price). Sending `price` (either a number or `null`) always resets `price_auto` to `false`, since a `price` supplied in the request is by definition a manual value. `target_month`, if given, must be `YYYY-MM` or an empty string (clears it back to unscheduled) — omitting it entirely leaves the item's schedule untouched. `due_date`/`recurrence_end_date`, if given, must be `YYYY-MM-DD` or an empty string (clears them). `recurrence_rule`, if given, must be one of the recognized forms or an empty string — clearing it this way also clears `due_date` and `recurrence_end_date`, since neither means anything once the item stops recurring. `recurrence_lead_minutes`, like `price`, distinguishes "omitted" (leave unchanged) from an explicit `null` (revert to the instance-wide default lead time) — a number must be non-negative. There is no `image_url` field to set directly — it's scraper-only. If `url` changes to something new, `image_url` is cleared (same reasoning as `PUT` above) and the bounded lookup described under `POST` kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response; an unrelated `PATCH` (e.g. `{"done": true}`) never re-triggers it, since `url` isn't changing. If `done` is being set to `true` on a recurring item, see "Recurring items" above — the response's `done`/`due_date` may not match what was sent. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list.
+All fields (`title`, `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`, `recurrence_lead_minutes`, `target_price`, `alert_on_price_drop`) are optional. `title`, if given, cannot be empty; `quantity`, if given, must be positive; `price`, if given, must be a non-negative number or `null` (unlike the other fields, `price` distinguishes "omitted" — leave unchanged — from an explicit `null` — clear the recorded price). Sending `price` (either a number or `null`) always resets `price_auto` to `false`, since a `price` supplied in the request is by definition a manual value. `target_month`, if given, must be `YYYY-MM` or an empty string (clears it back to unscheduled) — omitting it entirely leaves the item's schedule untouched. `due_date`/`recurrence_end_date`, if given, must be `YYYY-MM-DD` or an empty string (clears them). `recurrence_rule`, if given, must be one of the recognized forms or an empty string — clearing it this way also clears `due_date` and `recurrence_end_date`, since neither means anything once the item stops recurring. `recurrence_lead_minutes`, like `price`, distinguishes "omitted" (leave unchanged) from an explicit `null` (revert to the instance-wide default lead time) — a number must be non-negative. `target_price`, like `price`, distinguishes "omitted" (leave unchanged) from an explicit `null` (clear the threshold) — a number must be non-negative; `alert_on_price_drop`, if given, is a plain boolean. There is no `image_url` field to set directly — it's scraper-only. If `url` changes to something new, `image_url` is cleared (same reasoning as `PUT` above) and the bounded lookup described under `POST` kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response; an unrelated `PATCH` (e.g. `{"done": true}`) never re-triggers it, since `url` isn't changing. If `done` is being set to `true` on a recurring item, see "Recurring items" above — the response's `done`/`due_date` may not match what was sent. See [Price drop alerts](#price-drop-alerts) for `target_price`/`alert_on_price_drop`/`price_alert_triggered`. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list.
 
 ```bash
 # clear a previously recorded price without touching anything else

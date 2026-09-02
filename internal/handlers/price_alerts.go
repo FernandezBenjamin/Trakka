@@ -159,6 +159,22 @@ func (app *Application) handlePriceAlertsUpdate(w http.ResponseWriter, r *http.R
 		app.serverError(w, r, err)
 		return
 	}
+	// Accepting an alert is itself a price update "via le scraper" (the
+	// original deal-detection scan), so it's checked against the item's own
+	// target-price threshold the same way a manual/scraped price change is —
+	// see checkPriceDropAlert. This endpoint's response shape is the
+	// PriceAlert, not the Item, so there's no PriceAlertTriggered field to
+	// surface an in-app toast through here; the push notification still
+	// fires regardless, best-effort, and errors fetching the item to check
+	// are logged rather than failing an already-successful accept.
+	if in.Status == "accepted" {
+		if item, itemErr := app.DB.GetItem(r.Context(), alert.ItemID); itemErr == nil {
+			wasActive := priceAlertCondition(&models.Item{Price: &alert.OriginalPrice, TargetPrice: item.TargetPrice, AlertOnPriceDrop: item.AlertOnPriceDrop})
+			app.checkPriceDropAlert(item, wasActive)
+		} else {
+			app.Logger.Error("loading item after accepting price alert", "item_id", alert.ItemID, "error", itemErr)
+		}
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 

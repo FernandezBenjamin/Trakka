@@ -39,7 +39,7 @@ func TestUpdateItemPriceIfMissing(t *testing.T) {
 	url := "https://example.com/product"
 
 	t.Run("sets price when missing and url matches", func(t *testing.T) {
-		item, err := d.CreateItem(ctx, list.ID, "Article", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Article", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -60,7 +60,7 @@ func TestUpdateItemPriceIfMissing(t *testing.T) {
 
 	t.Run("does not override an existing price", func(t *testing.T) {
 		manual := 5.0
-		item, err := d.CreateItem(ctx, list.ID, "Article manuel", &url, 1, &manual, false, 0, nil, nil, nil, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Article manuel", &url, 1, &manual, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -80,7 +80,7 @@ func TestUpdateItemPriceIfMissing(t *testing.T) {
 	})
 
 	t.Run("does not set price when url no longer matches", func(t *testing.T) {
-		item, err := d.CreateItem(ctx, list.ID, "Article changé", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Article changé", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -119,7 +119,7 @@ func TestUpdateItemImageIfMissing(t *testing.T) {
 	url := "https://example.com/product"
 
 	t.Run("sets image when missing and url matches", func(t *testing.T) {
-		item, err := d.CreateItem(ctx, list.ID, "Article", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Article", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -136,7 +136,7 @@ func TestUpdateItemImageIfMissing(t *testing.T) {
 	})
 
 	t.Run("does not override an existing image", func(t *testing.T) {
-		item, err := d.CreateItem(ctx, list.ID, "Article", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Article", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -156,7 +156,7 @@ func TestUpdateItemImageIfMissing(t *testing.T) {
 	})
 
 	t.Run("does not set image when url no longer matches", func(t *testing.T) {
-		item, err := d.CreateItem(ctx, list.ID, "Article changé", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Article changé", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -193,7 +193,7 @@ func TestRecurringItemPersistence(t *testing.T) {
 
 	t.Run("creating with a recurrence rule sets is_recurring", func(t *testing.T) {
 		rule := "WEEKLY"
-		item, err := d.CreateItem(ctx, list.ID, "Sortir les poubelles", nil, 1, nil, false, 0, nil, nil, &rule, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Sortir les poubelles", nil, 1, nil, false, 0, nil, nil, &rule, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -214,7 +214,7 @@ func TestRecurringItemPersistence(t *testing.T) {
 	})
 
 	t.Run("creating without a recurrence rule leaves is_recurring false", func(t *testing.T) {
-		item, err := d.CreateItem(ctx, list.ID, "Tâche unique", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Tâche unique", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -225,7 +225,7 @@ func TestRecurringItemPersistence(t *testing.T) {
 
 	t.Run("UpdateItem persists due_date and recurrence_end_date, and clearing the rule clears is_recurring", func(t *testing.T) {
 		rule := "MONTHLY"
-		item, err := d.CreateItem(ctx, list.ID, "Facture", nil, 1, nil, false, 0, nil, nil, &rule, nil, false, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Facture", nil, 1, nil, false, 0, nil, nil, &rule, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -233,7 +233,7 @@ func TestRecurringItemPersistence(t *testing.T) {
 		due := "2026-09-01"
 		end := "2027-01-01"
 		updated, err := d.UpdateItem(ctx, item.ID, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL,
-			false, item.Position, item.TargetMonth, &due, &rule, &end, false, nil)
+			false, item.Position, item.TargetMonth, &due, &rule, &end, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("UpdateItem: %v", err)
 		}
@@ -245,7 +245,7 @@ func TestRecurringItemPersistence(t *testing.T) {
 		}
 
 		cleared, err := d.UpdateItem(ctx, item.ID, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL,
-			false, item.Position, item.TargetMonth, nil, nil, nil, false, nil)
+			false, item.Position, item.TargetMonth, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("UpdateItem (clearing recurrence): %v", err)
 		}
@@ -272,7 +272,7 @@ func TestUrgentItemPersistence(t *testing.T) {
 	}
 
 	t.Run("creating with is_urgent true persists it", func(t *testing.T) {
-		item, err := d.CreateItem(ctx, list.ID, "Papier toilette", nil, 1, nil, false, 0, nil, nil, nil, nil, true, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Papier toilette", nil, 1, nil, false, 0, nil, nil, nil, nil, true, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
@@ -289,17 +289,96 @@ func TestUrgentItemPersistence(t *testing.T) {
 	})
 
 	t.Run("UpdateItem can toggle is_urgent off", func(t *testing.T) {
-		item, err := d.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, true, nil)
+		item, err := d.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, true, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating item: %v", err)
 		}
 		updated, err := d.UpdateItem(ctx, item.ID, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL,
-			item.Done, item.Position, item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, false, nil)
+			item.Done, item.Position, item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("UpdateItem: %v", err)
 		}
 		if updated.IsUrgent {
 			t.Fatal("expected is_urgent to be cleared")
+		}
+	})
+}
+
+// TestTargetPriceAlertPersistence exercises CreateItem/UpdateItem's
+// target_price/alert_on_price_drop columns, mirroring
+// TestUrgentItemPersistence's shape for a similarly independent, plain
+// user-set pair of fields (see the "Price drop alerts" migration).
+func TestTargetPriceAlertPersistence(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	house, err := d.CreateHouseWithOwner(ctx, "Maison Test", mustCreateUser(t, ctx, d))
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil, "")
+	if err != nil {
+		t.Fatalf("creating list: %v", err)
+	}
+
+	t.Run("creating with a target price and alert enabled persists both", func(t *testing.T) {
+		target := 19.99
+		item, err := d.CreateItem(ctx, list.ID, "Casque audio", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, &target, true)
+		if err != nil {
+			t.Fatalf("creating item: %v", err)
+		}
+		if item.TargetPrice == nil || *item.TargetPrice != target {
+			t.Fatalf("expected target_price %v, got %v", target, item.TargetPrice)
+		}
+		if !item.AlertOnPriceDrop {
+			t.Fatal("expected alert_on_price_drop to be true")
+		}
+		got, err := d.GetItem(ctx, item.ID)
+		if err != nil {
+			t.Fatalf("GetItem: %v", err)
+		}
+		if got.TargetPrice == nil || *got.TargetPrice != target || !got.AlertOnPriceDrop {
+			t.Fatalf("expected target_price/alert_on_price_drop to survive a re-fetch, got %+v", got)
+		}
+	})
+
+	t.Run("creating without a target price leaves it nil and the alert off", func(t *testing.T) {
+		item, err := d.CreateItem(ctx, list.ID, "Article ordinaire", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
+		if err != nil {
+			t.Fatalf("creating item: %v", err)
+		}
+		if item.TargetPrice != nil {
+			t.Fatalf("expected nil target_price, got %v", *item.TargetPrice)
+		}
+		if item.AlertOnPriceDrop {
+			t.Fatal("expected alert_on_price_drop to default to false")
+		}
+	})
+
+	t.Run("UpdateItem can change and clear the target price", func(t *testing.T) {
+		target := 50.0
+		item, err := d.CreateItem(ctx, list.ID, "Chaise de bureau", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, &target, true)
+		if err != nil {
+			t.Fatalf("creating item: %v", err)
+		}
+
+		lower := 39.5
+		updated, err := d.UpdateItem(ctx, item.ID, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL,
+			item.Done, item.Position, item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, false, nil, &lower, true)
+		if err != nil {
+			t.Fatalf("UpdateItem: %v", err)
+		}
+		if updated.TargetPrice == nil || *updated.TargetPrice != lower {
+			t.Fatalf("expected target_price %v, got %v", lower, updated.TargetPrice)
+		}
+
+		cleared, err := d.UpdateItem(ctx, item.ID, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL,
+			item.Done, item.Position, item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, false, nil, nil, false)
+		if err != nil {
+			t.Fatalf("UpdateItem (clearing): %v", err)
+		}
+		if cleared.TargetPrice != nil || cleared.AlertOnPriceDrop {
+			t.Fatalf("expected target_price/alert_on_price_drop fully cleared, got %+v", cleared)
 		}
 	})
 }
@@ -321,15 +400,15 @@ func TestReorderItems(t *testing.T) {
 		t.Fatalf("creating list: %v", err)
 	}
 
-	itemA, err := d.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+	itemA, err := d.CreateItem(ctx, list.ID, "Lait", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating item A: %v", err)
 	}
-	itemB, err := d.CreateItem(ctx, list.ID, "Pain", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+	itemB, err := d.CreateItem(ctx, list.ID, "Pain", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating item B: %v", err)
 	}
-	itemC, err := d.CreateItem(ctx, list.ID, "Beurre", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+	itemC, err := d.CreateItem(ctx, list.ID, "Beurre", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating item C: %v", err)
 	}
@@ -372,7 +451,7 @@ func TestReorderItems(t *testing.T) {
 		if err != nil {
 			t.Fatalf("creating other list: %v", err)
 		}
-		foreignItem, err := d.CreateItem(ctx, otherList.ID, "Intrus", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil)
+		foreignItem, err := d.CreateItem(ctx, otherList.ID, "Intrus", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 		if err != nil {
 			t.Fatalf("creating foreign item: %v", err)
 		}

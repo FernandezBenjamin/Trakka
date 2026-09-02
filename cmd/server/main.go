@@ -122,6 +122,15 @@ func main() {
 		go runPriceAlertScanLoop(priceScanCtx, app, cfg.PriceCheckInterval, logger)
 	}
 
+	// The target-price scan (SCRAPE_INTERVAL) shares the same detached-context
+	// pattern — it's a distinct feature from the price-drop scan above (see
+	// config.TargetPriceScrapeInterval's doc comment for how they differ):
+	// this one re-scrapes only items with an active alert_on_price_drop
+	// threshold and writes items.price directly, with no accept/reject step.
+	if cfg.TargetPriceScrapeInterval > 0 {
+		go runTargetPriceScanLoop(priceScanCtx, app, cfg.TargetPriceScrapeInterval, logger)
+	}
+
 	// The recurring-task due-date reminder scan (Web Push "Use Case 2")
 	// shares the same detached-context/immediate-first-run pattern as the
 	// price scan above, and is gated on both a positive scan interval and
@@ -188,6 +197,29 @@ func runPriceAlertScanLoop(ctx context.Context, app *handlers.Application, inter
 			return
 		case <-ticker.C:
 			app.RunPriceAlertScan(ctx)
+		}
+	}
+}
+
+// runTargetPriceScanLoop periodically re-scrapes every item with an active
+// price-drop threshold and applies whatever price it finds (see
+// handlers.Application.RunTargetPriceScan), stopping once ctx is canceled
+// during shutdown. Runs an initial scan immediately, same reasoning as
+// runPriceAlertScanLoop: a freshly deployed instance shouldn't sit with a
+// stale price on a tracked item for up to a full SCRAPE_INTERVAL before its
+// first check.
+func runTargetPriceScanLoop(ctx context.Context, app *handlers.Application, interval time.Duration, logger *slog.Logger) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	logger.Info("starting periodic target price scan", "interval", interval)
+	app.RunTargetPriceScan(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			app.RunTargetPriceScan(ctx)
 		}
 	}
 }
