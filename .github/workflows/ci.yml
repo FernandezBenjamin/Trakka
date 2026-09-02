@@ -303,9 +303,22 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
+            # `latest` must only ever move on a real release tag push
+            # (v1.2.3, ...), never on an ordinary push/merge to `main` —
+            # `startsWith(github.ref, 'refs/tags/v')` is true exactly for a
+            # `v*.*.*` tag push (and for a `release: published` event fired
+            # from such a tag), false for every branch push including main.
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # The tag's own semver, e.g. `v1.2.3` — only produced when the
+            # ref is actually a tag matching this pattern (metadata-action's
+            # own semver-type gating), so this is a no-op on a branch push.
             type=semver,pattern={{raw}}
+            # A sanitized branch-name tag (e.g. `main`, `feature-xyz`) and a
+            # `sha-<short>` commit tag, generated for every push — including
+            # feature branches — so a non-release build is still traceable
+            # in the registry without ever touching `latest`.
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
             type=raw,value=${{ github.event.inputs.image_tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Set up QEMU (for linux/arm64 emulation)
