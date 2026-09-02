@@ -1,3 +1,30 @@
+## [unreleased]
+
+## [1.1.0] - 2026-09-02
+
+### 🚀 Features
+
+- Save last activity page to restore session
+- Add possibility to pin shared lists in the main board
+- Add the possibility to rename houses
+- Add some options about the links entered to share, copy or open
+- Add gesture for easy use on mobile
+- Update trakka from the security audit
+- Add possibility to reorganise the lists
+- Implement push notifications when other users add items in shared lists
+- Add price limits alerts
+
+### 🐛 Bug Fixes
+
+- Fix zooming textbox when selecting on mobile
+- Change the counter to take only remaining items
+- Improve reaction time of trakka when not used and reopen
+
+### 📚 Documentation
+
+- Add installation doc for Android and iOS
+- Add QA doc for price limit tracker
+
 ## [1.0.1] - 2026-08-29
 
 ### 🐛 Bug Fixes
