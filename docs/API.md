@@ -585,6 +585,16 @@ curl -X DELETE http://localhost:8080/api/v1/push/subscribe -d '{"endpoint": "htt
 
 `204` whether or not that endpoint was actually subscribed — idempotent by design, since "this endpoint is not subscribed" is the desired end state either way.
 
+### `POST /api/v1/push/test`
+
+Sends one push notification to every subscription registered on the calling user's own account — a diagnostic to confirm VAPID config, subscription, and delivery all actually work end to end, without waiting for a real list change or a due date. See [docs/DOC_PUSH_NOTIFICATIONS.md](DOC_PUSH_NOTIFICATIONS.md#3-vérification-de-bout-en-bout) for the full walkthrough.
+
+```bash
+curl -X POST -b cookies.txt http://localhost:8080/api/v1/push/test
+```
+
+`200 {"sent_to_subscriptions": N}` on success (delivery itself is still best-effort — a `200` means the attempt was made to `N` subscriptions, not that a device necessarily displayed it). `503` if push isn't configured on this instance; `404` if the calling user has no push subscription registered at all (enable the toggle in Paramètres first).
+
 ## Admin settings
 
 Two endpoints, both gated behind `models.User.IsAdmin` (`403 {"error": "admin access required"}` for anyone else) rather than house membership — these are system-wide, not scoped to a house. They manage the `system_settings` table (see [docs/DATABASE.md](DATABASE.md#system_settings)), which takes priority over the equivalent environment variable whenever a row exists (`internal/settings.Resolve`); a value with no row falls back to its env var. The frontend surfaces this as a "Paramètres du Système" panel behind a ⚙️ button in the header, visible only to admins (`static/js/admin.js`).
