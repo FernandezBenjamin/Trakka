@@ -88,6 +88,12 @@ func (app *Application) scrapeProductInfo(item *models.Item, previousURL string)
 		return "found"
 	}
 	itemID, url := item.ID, *item.URL
+	// Captured here rather than read from item inside the goroutine below,
+	// since item itself may be concurrently mutated by the caller once this
+	// function returns (the syncScrapeTimeout race) — these three don't
+	// change as a result of scraping, so a snapshot taken now is accurate
+	// for the notification check either way.
+	listID, title, targetPrice, alertOnPriceDrop := item.ListID, item.Title, item.TargetPrice, item.AlertOnPriceDrop
 
 	done := make(chan *scraper.ProductInfo, 1)
 
@@ -114,6 +120,18 @@ func (app *Application) scrapeProductInfo(item *models.Item, previousURL string)
 		if info.Price != nil {
 			if err := app.DB.UpdateItemPriceIfMissing(ctx, itemID, url, *info.Price); err != nil {
 				app.Logger.Error("saving automatically scraped price", "item_id", itemID, "error", err)
+			} else {
+				// needsPrice (checked before this goroutine was even
+				// started) means item.Price was nil at the time, so
+				// priceAlertCondition was necessarily false beforehand —
+				// wasActive is always false here, barring the same
+				// vanishingly rare concurrent-write race
+				// UpdateItemPriceIfMissing's own doc comment already
+				// treats as an acceptable silent no-op.
+				app.checkPriceDropAlert(&models.Item{
+					ID: itemID, ListID: listID, Title: title,
+					Price: info.Price, TargetPrice: targetPrice, AlertOnPriceDrop: alertOnPriceDrop,
+				}, false)
 			}
 		}
 		if info.ImageURL != "" {

@@ -132,9 +132,21 @@ type Item struct {
 	// "use the instance default"; meaningless unless RecurrenceRule is also
 	// set, the same relationship DueDate/RecurrenceEndDate already have to
 	// it.
-	RecurrenceLeadMinutes *int   `json:"recurrence_lead_minutes,omitempty"`
-	CreatedAt             string `json:"created_at"`
-	UpdatedAt             string `json:"updated_at"`
+	RecurrenceLeadMinutes *int `json:"recurrence_lead_minutes,omitempty"`
+	// TargetPrice is a user-set threshold (see AlertOnPriceDrop): once
+	// Price drops to or below it, internal/handlers.checkPriceDropAlert
+	// fires an in-app toast (via PriceAlertTriggered below) and a push
+	// notification. Nil means no threshold is set, independent of whether
+	// AlertOnPriceDrop is on — the two are stored separately so a user can
+	// type a target price before deciding whether to actually enable the
+	// alert for it.
+	TargetPrice *float64 `json:"target_price,omitempty"`
+	// AlertOnPriceDrop opts an item into the target-price notification
+	// above. A plain user-set toggle, independent of every other field
+	// here — the same relationship IsUrgent has to the rest of Item.
+	AlertOnPriceDrop bool   `json:"alert_on_price_drop"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
 	// PriceStatus is a transient, response-only field set by
 	// internal/handlers.scrapePrice after a create/update/patch — never
 	// persisted, and never populated by a plain GET (it's the zero value
@@ -144,6 +156,17 @@ type Item struct {
 	// db.UpdateItemPriceIfMissing), or "none" (no url to scrape, or
 	// nothing found within the request's bounded wait).
 	PriceStatus string `json:"price_status,omitempty"`
+	// PriceAlertTriggered is a transient, response-only field (like
+	// PriceStatus — never persisted, never set by a plain GET) reporting
+	// whether *this exact request* just crossed the item's target-price
+	// threshold (see internal/handlers.checkPriceDropAlert): a manual price
+	// edit that lands at or below TargetPrice, or a synchronous scrape
+	// result that resolves within the request's bounded wait. The frontend
+	// uses it to show an immediate toast without waiting for the separate
+	// push notification, which fires regardless (including for a price
+	// drop the background scraper finds after the response has already
+	// been sent, when this field can't be set).
+	PriceAlertTriggered bool `json:"price_alert_triggered,omitempty"`
 }
 
 // ValidListTypes enumerates the allowed values for List.Type. `shopping`

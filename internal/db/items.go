@@ -26,9 +26,12 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var recurrenceRule sql.NullString
 	var recurrenceEndDate sql.NullString
 	var recurrenceLeadMinutes sql.NullInt64
+	var targetPrice sql.NullFloat64
+	var alertOnPriceDrop int
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
-		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate, &isUrgent, &recurrenceLeadMinutes); err != nil {
+		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate, &isUrgent, &recurrenceLeadMinutes,
+		&targetPrice, &alertOnPriceDrop); err != nil {
 		return nil, err
 	}
 	it.Done = done != 0
@@ -62,6 +65,10 @@ func scanItem(row rowScanner) (*models.Item, error) {
 		n := int(recurrenceLeadMinutes.Int64)
 		it.RecurrenceLeadMinutes = &n
 	}
+	if targetPrice.Valid {
+		it.TargetPrice = &targetPrice.Float64
+	}
+	it.AlertOnPriceDrop = alertOnPriceDrop != 0
 	return it, nil
 }
 
@@ -71,7 +78,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 func (d *DB) ListItemsByList(ctx context.Context, listID int64) ([]*models.Item, error) {
 	rows, err := d.conn.QueryContext(ctx,
 		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
-		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes
+		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop
 		 FROM items WHERE list_id = ? ORDER BY position ASC, id ASC`, listID)
 	if err != nil {
 		return nil, fmt.Errorf("querying items for list %d: %w", listID, err)
@@ -107,11 +114,15 @@ func (d *DB) ListItemsByList(ctx context.Context, listID int64) ([]*models.Item,
 // optionally overrides the instance-wide NOTIF_RECURRING_TASK_LEAD_TIME for
 // this item alone (see models.Item.RecurrenceLeadMinutes); nil leaves it
 // unset, meaning "use the instance default".
-func (d *DB) CreateItem(ctx context.Context, listID int64, title string, url *string, quantity int, price *float64, priceAuto bool, position int, targetMonth, dueDate, recurrenceRule, recurrenceEndDate *string, isUrgent bool, recurrenceLeadMinutes *int) (*models.Item, error) {
+// targetPrice/alertOnPriceDrop back the "notify me when the price drops"
+// feature (see models.Item.TargetPrice/AlertOnPriceDrop); this method only
+// stores whatever the caller passed in, the actual threshold comparison and
+// notification live in internal/handlers.checkPriceDropAlert.
+func (d *DB) CreateItem(ctx context.Context, listID int64, title string, url *string, quantity int, price *float64, priceAuto bool, position int, targetMonth, dueDate, recurrenceRule, recurrenceEndDate *string, isUrgent bool, recurrenceLeadMinutes *int, targetPrice *float64, alertOnPriceDrop bool) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`INSERT INTO items (list_id, title, url, quantity, price, price_auto, position, target_month, due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		listID, title, url, quantity, price, boolToInt(priceAuto), position, targetMonth, dueDate, boolToInt(recurrenceRule != nil), recurrenceRule, recurrenceEndDate, boolToInt(isUrgent), recurrenceLeadMinutes)
+		`INSERT INTO items (list_id, title, url, quantity, price, price_auto, position, target_month, due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		listID, title, url, quantity, price, boolToInt(priceAuto), position, targetMonth, dueDate, boolToInt(recurrenceRule != nil), recurrenceRule, recurrenceEndDate, boolToInt(isUrgent), recurrenceLeadMinutes, targetPrice, boolToInt(alertOnPriceDrop))
 	if err != nil {
 		return nil, fmt.Errorf("inserting item: %w", err)
 	}
@@ -127,7 +138,7 @@ func (d *DB) CreateItem(ctx context.Context, listID int64, title string, url *st
 func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 	row := d.conn.QueryRowContext(ctx,
 		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
-		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes
+		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop
 		 FROM items WHERE id = ?`, id)
 	item, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -158,13 +169,17 @@ func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 // models.Item.IsUrgent. recurrenceLeadMinutes follows the same
 // "nil means use the instance default" convention as CreateItem. Returns
 // ErrNotFound if no such item exists.
-func (d *DB) UpdateItem(ctx context.Context, id int64, title string, url *string, quantity int, price *float64, priceAuto bool, imageURL *string, done bool, position int, targetMonth, dueDate, recurrenceRule, recurrenceEndDate *string, isUrgent bool, recurrenceLeadMinutes *int) (*models.Item, error) {
+// targetPrice/alertOnPriceDrop follow the same pass-through convention as
+// CreateItem — see its doc comment.
+func (d *DB) UpdateItem(ctx context.Context, id int64, title string, url *string, quantity int, price *float64, priceAuto bool, imageURL *string, done bool, position int, targetMonth, dueDate, recurrenceRule, recurrenceEndDate *string, isUrgent bool, recurrenceLeadMinutes *int, targetPrice *float64, alertOnPriceDrop bool) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
 		`UPDATE items SET title = ?, url = ?, quantity = ?, price = ?, price_auto = ?, image_url = ?, done = ?, position = ?, target_month = ?,
 		 due_date = ?, is_recurring = ?, recurrence_rule = ?, recurrence_end_date = ?, is_urgent = ?, recurrence_lead_minutes = ?,
+		 target_price = ?, alert_on_price_drop = ?,
 		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
 		title, url, quantity, price, boolToInt(priceAuto), imageURL, boolToInt(done), position, targetMonth,
-		dueDate, boolToInt(recurrenceRule != nil), recurrenceRule, recurrenceEndDate, boolToInt(isUrgent), recurrenceLeadMinutes, id)
+		dueDate, boolToInt(recurrenceRule != nil), recurrenceRule, recurrenceEndDate, boolToInt(isUrgent), recurrenceLeadMinutes,
+		targetPrice, boolToInt(alertOnPriceDrop), id)
 	if err != nil {
 		return nil, fmt.Errorf("updating item %d: %w", id, err)
 	}

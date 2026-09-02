@@ -63,6 +63,8 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		RecurrenceEndDate     string   `json:"recurrence_end_date"`
 		IsUrgent              bool     `json:"is_urgent"`
 		RecurrenceLeadMinutes *int     `json:"recurrence_lead_minutes"`
+		TargetPrice           *float64 `json:"target_price"`
+		AlertOnPriceDrop      bool     `json:"alert_on_price_drop"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -95,6 +97,10 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 	}
 	if in.Price != nil && *in.Price < 0 {
 		writeError(w, http.StatusBadRequest, "price cannot be negative")
+		return
+	}
+	if in.TargetPrice != nil && *in.TargetPrice < 0 {
+		writeError(w, http.StatusBadRequest, "target_price cannot be negative")
 		return
 	}
 	cleanMonth, err := validate.Month(in.TargetMonth)
@@ -135,12 +141,30 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 	}
 
 	item, err := app.DB.CreateItem(r.Context(), in.ListID, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, in.Position,
-		nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate), in.IsUrgent, in.RecurrenceLeadMinutes)
+		nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate), in.IsUrgent, in.RecurrenceLeadMinutes,
+		in.TargetPrice, in.AlertOnPriceDrop)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	// A brand new item has no "before" state to compare against, so it can
+	// only ever transition from inactive to active — see
+	// checkPriceDropAlert's wasActive contract. Checked against the
+	// manually-supplied price only, before scrapeProductInfo runs: if the
+	// scraper ends up filling in the price instead (item.Price was still
+	// nil here), that event is checked separately below, since it's
+	// otherwise reported by scrapeProductInfo's own background goroutine
+	// (see scrape.go) and re-checking it here would double-fire the push.
+	app.checkPriceDropAlert(item, false)
+	hadNoPriceBeforeScrape := item.Price == nil
 	item.PriceStatus = app.scrapeProductInfo(item, "")
+	if hadNoPriceBeforeScrape && item.Price != nil && priceAlertCondition(item) {
+		// The scraper found and persisted this price within the request's
+		// bounded wait — its own goroutine already fired the push
+		// notification (see scrapeProductInfo), this just carries the
+		// toast signal through to this specific response.
+		item.PriceAlertTriggered = true
+	}
 	app.notifyListChange(list, userFromContext(r), item.Title, false)
 	writeJSON(w, http.StatusCreated, item)
 }
@@ -183,6 +207,10 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	previousURL := stringValue(existing.URL)
+	// See checkPriceDropAlert's wasActive contract: this is the item's
+	// target-price condition before any of this request's changes apply,
+	// captured up front alongside previousURL for the same reason.
+	wasPriceAlertActive := priceAlertCondition(existing)
 
 	var in struct {
 		Title                 string   `json:"title"`
@@ -197,6 +225,8 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		RecurrenceEndDate     string   `json:"recurrence_end_date"`
 		IsUrgent              bool     `json:"is_urgent"`
 		RecurrenceLeadMinutes *int     `json:"recurrence_lead_minutes"`
+		TargetPrice           *float64 `json:"target_price"`
+		AlertOnPriceDrop      bool     `json:"alert_on_price_drop"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -225,6 +255,10 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	}
 	if in.Price != nil && *in.Price < 0 {
 		writeError(w, http.StatusBadRequest, "price cannot be negative")
+		return
+	}
+	if in.TargetPrice != nil && *in.TargetPrice < 0 {
+		writeError(w, http.StatusBadRequest, "target_price cannot be negative")
 		return
 	}
 	cleanMonth, err := validate.Month(in.TargetMonth)
@@ -283,7 +317,8 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	applyRecurrenceCompletion(advanced, existing.Done)
 
 	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, advanced.Done, in.Position,
-		nullableString(cleanMonth), advanced.DueDate, advanced.RecurrenceRule, advanced.RecurrenceEndDate, in.IsUrgent, in.RecurrenceLeadMinutes)
+		nullableString(cleanMonth), advanced.DueDate, advanced.RecurrenceRule, advanced.RecurrenceEndDate, in.IsUrgent, in.RecurrenceLeadMinutes,
+		in.TargetPrice, in.AlertOnPriceDrop)
 	if errors.Is(err, db.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "item not found")
 		return
@@ -291,7 +326,16 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
+	// Checked against the manually-supplied price only, before
+	// scrapeProductInfo runs — see the identical reasoning in
+	// handleItemsCreate for why a scraper-filled price is checked
+	// separately below instead, to avoid double-firing the push.
+	app.checkPriceDropAlert(item, wasPriceAlertActive)
+	hadNoPriceBeforeScrape := item.Price == nil
 	item.PriceStatus = app.scrapeProductInfo(item, previousURL)
+	if hadNoPriceBeforeScrape && item.Price != nil && priceAlertCondition(item) {
+		item.PriceAlertTriggered = true
+	}
 	// Only a genuine check-off notifies (see notifyListChange's own doc
 	// comment for why this is scoped to "add or check off" and not every
 	// field edit) — an ordinary PUT that never touched Done at all must not
@@ -325,6 +369,8 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		RecurrenceEndDate     *string         `json:"recurrence_end_date"`
 		IsUrgent              *bool           `json:"is_urgent"`
 		RecurrenceLeadMinutes json.RawMessage `json:"recurrence_lead_minutes"`
+		TargetPrice           json.RawMessage `json:"target_price"`
+		AlertOnPriceDrop      *bool           `json:"alert_on_price_drop"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -343,6 +389,10 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	}
 	previousURL := stringValue(item.URL)
 	previousDone := item.Done
+	// See checkPriceDropAlert's wasActive contract: captured before any of
+	// this request's mutations are applied below, the same reasoning as
+	// previousURL/previousDone.
+	wasPriceAlertActive := priceAlertCondition(item)
 
 	if in.Title != nil {
 		title := validate.Text(*in.Title)
@@ -458,6 +508,28 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		item.IsUrgent = *in.IsUrgent
 	}
 	// Same absent/null/number three-way as Price above: absent leaves
+	// item.TargetPrice untouched, "null" clears the threshold, a number
+	// sets it.
+	if in.TargetPrice != nil {
+		if string(in.TargetPrice) == "null" {
+			item.TargetPrice = nil
+		} else {
+			var targetPrice float64
+			if err := json.Unmarshal(in.TargetPrice, &targetPrice); err != nil {
+				writeError(w, http.StatusBadRequest, "target_price must be a number")
+				return
+			}
+			if targetPrice < 0 {
+				writeError(w, http.StatusBadRequest, "target_price cannot be negative")
+				return
+			}
+			item.TargetPrice = &targetPrice
+		}
+	}
+	if in.AlertOnPriceDrop != nil {
+		item.AlertOnPriceDrop = *in.AlertOnPriceDrop
+	}
+	// Same absent/null/number three-way as Price above: absent leaves
 	// item.RecurrenceLeadMinutes untouched, "null" clears the per-item
 	// override back to "use the instance default", a number sets it.
 	if in.RecurrenceLeadMinutes != nil {
@@ -488,12 +560,22 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	applyRecurrenceCompletion(item, previousDone)
 
 	updated, err := app.DB.UpdateItem(r.Context(), id, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL, item.Done, item.Position,
-		item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, item.IsUrgent, item.RecurrenceLeadMinutes)
+		item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, item.IsUrgent, item.RecurrenceLeadMinutes,
+		item.TargetPrice, item.AlertOnPriceDrop)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	// Checked against the manually-supplied price only, before
+	// scrapeProductInfo runs — see the identical reasoning in
+	// handleItemsCreate for why a scraper-filled price is checked
+	// separately below instead, to avoid double-firing the push.
+	app.checkPriceDropAlert(updated, wasPriceAlertActive)
+	hadNoPriceBeforeScrape := updated.Price == nil
 	updated.PriceStatus = app.scrapeProductInfo(updated, previousURL)
+	if hadNoPriceBeforeScrape && updated.Price != nil && priceAlertCondition(updated) {
+		updated.PriceAlertTriggered = true
+	}
 	if justCompleted {
 		if list, listErr := app.DB.GetList(r.Context(), updated.ListID); listErr == nil {
 			app.notifyListChange(list, userFromContext(r), updated.Title, true)
