@@ -57,6 +57,7 @@
   },
   "items": {
     "back": "Back to dashboard",
+    "loadingHeading": "Loading…",
     "editList": "Edit list",
     "shareList": "Share list",
     "reorderList": "Reorder items",

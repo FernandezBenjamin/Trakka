@@ -46,6 +46,19 @@ async function loadUrgentView() {
     return;
   }
 
+  // Stale-while-revalidate: paint immediately from the IndexedDB mirror
+  // before the network fetch below even starts, so a first tab open in a
+  // session (urgentEls.items starts out with only the static skeleton
+  // markup in index.html — see base.css's "Loading skeletons" comment)
+  // shows real, if possibly slightly stale, content right away instead of
+  // sitting on the shimmer for a full house_id + per-list fan-out round
+  // trip. Re-rendered for real below once the network settles either way.
+  const cachedFirst = await cachedDashboardLists(state.currentHouseId);
+  if (cachedFirst.length > 0) {
+    urgentEntries = extractUrgentEntries(cachedFirst);
+    renderUrgent();
+  }
+
   try {
     const lists = await apiRequest(`/lists?house_id=${state.currentHouseId}`);
     const detailed = await Promise.all(lists.map((list) => apiRequest(`/lists/${list.id}`).catch(() => ({ ...list, items: [] }))));

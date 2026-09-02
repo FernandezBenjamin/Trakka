@@ -196,6 +196,19 @@ async function loadSpacesView() {
     return;
   }
 
+  // Stale-while-revalidate: paint immediately from the IndexedDB mirror
+  // before the network fetch below even starts — same reasoning as
+  // urgent.js/planning.js's own loaders. houseSpaceLists (no offline
+  // mirror, see loadPinnedHouseSpaceLists below) is left as whatever it
+  // already was rather than blanked, since a stale value there is still
+  // better than nothing while the fresh fetch is in flight.
+  const cachedFirst = await cachedDashboardLists(state.currentHouseId);
+  const cachedCategorized = cachedFirst.filter((list) => list.custom_category_id);
+  if (cachedCategorized.length > 0) {
+    spacesLists = cachedCategorized;
+    renderSpaces();
+  }
+
   try {
     const lists = await apiRequest(`/lists?house_id=${state.currentHouseId}`);
     const categorized = lists.filter((list) => list.custom_category_id);

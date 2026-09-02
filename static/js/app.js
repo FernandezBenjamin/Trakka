@@ -1343,6 +1343,15 @@ async function loadDashboard() {
     return;
   }
 
+  // Stale-while-revalidate: paint immediately from whatever's already in
+  // the local mirror (not just at boot, via hydrateFromCache/init, but on
+  // every call — a house switch, returning from a list, a tab click back
+  // to "Listes") so the grids never sit empty/stale-looking while the
+  // network fetch below is in flight, before repainting for real once it
+  // resolves. Cheap and idempotent: renderDashboardFromCache always ends
+  // by calling renderGrid, which replaces every card from scratch anyway.
+  await renderDashboardFromCache();
+
   let lists;
   try {
     lists = await apiRequest(`/lists?house_id=${state.currentHouseId}`);

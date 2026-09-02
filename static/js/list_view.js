@@ -595,6 +595,7 @@ function buildItemThumbnail(item) {
   img.src = item.image_url;
   img.alt = '';
   img.loading = 'lazy';
+  img.decoding = 'async';
   img.className = 'h-full w-full object-cover';
   // A broken/expired image URL (site redesign, hotlink protection, ...)
   // should just quietly disappear rather than showing a browser's broken
@@ -1031,6 +1032,28 @@ async function refreshCurrentList() {
 // deleted or made inaccessible shouldn't greet the user with an error the
 // moment the app launches; every ordinary caller (clicking a list card)
 // leaves it false and keeps today's behavior exactly as before.
+// Shown by selectList, synchronously, only when a list has never been
+// opened on this device before (cachedListDetail below found nothing to
+// paint immediately instead) — a shimmering placeholder so a first-ever
+// open on a slow connection shows visible structure right away instead of
+// sitting on the still-visible dashboard with no feedback. Real content
+// (from the cache or the network, whichever resolves first) replaces this
+// via renderItems' own listEls.itemsActive.replaceChildren() the moment
+// selectList calls it — nothing here needs to be explicitly torn down.
+function renderItemsSkeleton() {
+  listEls.itemsHeading.textContent = t('items.loadingHeading');
+  listEls.listSyncIndicator.hidden = true;
+  listEls.doneSection.hidden = true;
+  listEls.itemsActive.replaceChildren();
+  for (let i = 0; i < 4; i++) {
+    const li = document.createElement('li');
+    li.className = 'tk-skeleton tk-skeleton-row';
+    li.setAttribute('aria-hidden', 'true');
+    listEls.itemsActive.appendChild(li);
+  }
+  listEls.itemsDone.replaceChildren();
+}
+
 async function selectList(id, opts = {}) {
   const { silent = false } = opts;
   hideError();
@@ -1038,22 +1061,42 @@ async function selectList(id, opts = {}) {
   // (or reopening this one) mid-drag must not leave the new view stuck in
   // reorder mode.
   exitReorderModeIfActive();
+
+  // Stale-while-revalidate: paint immediately from whatever's already in
+  // the local mirror, before the network fetch below even starts, so
+  // opening a previously-seen list feels instant instead of waiting on a
+  // round trip — falls back to a shimmering skeleton (renderItemsSkeleton
+  // above) when there's nothing cached yet for this particular list.
+  const cachedForPaint = await cachedListDetail(id);
+  els.listsSection.hidden = true;
+  listEls.itemsSection.hidden = false;
+  if (cachedForPaint) {
+    state.currentListId = id;
+    state.currentList = cachedForPaint;
+    renderItems();
+  } else {
+    renderItemsSkeleton();
+  }
+
   let list;
   try {
     list = await apiRequest(`/lists/${id}`);
   } catch (err) {
-    // Offline, or a transient server error: open the list from the local
-    // mirror instead of failing to open it at all.
-    list = await cachedListDetail(id);
+    // Offline, or a transient server error: keep showing whatever the
+    // pre-paint above already rendered (or fail to open the list at all if
+    // there was nothing to paint in the first place).
+    list = cachedForPaint;
     if (!list) {
+      listEls.itemsSection.hidden = true;
+      els.listsSection.hidden = false;
+      state.currentListId = null;
+      state.currentList = null;
       if (!silent && !isNetworkError(err)) showError(err.message);
       return;
     }
   }
   state.currentListId = id;
   state.currentList = list;
-  els.listsSection.hidden = true;
-  listEls.itemsSection.hidden = false;
   renderItems();
   // saveLastView is defined in app.js — see the "keep last page on launch"
   // preference there.
