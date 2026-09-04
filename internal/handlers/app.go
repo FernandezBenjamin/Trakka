@@ -137,6 +137,7 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/push/vapid-public-key", app.handlePushVAPIDPublicKey)
 	apiMux.HandleFunc("POST /api/v1/push/subscribe", app.handlePushSubscribe)
 	apiMux.HandleFunc("DELETE /api/v1/push/subscribe", app.handlePushUnsubscribe)
+	apiMux.HandleFunc("POST /api/v1/push/test", app.handlePushTest)
 
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
 	mux.Handle("/", http.FileServer(staticFileSystem{http.Dir(app.StaticDir)}))

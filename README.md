@@ -53,6 +53,7 @@ DB_PATH=./trakka.db STATIC_DIR=./static ./trakka
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — local dev setup, building, project layout
 - [docs/PWA.md](docs/PWA.md) — offline support: service worker, IndexedDB sync queue, iOS/Android specifics
 - [docs/INSTALLATION.md](docs/INSTALLATION.md) — step-by-step guide to installing Trakka as an app on iOS/iPadOS and Android
+- [docs/DOC_PUSH_NOTIFICATIONS.md](docs/DOC_PUSH_NOTIFICATIONS.md) — configuring VAPID keys, HTTPS/background-worker prerequisites, and end-to-end troubleshooting for Web Push notifications
 
 ## Tech stack
 

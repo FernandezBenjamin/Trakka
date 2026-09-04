@@ -170,6 +170,70 @@ func TestHandlePushSubscribeAndUnsubscribe(t *testing.T) {
 	}
 }
 
+func testPushRequest(t *testing.T, user *models.User) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/push/test", nil)
+	return req.WithContext(context.WithValue(req.Context(), userContextKey, user))
+}
+
+func TestHandlePushTestRequiresPushConfigured(t *testing.T) {
+	app := newTestApplication(t)
+	user := mustCreateTestUser(t, app, "user@example.com")
+
+	rec := httptest.NewRecorder()
+	app.handlePushTest(rec, testPushRequest(t, user))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when push isn't configured, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlePushTestRequiresExistingSubscription(t *testing.T) {
+	app := newTestApplication(t)
+	app.Config = testVAPIDConfig()
+	user := mustCreateTestUser(t, app, "user@example.com")
+
+	rec := httptest.NewRecorder()
+	app.handlePushTest(rec, testPushRequest(t, user))
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 when the caller has no subscription, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlePushTestReportsSubscriptionCount(t *testing.T) {
+	app := newTestApplication(t)
+	app.Config = testVAPIDConfig()
+	user := mustCreateTestUser(t, app, "user@example.com")
+	if _, err := app.DB.CreatePushSubscription(context.Background(), user.ID, "https://push.example.com/ep-1", "p", "a", ""); err != nil {
+		t.Fatalf("CreatePushSubscription: %v", err)
+	}
+	if _, err := app.DB.CreatePushSubscription(context.Background(), user.ID, "https://push.example.com/ep-2", "p", "a", ""); err != nil {
+		t.Fatalf("CreatePushSubscription: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	app.handlePushTest(rec, testPushRequest(t, user))
+
+	// The test config's key material isn't cryptographically real and
+	// push.example.com isn't a real push service, so delivery itself is
+	// expected to fail (or, per the SSRF guard, never even dial out) — this
+	// only asserts the handler's own contract: it found both subscriptions
+	// and reported attempting delivery to them, exactly like
+	// TestSendToUsersNoSubscriptionsIsNoop already covers for the
+	// zero-subscriptions case.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if count, _ := body["sent_to_subscriptions"].(float64); count != 2 {
+		t.Errorf("sent_to_subscriptions = %v, want 2", body["sent_to_subscriptions"])
+	}
+}
+
 // TestSendToUsersNoSubscriptionsIsNoop confirms sendToUsers doesn't error or
 // panic when there is simply nothing to deliver to. A genuine end-to-end
 // delivery test (a fake push endpoint actually receiving an encrypted

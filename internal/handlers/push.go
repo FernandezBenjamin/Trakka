@@ -132,6 +132,45 @@ func (app *Application) handlePushUnsubscribe(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handlePushTest sends one push notification to every subscription the
+// calling user has registered, as an end-to-end diagnostic: unlike
+// notifyListChange/RunRecurringDueScan, whose delivery is always a
+// best-effort side effect of some other action, this endpoint's entire
+// purpose is the delivery itself, so it runs synchronously (bounded by
+// pushSendTimeout, same as every other fan-out in this file) rather than in
+// a detached goroutine, and reports back how many subscriptions it attempted
+// rather than silently succeeding either way. Scoped to the caller's own
+// account only — there is no way to test-notify anyone else — so no
+// house/list access check applies, only the ordinary RequireSession gate
+// every /api/v1/... route already sits behind.
+func (app *Application) handlePushTest(w http.ResponseWriter, r *http.Request) {
+	if !app.Config.PushEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "push notifications are not configured on this instance")
+		return
+	}
+
+	user := userFromContext(r)
+	subs, err := app.DB.ListPushSubscriptionsForUsers(r.Context(), []int64{user.ID})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if len(subs) == 0 {
+		writeError(w, http.StatusNotFound, "no push subscription registered for your account — enable push notifications in Paramètres first")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), pushSendTimeout)
+	defer cancel()
+	app.sendToUsers(ctx, []int64{user.ID}, pushPayload{
+		Title: "Trakka",
+		Body:  "Notification de test — si vous voyez ceci, les notifications push fonctionnent.",
+		URL:   "/",
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{"sent_to_subscriptions": len(subs)})
+}
+
 // ---------------------------------------------------------------------------
 // Delivery
 // ---------------------------------------------------------------------------
