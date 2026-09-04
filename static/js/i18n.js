@@ -57,6 +57,16 @@
       todoHeading: 'Espaces Tâches',
       createHouseOption: '+ Créer une Maison',
       tabLists: 'Listes',
+      // Kept in sync with fr.json's dashboard.listAllDoneBadge/listEmptyBadge
+      // — buildListCard's urlBadges() (app.js) calls t() for these on every
+      // dashboard render, including the very first one (hydrateFromCache(),
+      // called from init() before TrakkaI18n.ready has necessarily resolved
+      // the real /locales/fr.json fetch) — without an entry here, that first
+      // paint fell back to t()'s raw-key behavior and showed the literal
+      // string "dashboard.listAllDoneBadge" on a fully-completed list's card
+      // instead of translated text.
+      listAllDoneBadge: '🎉 Terminé',
+      listEmptyBadge: '0 article',
     },
     items: {
       back: 'Retour au tableau de bord',

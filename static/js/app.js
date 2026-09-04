@@ -1053,14 +1053,30 @@ function listIcon(list) {
 }
 
 // Shopping cards show which sites their items link to (up to 3 domains,
-// deduplicated, with a "+N" overflow badge) plus a running estimated total
-// (the sum of every priced item's price * quantity — see lineTotal in
-// list_view.js, the same per-unit-price convention this mirrors) — a quick
-// sourcing + budget overview without opening the list.
-function urlBadges(items) {
+// deduplicated, with a "+N" overflow badge) plus the list's "reste à
+// dépenser" — the sum of price * quantity across every still-unchecked item
+// that has a price ("combien reste-t-il à dépenser", not the list's full
+// lifetime cost — a done/purchased item never contributes). This is the same
+// figure the list detail view's own finance summary shows via
+// lineTotal/updateFinanceSummary in list_view.js, computed server-side
+// (list.total_amount, from internal/db's listSelect's `done = 0` filter)
+// rather than re-summed here, so this card and the finance summary can never
+// drift apart from slightly different client-side logic.
+//
+// Because `total_amount` only ever sums *unchecked* priced items, it comes
+// back `null` both when the list genuinely has nothing left to buy (every
+// item checked off) and when it simply has no priced items at all yet —
+// those two cases used to render identically (an empty badge row, or
+// whatever domain badges happened to exist), leaving a fully-completed list
+// looking indistinguishable from a half-empty one. This function now tells
+// them apart explicitly: an empty list (no items at all) gets a discreet
+// "0 article" pill, and a non-empty list whose items are *all* done — not
+// just whose unchecked items have no price — gets a distinct green success
+// badge instead of the price total, checked before total_amount so it can
+// never be shadowed by a still-null total.
+function urlBadges(list) {
+  const items = list.items || [];
   const domains = [];
-  let total = 0;
-  let hasPrice = false;
   for (const item of items) {
     if (item.url) {
       try {
@@ -1068,10 +1084,6 @@ function urlBadges(items) {
       } catch {
         // malformed URL slipped through some other path; skip it silently
       }
-    }
-    if (typeof item.price === 'number') {
-      hasPrice = true;
-      total += item.price * (item.quantity > 0 ? item.quantity : 1);
     }
   }
   const unique = [...new Set(domains)];
@@ -1086,27 +1098,35 @@ function urlBadges(items) {
   // call here since this only ever runs at render time, well after every
   // script has finished loading (same deferred-call pattern buildItemRow
   // already uses for monthLabel/buildRecurrenceBadge from planning.js).
-  // Deliberately the same 'emerald' palette as every other money-positive
-  // accent in the app (the auto-detected-price sparkle icon, the
+  // Deliberately the same 'emerald' palette as every other money-positive/
+  // success accent in the app (the auto-detected-price sparkle icon, the
   // all-items-done todo badge, ...) rather than a neutral/gray pill, so a
-  // list card's price total reads as "money" at a glance instead of
-  // blending in with the plain domain/type badges around it — this is a
-  // deliberate exception to --tk-money-total (tokens.css), which still
-  // backs every *other* money figure (the finance summary, item rows, the
-  // budget-planning totals), where "Total estimé" needs to stay visually
-  // distinct from "Déjà dépensé"/"Reste à dépenser" within the same view.
-  // font-semibold (Tailwind's 600) is bumped explicitly since badge()'s
-  // shared font-medium (500) reads too light for a figure meant to be
-  // spotted quickly.
-  if (hasPrice) {
-    const totalBadge = badge(formatEuro(total), 'emerald');
+  // list card's price total (or completion badge) reads as "positive" at a
+  // glance instead of blending in with the plain domain/type badges around
+  // it — this is a deliberate exception to --tk-money-total (tokens.css),
+  // which still backs every *other* money figure (the finance summary, item
+  // rows, the budget-planning totals), where "Total estimé"/"Déjà dépensé"
+  // need to stay visually distinct from "Reste à dépenser" within the same
+  // view — this card only ever shows one of the three, so there's no such
+  // distinction to preserve here. font-semibold (Tailwind's 600) is bumped
+  // explicitly since badge()'s shared font-medium (500) reads too light for
+  // a figure/status meant to be spotted quickly.
+  if (items.length === 0) {
+    frag.appendChild(badge(t('dashboard.listEmptyBadge'), 'slate'));
+  } else if (items.every((item) => item.done)) {
+    const doneBadge = badge(t('dashboard.listAllDoneBadge'), 'emerald');
+    doneBadge.classList.add('font-semibold');
+    frag.appendChild(doneBadge);
+  } else if (typeof list.total_amount === 'number') {
+    const totalBadge = badge(formatEuro(list.total_amount), 'emerald');
     totalBadge.classList.add('font-semibold');
     frag.appendChild(totalBadge);
   }
   return frag;
 }
 
-function progressBadge(items) {
+function progressBadge(list) {
+  const items = list.items || [];
   const frag = document.createDocumentFragment();
   if (items.length === 0) return frag;
   const done = items.filter((item) => item.done).length;
@@ -1309,7 +1329,7 @@ function renderGrid(container, lists, badgeFn, emptyMessage) {
     return;
   }
   for (const list of lists) {
-    container.appendChild(buildListCard(list, badgeFn(list.items || [])));
+    container.appendChild(buildListCard(list, badgeFn(list)));
   }
 }
 
@@ -1345,9 +1365,53 @@ function isPurchaseList(type) {
 // them — shared by the cache-only offline path and the normal network path
 // below so the three-way split can't drift between them.
 function renderDashboardGrids(detailed) {
+  // applyDashboardOverrides layers in any not-yet-committed item edit made
+  // in the list detail view (see notifyItemsChanged above) on top of
+  // whatever this batch's own source (network or IndexedDB mirror) reports,
+  // so a card's badge is never stale by up to 5s relative to what the user
+  // just did.
+  detailed = applyDashboardOverrides(detailed);
   renderGrid(els.shoppingLists, detailed.filter((l) => isPurchaseList(l.type)), urlBadges, t('dashboard.emptyShopping'));
   renderGrid(els.todoLists, detailed.filter((l) => l.type === 'todo'), progressBadge, t('dashboard.emptyTodo'));
   renderGrid(els.customLists, detailed.filter((l) => l.type === 'custom'), noBadges, t('dashboard.emptyCustom'));
+}
+
+// Optimistic dashboard reactivity: list_view.js's toggleDone/removeItem
+// apply their own edit to the currently open list's items immediately (well
+// before the real PATCH/DELETE actually goes out — both are deferred behind
+// TrakkaUndo's 5s undo grace period), but the dashboard itself isn't visible
+// while a list is open, so by the time the user navigates back and
+// loadDashboard()/renderDashboardFromCache() run, a fetch (network or
+// IndexedDB mirror) can still race ahead of that deferred commit and show
+// the pre-edit state for up to 5s. notifyItemsChanged (called from
+// list_view.js right after every such optimistic apply/undo) snapshots that
+// list's items here so any dashboard render in the meantime already reflects
+// it — recalculating the remaining-items count and swapping in the "all
+// done" badge/price total accordingly (see urlBadges) with no
+// location.reload() involved. clearItemsOverride drops the snapshot once the
+// deferred commit actually resolves (success or failure), letting a genuine
+// fetch be authoritative again rather than staying shadowed indefinitely.
+const dashboardOptimisticOverrides = new Map();
+
+function notifyItemsChanged(listId, items) {
+  if (listId === null || listId === undefined) return;
+  dashboardOptimisticOverrides.set(listId, items.map((item) => ({ ...item })));
+  // isDashboardTabActive is defined in planning.js, resolved lazily here the
+  // same way refreshVisibleView already calls into that file — safe since
+  // this only ever runs well after every script has finished loading.
+  if (isDashboardTabActive()) {
+    renderDashboardFromCache();
+  }
+}
+
+function clearItemsOverride(listId) {
+  dashboardOptimisticOverrides.delete(listId);
+}
+
+function applyDashboardOverrides(lists) {
+  return lists.map((list) =>
+    dashboardOptimisticOverrides.has(list.id) ? { ...list, items: dashboardOptimisticOverrides.get(list.id) } : list
+  );
 }
 
 // Renders the dashboard purely from the local IndexedDB mirror, with no

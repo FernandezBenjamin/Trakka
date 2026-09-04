@@ -64,6 +64,21 @@ type List struct {
 	// — pinning a whole Space is what lets every list reachable through it
 	// show up pinned without pinning each one individually.
 	IsPinnedToDashboard bool `json:"is_pinned_to_dashboard,omitempty"`
+	// TotalAmount is a response-only field (never persisted), populated by
+	// every read that goes through internal/db's listSelect (GetList,
+	// ListListsForUser, ListPinnedHouseSpaceLists): the sum of
+	// price * quantity across every still-unchecked (done = false) item in
+	// this list that has a price set — the list's "reste à dépenser", the
+	// same figure the list detail view's own finance summary shows (see
+	// updateFinanceSummary/lineTotal in static/js/list_view.js), just
+	// computed once in SQL instead of per-card from a full item fetch (see
+	// the dashboard/Espaces card's green total badge in
+	// static/js/app.js's urlBadges). A done item never contributes,
+	// regardless of price. nil when no unchecked item in the list has a
+	// price at all, which is how the frontend decides whether to show the
+	// badge in the first place; otherwise always present, including a
+	// genuine 0.
+	TotalAmount *float64 `json:"total_amount,omitempty"`
 }
 
 // Item represents a single entry within a List.

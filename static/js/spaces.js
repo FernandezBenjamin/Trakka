@@ -438,7 +438,7 @@ function buildCategorySection(category) {
   } else {
     const grid = document.createElement('ul');
     grid.className = 'grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3';
-    for (const list of lists) grid.appendChild(buildListCard(list, badgeFnForType(list.type)(list.items || [])));
+    for (const list of lists) grid.appendChild(buildListCard(list, badgeFnForType(list.type)(list)));
     body.appendChild(grid);
   }
   details.appendChild(body);
@@ -544,7 +544,7 @@ function buildSharedCategorySection(category) {
   } else {
     const grid = document.createElement('ul');
     grid.className = 'grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3';
-    for (const list of lists) grid.appendChild(buildListCard(list, badgeFnForType(list.type)(list.items || [])));
+    for (const list of lists) grid.appendChild(buildListCard(list, badgeFnForType(list.type)(list)));
     body.appendChild(grid);
   }
   details.appendChild(body);
