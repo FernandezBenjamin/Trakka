@@ -129,6 +129,24 @@ function resetEdgeBackFeedback() {
   if (main) {
     main.style.transition = 'transform 180ms ease';
     main.style.transform = 'translateX(0)';
+    // A `transform` other than `none` — even `translateX(0)` — makes <main>
+    // a new containing block for every `position: fixed` descendant it has
+    // (the mobile quick-add bar in #create-item-form-anchor, the reorder
+    // action bar), so they start resolving `bottom: 0` against <main>'s own
+    // box instead of the viewport and scroll away with the page instead of
+    // staying pinned — exactly the "quick-add bar disappears while
+    // scrolling" bug this clears. Clearing both inline styles once the
+    // snap-back animation actually finishes (never mid-drag, since a
+    // transform is still needed for the pull feedback while tracking)
+    // returns <main> to its ordinary untransformed state so nothing inside
+    // it keeps behaving like `position: absolute` for the rest of the
+    // session — settleThenRun (defined below, hoisted) is the same
+    // transitionend-or-fallback-timer helper the item-swipe gesture already
+    // uses for the same "wait for the animation, then act" reasoning.
+    settleThenRun(main, () => {
+      main.style.transform = '';
+      main.style.transition = '';
+    });
   }
   indicator.style.transition = 'opacity 180ms ease, transform 180ms ease';
   indicator.style.opacity = '0';
@@ -147,6 +165,20 @@ if (IS_TOUCH_DEVICE) {
       'touchstart',
       (event) => {
         if (event.touches.length !== 1) {
+          // A second finger landing mid-drag abandons tracking outright
+          // (no "which finger wins" logic here) — but if a drag was already
+          // in progress, <main> may already be carrying the pull-feedback
+          // transform from applyEdgeBackFeedback below, and abandoning
+          // tracking here means neither touchend nor touchcancel's finish()
+          // will ever run for this gesture (both bail out on `!tracking`).
+          // Without this reset, that transform — even mid-drag, not just
+          // the settled translateX(0) resetEdgeBackFeedback normally clears
+          // — would stick to <main> for the rest of the session, silently
+          // turning it into the containing block for every `position: fixed`
+          // descendant it has (the quick-add bar, the reorder action bar)
+          // and breaking their viewport anchoring exactly like an unpaired
+          // resetEdgeBackFeedback call would.
+          if (tracking) resetEdgeBackFeedback();
           tracking = false;
           return;
         }

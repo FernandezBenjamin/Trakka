@@ -222,27 +222,30 @@ body {
   }
 }
 
-/* Item cards (static/js/list_view.js's buildItemRow) are a single ~56px-tall
-   flex row from Tailwind's `sm` breakpoint (640px) up — checkbox/marker, an
-   optional thumbnail, the title (truncated, flex-1), the quantity stepper, a
-   compact price cell (line total plus single-glyph ⚡/🔥/⏳ indicators — see
-   buildPriceBlock), a small unsynced dot, the inline 🔗 link icon, then
+/* Item cards (static/js/list_view.js's buildItemRow) are a single flex row
+   from Tailwind's `sm` breakpoint (640px) up — checkbox/marker, an optional
+   thumbnail, the title (truncated, flex-1), then `rowBottom`'s three
+   columns (quantity stepper, price pill, sync-dot+link group) inline, then
    edit/delete/kebab at the trailing edge. Below `sm`, the card is two
    stacked rows instead — `rowTop` (checkbox/marker + thumbnail + title +
-   edit/delete + kebab) above `rowBottom` (quantity stepper + unsynced dot +
-   price cell + link icon) — since packing every one of those fixed-width
-   slots onto a single line simply doesn't fit a phone-width screen: the
-   title (the only flexible element) would be squeezed to nothing while the
-   price/link/kebab group at the trailing edge overflows the card's own
-   right edge, which is exactly the bug this two-row split fixes. Both the
-   single-line and two-row shapes are built from the same fixed append order
-   in buildItemRow, purely via Tailwind's responsive `flex-col`/`sm:flex-row
-   sm:items-center` on the card and `sm:flex-1` on `rowTop` (`px-3 py-1.5`
-   padding, `gap-2` between children within each row — see the .item-card
-   class string there for the exact figures) — no separate mobile-only code
-   path, and no custom CSS needed here at all; see buildItemRow's own header
-   comment for the full design and the exact widths that motivated the `sm`
-   breakpoint choice.
+   edit/delete + kebab) above `rowBottom`, laid out as a 3-column CSS grid
+   (`grid-cols-[auto_1fr_auto]`) so its quantity stepper sits at the left
+   edge, its price pill is genuinely centered regardless of how wide the
+   stepper or the trailing sync-dot/link group happen to be, and that
+   trailing group is pinned to the right edge — since packing every one of
+   those fixed-width slots onto a single line simply doesn't fit a
+   phone-width screen: the title (the only flexible element) would be
+   squeezed to nothing while the price/link/kebab group at the trailing edge
+   overflows the card's own right edge, which is exactly the bug this
+   two-row split fixes. Both the single-line and two-row shapes are built
+   from the same fixed append order in buildItemRow, purely via Tailwind's
+   responsive `flex-col`/`sm:flex-row sm:items-center` on the card and
+   `sm:flex-1` on `rowTop` (`px-3.5 py-3` padding, `gap-2` between children
+   within each row — see the .item-card class string there for the exact
+   figures) — no separate mobile-only code path, and no custom CSS needed
+   for the card shape itself; see buildItemRow's own header comment for the
+   full design and the exact widths that motivated the `sm` breakpoint
+   choice.
 
    Either way, target month, recurrence, and the price-alert threshold —
    anything that doesn't fit even on two lines — live in #item-actions-sheet
@@ -265,11 +268,77 @@ body {
   }
 }
 
+/* Quantity stepper ([-] N [+], static/js/list_view.js's buildQuantityStepper)
+   vertical centering. `align-items: center` on the pill (`.item-qty-stepper`)
+   alone isn't enough to keep the digit itself looking centered next to the
+   flanking 32px [-]/[+] buttons: a bare `<input type="number">` carries its
+   own default padding and a `line-height: normal` that renders extra space
+   below the glyph's baseline, which visually reads as the digit sitting a
+   couple pixels *above* center relative to the buttons even though the
+   input's own box is vertically centered. Fixing that needs three things
+   directly on the input itself, not just the container: `line-height: 1`
+   (collapses that extra space), `padding: 0` (the buttons already carry all
+   the pill's padding via their own height), and an explicit height matching
+   the buttons' so the two never disagree about how tall this row is. */
+.item-qty-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  overflow: hidden;
+}
+
+.item-qty-stepper__input {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0;
+  line-height: 1;
+  -moz-appearance: textfield;
+}
+
+/* Chrome/Safari draw native up/down spinner arrows on <input type="number">
+   by default — at this stepper's ~32px width there's no room for them
+   without clipping into or overlapping the digit itself, and the [-]/[+]
+   buttons already give the same control in a much more touch-friendly
+   form. */
+.item-qty-stepper__input::-webkit-outer-spin-button,
+.item-qty-stepper__input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Compact item rows — a task (`todo`) or note (`custom`) list, i.e. one
+   whose FIELD_VISIBILITY_BY_TYPE hides both quantity and price
+   (static/js/list_view.js's buildItemRow, `.item-card--compact`). Every
+   other list type still splits into the two-row rowTop/rowBottom layout
+   described above, since a quantity stepper and a price cell genuinely need
+   their own line on a narrow screen; a compact row has nothing left to put
+   on a second line once those two are hidden, so buildItemRow folds
+   everything — checkbox, title, the sync-status dot, the link icon,
+   edit/delete/kebab — onto one flex line instead, at every viewport width,
+   rather than reserving a second, almost entirely empty row under every
+   single task/note (previously just an 8px sync dot, or a 32px empty
+   link-icon slot, was enough on its own to add a whole extra ~40px-tall
+   blank row below a two-word task title — the "grand rectangle blanc
+   disproportionné" this variant exists to remove). Padding/gap/font-size/
+   checkbox-size are all expressed as ordinary Tailwind utility classes
+   directly in buildItemRow (consistent with how every other conditional
+   style in that function is already written) rather than fought over here;
+   the one thing worth guaranteeing in plain CSS is that the row never
+   collapses shorter than its own 44px checkbox/kebab touch targets, which a
+   title-only compact row (e.g. `todo`'s edit/delete hidden below `md`, only
+   the checkbox and kebab present) could otherwise do. */
+.item-card--compact {
+  min-height: 44px;
+}
+
 /* .item-card itself is deliberately excluded from the 44px floor above: at
-   its ~56px row height (checkbox/kebab already at 44px, plus px-3 py-1.5
+   its row height (checkbox/kebab already at 44px, plus px-3.5 py-3
    padding — see the comment above), a compact WCAG 2.2 AA target (24x24px
    minimum, not the stricter AAA 44x44px) is the right trade-off for the
-   quantity stepper's [-]/[+] buttons (28px, static/js/list_view.js's
+   quantity stepper's [-]/[+] buttons (32px, static/js/list_view.js's
    buildQuantityStepper) and the inline 🔗 link icon (32px,
    buildInlineLinkIcon) — both already comfortably clear 24px, and both
    remain reachable at full 44px size from the edit-item modal/actions sheet
