@@ -190,11 +190,14 @@ sharesEls.shareForm.addEventListener('submit', async (event) => {
 
 // Fetches every shared list the caller has pinned, each merged with its own
 // item detail the same way loadSharedView does below — called from
-// app.js's loadDashboard on every dashboard load/house-switch. No offline
-// mirror (same "requires connectivity" scoping as loadShareRoster/
-// loadSharedView), so a plain connectivity failure here just means these
-// cards are temporarily absent rather than a blocking error — the caller
-// already treats a rejected promise as "show none".
+// app.js's loadDashboard on every dashboard load/house-switch. The stub
+// collection (?shared_with_me=true) and each list's own detail both have a
+// real offline mirror now (see sw.js's mirrorReadResponse/
+// offlineReadFallback and db.js's STORE_SHARED_LISTS), so this only actually
+// rejects — and these cards go temporarily absent instead of a blocking
+// error, per the caller's own `.catch(() => [])` — when there's genuinely no
+// service worker in play at all (unsupported browser, or before it's first
+// registered) or a real server-side error.
 async function loadPinnedSharedLists() {
   const stubs = (await apiRequest('/lists?shared_with_me=true')).filter((stub) => stub.is_pinned_to_dashboard);
   if (stubs.length === 0) return [];
@@ -269,10 +272,12 @@ async function loadSharedView() {
   try {
     stubs = await apiRequest('/lists?shared_with_me=true');
   } catch (err) {
-    // No offline mirror for cross-house shared lists (same scoping as the
-    // share modal's roster above) — a plain connectivity failure just
-    // leaves the tab showing whatever it last had instead of a blocking
-    // banner; a genuine server-side error still gets one.
+    // While offline (and a service worker is controlling the page), this
+    // resolves from the stub mirror instead of ever reaching this catch —
+    // see sw.js's offlineReadFallback/STORE_SHARED_LISTS. This branch is now
+    // only reached with no service worker in play at all, or a genuine
+    // server-side error; a plain connectivity failure just leaves the tab
+    // showing whatever it last had instead of a blocking banner.
     if (!isNetworkError(err)) showError(err.message);
     return;
   }

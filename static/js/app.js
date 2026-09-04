@@ -356,6 +356,14 @@ async function apiRequest(path, options = {}) {
       // unreliable about implicit defaults for cookie handling, so this is
       // spelled out rather than relied on implicitly.
       credentials: 'same-origin',
+      // Belt-and-suspenders alongside internal/handlers/json.go's
+      // Cache-Control: no-store on every API response — this forces the
+      // browser's own HTTP disk cache to be skipped for the *request* side
+      // too, regardless of what any past response's headers said, so a GET
+      // to /api/v1/lists/{id} can never resolve from a stale disk-cache
+      // entry instead of either a real network round trip or (offline) the
+      // service worker's own IndexedDB-backed fallback.
+      cache: 'no-store',
       ...options,
     });
   } catch {
@@ -410,6 +418,30 @@ async function apiRequest(path, options = {}) {
     // invitations — those don't carry this header, so they still surface as
     // real, actionable errors.
     if (response.headers.get('X-Trakka-Offline') === 'true') {
+      err.isNetworkError = true;
+    } else if (
+      response.status === 502 ||
+      response.status === 504 ||
+      (response.status === 503 && !(navigator.serviceWorker && navigator.serviceWorker.controller))
+    ) {
+      // A 502/504 is never a status this app's own backend emits (see
+      // internal/handlers/json.go's writeError — only
+      // 400/401/403/404/409/500 ever come from there), so it always means
+      // the reverse proxy or the backend process itself is unreachable, not
+      // a real application error. The same is true of a bare 503 reaching
+      // this point: whenever a service worker is actually controlling the
+      // page, sw.js's own isGatewayErrorStatus check already intercepts and
+      // converts every genuine backend 502/503/504 before it gets this far
+      // (into a cache-served 200 for a read, or a queued write) — the only
+      // 503 that legitimately reaches here with a controller present is
+      // sw.js's own deliberate "this action requires connectivity" response
+      // for houses/admin-settings/shares, which must keep surfacing as a
+      // real, actionable error. Without a controlling service worker at all
+      // (e.g. the very first load before it's registered, or an unsupported
+      // browser), there is no such deliberate 503 to protect, so a bare 503
+      // reaching here is unambiguously the same gateway-unreachable case as
+      // 502/504. Either way: treat it as a plain connectivity failure
+      // instead of a raw "Erreur 502"/"Erreur 503" banner.
       err.isNetworkError = true;
     }
     throw err;
@@ -1409,9 +1441,32 @@ function clearItemsOverride(listId) {
 }
 
 function applyDashboardOverrides(lists) {
-  return lists.map((list) =>
-    dashboardOptimisticOverrides.has(list.id) ? { ...list, items: dashboardOptimisticOverrides.get(list.id) } : list
-  );
+  return lists.map((list) => {
+    if (!dashboardOptimisticOverrides.has(list.id)) return list;
+    const items = dashboardOptimisticOverrides.get(list.id);
+    return { ...list, items, total_amount: remainingAmount(items) };
+  });
+}
+
+// Mirrors internal/db.listSelect's total_amount SUM (every priced,
+// not-yet-done item's price * quantity; null when nothing qualifies) — see
+// urlBadges' own doc comment for why the dashboard normally trusts the
+// server-computed total rather than re-deriving it client-side. This is the
+// one deliberate exception: dashboardOptimisticOverrides (above) holds an
+// edit that hasn't round-tripped to the server, or even reached IndexedDB,
+// yet — sw.js's own recomputeListTotalAmount only runs once the real
+// PATCH/DELETE actually goes out, up to 5s later (see toggleDone's undo
+// grace period in list_view.js) — so there is no fresher total_amount to
+// fall back to in the meantime. lineTotal is defined in list_view.js, loaded
+// after this file — safe to call here since this only ever runs at render
+// time, well after every script has finished loading.
+function remainingAmount(items) {
+  let total = null;
+  for (const item of items) {
+    if (item.done || typeof item.price !== 'number') continue;
+    total = (total ?? 0) + lineTotal(item);
+  }
+  return total;
 }
 
 // Renders the dashboard purely from the local IndexedDB mirror, with no
@@ -1890,6 +1945,32 @@ els.updateReloadButton?.addEventListener('click', () => {
   window.location.reload();
 });
 
+// Forces an immediate retry of anything still sitting in the offline sync
+// queue (a create/edit made while offline that never reached the server) at
+// app boot, rather than waiting on an incidental fetch (sw.js's own
+// per-request opportunistic flushQueue() call in its 'fetch' listener) or the
+// 'online' event below to happen to trigger one. Without this, a mutation
+// still queued at the end of a previous session could sit unpushed
+// indefinitely after the app is reopened already online — nothing else
+// necessarily calls fetch() again before the user notices something's wrong,
+// e.g. an install that only ever ships to a controlled home screen and gets
+// reopened straight from there. navigator.serviceWorker.ready only resolves
+// once some worker is actually controlling the page, so this is a safe no-op
+// on first-ever load (no worker yet) and on a browser with no service worker
+// support at all.
+async function syncOnStartup() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    if (navigator.onLine) {
+      registration.active?.postMessage({ type: 'flush-queue' });
+    }
+  } catch {
+    // Registration never resolved (unsupported/insecure context) — nothing
+    // this function could reconcile.
+  }
+}
+
 window.addEventListener('online', () => {
   updateNetworkStatus();
   navigator.serviceWorker.controller?.postMessage({ type: 'flush-queue' });
@@ -1933,19 +2014,20 @@ async function hydrateFromCache() {
   // category picker are already correct the instant a reload finishes,
   // rather than waiting on loadCustomCategories()'s own network-first call
   // further down in init() to fail over to the cache. customCategories/
-  // updateSpacesTabBadge are defined in spaces.js, loaded after this file —
-  // safe to reference here despite that <script> load order because this
-  // only runs after hydrateFromCache has already crossed a real IndexedDB
-  // await (cachedHouses() above), by which point every script tag on the
-  // page has long finished executing and defined its top-level functions —
-  // the same timing guarantee init()'s own later call to
-  // loadCustomCategories() already relies on.
+  // updateSpacesTabBadge/cachedCustomCategories are defined in spaces.js,
+  // loaded after this file — safe to reference here despite that <script>
+  // load order because this only runs after hydrateFromCache has already
+  // crossed a real IndexedDB await (cachedHouses() above), by which point
+  // every script tag on the page has long finished executing and defined
+  // its top-level functions — the same timing guarantee init()'s own later
+  // call to loadCustomCategories() already relies on. cachedCustomCategories
+  // itself is what applies the per-account defense-in-depth filter (see its
+  // own doc comment in spaces.js) — a no-op at this exact point since
+  // state.currentUser isn't resolved yet this early in init(), but keeping
+  // this call routed through the same helper avoids two copies of that
+  // filtering logic drifting apart.
   if (window.TrakkaDB) {
-    try {
-      customCategories = await window.TrakkaDB.getCustomCategories();
-    } catch {
-      customCategories = [];
-    }
+    customCategories = await cachedCustomCategories();
     updateSpacesTabBadge();
   }
 }
@@ -1955,6 +2037,12 @@ async function init() {
   // reload while offline (or on a slow connection) never shows a blank
   // dashboard while the requests below are still in flight.
   await hydrateFromCache();
+
+  // Fire-and-forget: reconcile the offline sync queue with the server right
+  // away rather than waiting for it to happen incidentally. Not awaited so a
+  // slow/never-resolving service-worker-readiness check can never delay the
+  // rest of startup.
+  syncOnStartup();
 
   try {
     // A real 401 here redirects to /auth/login via apiRequest's 401

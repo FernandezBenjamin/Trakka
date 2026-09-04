@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v63';
-const RUNTIME_CACHE = 'trakka-runtime-v63';
+const SHELL_CACHE = 'trakka-shell-v69';
+const RUNTIME_CACHE = 'trakka-runtime-v69';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -255,6 +255,15 @@ async function handleShellRequest(request) {
 // successful read (mirrorReadResponse below) before ever calling this
 // endpoint — see CLAUDE.md's "Loading skeletons & stale-while-revalidate
 // view loaders" entry for the full design.
+//
+// Nothing here ever calls caches.match()/caches.put() for a /api/v1/...
+// request — the Cache Storage API (SHELL_CACHE/RUNTIME_CACHE above) backs
+// the app shell only (see handleShellRequest). The fetch(request) call
+// below is a genuine network round trip every time; internal/handlers/
+// json.go additionally sets Cache-Control: no-store on every JSON response,
+// so even the browser's own HTTP disk cache (a layer this file has no
+// control over) can never hand fetch() a stale GET here instead of either a
+// real response or (offline/gateway-down) the IndexedDB fallback below.
 // ---------------------------------------------------------------------------
 
 async function handleApiRequest(request, url) {
@@ -268,11 +277,101 @@ async function handleApiRead(request, url) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      mirrorReadResponse(url, response.clone()).catch(() => {});
+      if (url.pathname === '/api/v1/me') {
+        // Reconcile mirror ownership BEFORE this response is handed back to
+        // the page — must complete first (unlike the other mirror writes
+        // below, which are deliberately fire-and-forget) so nothing
+        // downstream that runs the instant apiRequest('/me') resolves (e.g.
+        // app.js's hydrateFromCache, which reads IndexedDB directly) can ever
+        // observe a mirror that still belongs to a different, previously-
+        // authenticated account. See enforceMirrorOwnership.
+        await reconcileMirrorOwnershipFromMeResponse(response.clone()).catch(() => {});
+      } else {
+        mirrorReadResponse(url, response.clone()).catch(() => {});
+      }
+      return response;
+    }
+    // A resolved 502/503/504 means the backend or the reverse proxy in front
+    // of it is unreachable/overloaded right now — from the page's point of
+    // view that's indistinguishable from "no connectivity", so it's treated
+    // exactly like the fetch()-itself-failed case below rather than being
+    // handed back as a raw error response: apiRequest() (app.js) has no way
+    // to tell this apart from a genuine application error (a real 502 the
+    // Go backend itself never returns), so without this it would surface a
+    // blocking "Erreur 502" banner during what is, from the user's
+    // perspective, just an offline/flaky-connection moment.
+    if (isGatewayErrorStatus(response.status)) {
+      return offlineReadFallback(url);
     }
     return response;
   } catch {
     return offlineReadFallback(url);
+  }
+}
+
+// 502 Bad Gateway / 503 Service Unavailable / 504 Gateway Timeout: the
+// backend process or the reverse proxy in front of it is down, restarting,
+// or can't be reached — never a status this app's own handlers return for a
+// real application-level error (see internal/handlers/json.go's writeError,
+// which only ever emits 400/401/403/404/409/500). Treating these the same
+// as a network failure is what lets a flaky/restarting backend degrade to
+// "offline" instead of flashing a raw error banner.
+function isGatewayErrorStatus(status) {
+  return status === 502 || status === 503 || status === 504;
+}
+
+// Isolation boundary for the whole IndexedDB mirror (see the "meta" store in
+// db.js). GET /api/v1/me is the one response in this app that carries the
+// requesting session's own identity, so it's the single point where the
+// service worker — the mirror's sole writer — can tell whether the account
+// making requests right now is still the same one the mirror was built for.
+// On a shared/kiosk browser where a previous user's session simply expired
+// or was never explicitly logged out of, the next account to sign in would
+// otherwise inherit their houses/lists/items/categories (and any of their
+// still-queued offline writes) until app.js's own, page-side mismatch check
+// happened to run — which never happens at all while genuinely offline. This
+// closes that gap at the source: nothing is mirrored for the new account
+// until any stale mirror has already been wiped.
+async function enforceMirrorOwnership(userId) {
+  if (userId === undefined || userId === null) return;
+  const activeUserId = await self.TrakkaDB.getActiveUserId();
+  if (activeUserId !== null && activeUserId !== userId) {
+    await self.TrakkaDB.clearAll();
+  }
+  await self.TrakkaDB.setActiveUserId(userId);
+}
+
+async function reconcileMirrorOwnershipFromMeResponse(response) {
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    return;
+  }
+  if (data && data.id !== undefined) {
+    await enforceMirrorOwnership(data.id);
+  }
+}
+
+// flushQueue's own ownership check (see its call site) — makes a direct
+// request rather than reusing whatever GET /api/v1/me response the page may
+// or may not have in flight, since flushQueue can itself be triggered with
+// no page open at all (a Background Sync event). Deliberately swallows a
+// network failure: if this can't reach the server, there is by definition
+// nothing to replay either (the fetch loop right after this would fail the
+// exact same way), so leaving the existing ownership record as-is and simply
+// falling through to "nothing to do" is correct.
+async function verifyMirrorOwnership() {
+  try {
+    const response = await fetch('/api/v1/me', { credentials: 'same-origin' });
+    if (!response.ok) return;
+    const data = await response.json().catch(() => null);
+    if (data && data.id !== undefined) {
+      await enforceMirrorOwnership(data.id);
+    }
+  } catch {
+    // Offline — nothing to verify against, and nothing this flushQueue pass
+    // could have replayed anyway.
   }
 }
 
@@ -287,41 +386,69 @@ async function mirrorReadResponse(url, response) {
   const listMatch = url.pathname.match(/^\/api\/v1\/lists\/(\d+)$/);
   // ?shared_with_me=true returns lists from Houses the caller isn't
   // necessarily a member of (see db.ListSharedListsForUser), tagged with
-  // access_source/access_permission — mirroring those into the same
-  // IndexedDB store as the caller's own House-scoped lists would pollute it
-  // with rows that don't belong to any of their own Houses, for a view that
-  // has no offline support in the first place (see shares.js's
-  // loadSharedView). Skip it entirely rather than either.
+  // access_source/access_permission/is_pinned_to_dashboard — mirroring those
+  // stub rows into the same IndexedDB store as the caller's own House-scoped
+  // lists would pollute it with rows that don't belong to any of their own
+  // Houses, so they get their own dedicated stub mirror instead (see
+  // STORE_SHARED_LISTS in db.js) rather than being unioned in. A shared
+  // list's own full detail (with items) still lands in the ordinary
+  // lists/items mirror the moment it's actually opened, via the plain
+  // GET /lists/{id} every one of these stub-driven views fans out to.
   const isSharedWithMe = url.pathname === '/api/v1/lists' && url.searchParams.get('shared_with_me') === 'true';
   // Same reasoning as isSharedWithMe, applied to CLAUDE.md's "pinned house
   // spaces" feature: ?pinned_house_spaces=true also returns lists from
   // Houses the caller belongs to but that aren't necessarily the currently
-  // selected one — mirroring them into the plain lists store under their
-  // *other* House's house_id would be correct on its own, but this query has
-  // no offline support in the first place (see shares.js's
-  // loadPinnedHouseSpaceLists), so it's skipped the same way.
+  // selected one — mirrored into its own STORE_PINNED_HOUSE_SPACE_LISTS stub
+  // store rather than the plain lists store, for the same reason.
   const isPinnedHouseSpaces = url.pathname === '/api/v1/lists' && url.searchParams.get('pinned_house_spaces') === 'true';
   // Same reasoning as isSharedWithMe above, applied to Spaces: a category
   // shared with the caller (rather than owned by them) belongs to whoever
   // actually owns it, not to any of the caller's own custom_category_id
-  // associations — mirroring it into the plain custom_categories mirror
-  // would pollute it with a row the caller can't rename/delete and that
-  // has no offline support in the first place (see spaces.js's
-  // loadSharedCustomCategories). Skip it entirely rather than either.
+  // associations — mirrored into its own STORE_SHARED_CATEGORIES stub store
+  // rather than the plain custom_categories mirror, so the caller's own
+  // categories (the ones cachedCustomCategories's user_id filter expects to
+  // find there) are never polluted with one they don't own.
   const isSharedCategoriesQuery =
     url.pathname === '/api/v1/custom-categories' && url.searchParams.get('shared_with_me') === 'true';
 
   if (url.pathname === '/api/v1/houses' && Array.isArray(data)) {
     await self.TrakkaDB.putHouses(data);
-  } else if (url.pathname === '/api/v1/lists' && !isSharedWithMe && !isPinnedHouseSpaces && Array.isArray(data)) {
-    await self.TrakkaDB.putLists(data.map(withoutItems));
+  } else if (isSharedWithMe && Array.isArray(data)) {
+    await self.TrakkaDB.replaceSharedLists(data);
+  } else if (isPinnedHouseSpaces && Array.isArray(data)) {
+    await self.TrakkaDB.replacePinnedHouseSpaceLists(data);
+  } else if (url.pathname === '/api/v1/lists' && Array.isArray(data)) {
+    // freshLists (db.js) drops any list this GET would otherwise regress —
+    // see its own doc comment for why this guard lives here, at the GET-
+    // response mirroring boundary, rather than inside putList/putLists
+    // themselves: two concurrent fetch() calls for overlapping list data
+    // (e.g. the dashboard's own listing alongside a list detail view's
+    // fetch, or simple network reordering) can resolve out of order, and
+    // without this an older response landing last could silently revert a
+    // field (most importantly `done`, via a stale list's cached
+    // total_amount) that a more recent write already updated.
+    const lists = await self.TrakkaDB.freshLists(data.map(withoutItems));
+    await self.TrakkaDB.putLists(lists);
   } else if (listMatch && data && typeof data === 'object') {
     const { items, ...list } = data;
-    await self.TrakkaDB.putList(list);
-    if (Array.isArray(items)) await self.TrakkaDB.putItems(items);
+    const freshList = await self.TrakkaDB.freshLists([list]);
+    if (freshList.length) await self.TrakkaDB.putList(list);
+    if (Array.isArray(items)) {
+      // Same reasoning as freshLists above, applied to this list's own
+      // items — this is the guard that actually matters for the reported
+      // "a done item shows back up as active while offline" bug: a slower
+      // GET /api/v1/lists/{id} issued before a done-toggle's PATCH, but
+      // resolving after that PATCH's own response already wrote
+      // `done: true` into the mirror, would otherwise silently revert it.
+      const freshItemsArr = await self.TrakkaDB.freshItems(items);
+      await self.TrakkaDB.putItems(freshItemsArr);
+    }
   } else if (url.pathname === '/api/v1/items' && Array.isArray(data)) {
-    await self.TrakkaDB.putItems(data);
-  } else if (url.pathname === '/api/v1/custom-categories' && !isSharedCategoriesQuery && Array.isArray(data)) {
+    const items = await self.TrakkaDB.freshItems(data);
+    await self.TrakkaDB.putItems(items);
+  } else if (isSharedCategoriesQuery && Array.isArray(data)) {
+    await self.TrakkaDB.replaceSharedCategories(data);
+  } else if (url.pathname === '/api/v1/custom-categories' && Array.isArray(data)) {
     await self.TrakkaDB.putCustomCategories(data);
   }
 }
@@ -335,21 +462,26 @@ async function offlineReadFallback(url) {
   }
 
   if (url.pathname === '/api/v1/lists' && url.searchParams.get('shared_with_me') === 'true') {
-    // No offline mirror for cross-house shared lists (see mirrorReadResponse
-    // above) — answer with an empty list rather than falling through to the
-    // general lists mirror below, which would incorrectly surface the
-    // caller's own House-scoped lists in the "Partagé avec moi" tab.
-    return new Response(JSON.stringify([]), { status: 200, headers });
+    // Served from its own stub mirror (see mirrorReadResponse/
+    // STORE_SHARED_LISTS above) rather than falling through to the general
+    // lists mirror below, which would incorrectly surface the caller's own
+    // House-scoped lists in the "Partagé avec moi" tab. Each stub's own
+    // full detail (with items) is served separately, by the listMatch
+    // branch further down, from whatever the plain lists/items mirror last
+    // saw the last time that list was actually opened online.
+    const stubs = await self.TrakkaDB.getSharedLists();
+    return new Response(JSON.stringify(stubs), { status: 200, headers });
   }
 
   if (url.pathname === '/api/v1/lists' && url.searchParams.get('pinned_house_spaces') === 'true') {
     // Same reasoning as the shared_with_me case just above, applied to
-    // CLAUDE.md's "pinned house spaces" feature — no offline mirror, so an
-    // empty list rather than falling through to the general lists mirror
-    // below (which has no notion of "only the ones reached via a pinned
-    // House Space" and would return every one of the caller's own
-    // House-scoped lists instead).
-    return new Response(JSON.stringify([]), { status: 200, headers });
+    // CLAUDE.md's "pinned house spaces" feature — served from its own stub
+    // mirror (STORE_PINNED_HOUSE_SPACE_LISTS) rather than falling through to
+    // the general lists mirror below (which has no notion of "only the ones
+    // reached via a pinned House Space" and would return every one of the
+    // caller's own House-scoped lists instead).
+    const stubs = await self.TrakkaDB.getPinnedHouseSpaceLists();
+    return new Response(JSON.stringify(stubs), { status: 200, headers });
   }
 
   if (url.pathname === '/api/v1/lists') {
@@ -374,11 +506,11 @@ async function offlineReadFallback(url) {
   }
 
   if (url.pathname === '/api/v1/custom-categories' && url.searchParams.get('shared_with_me') === 'true') {
-    // No offline mirror for Spaces shared with the caller (see
-    // mirrorReadResponse above) — answer with an empty list rather than
+    // Served from its own stub mirror (STORE_SHARED_CATEGORIES) rather than
     // falling through to the general categories mirror below, which would
     // incorrectly surface the caller's own categories as "shared with me".
-    return new Response(JSON.stringify([]), { status: 200, headers });
+    const stubs = await self.TrakkaDB.getSharedCategories();
+    return new Response(JSON.stringify(stubs), { status: 200, headers });
   }
 
   if (url.pathname === '/api/v1/custom-categories') {
@@ -400,6 +532,15 @@ async function handleApiWrite(request, url) {
     const response = await fetch(request);
     if (response.ok) {
       mirrorWriteResult(request.method, url, response.clone()).catch(() => {});
+      return response;
+    }
+    // Same reasoning as handleApiRead's identical check above: a resolved
+    // 502/503/504 means the backend/reverse proxy is unreachable right now,
+    // not that the write was genuinely rejected — queue it for replay
+    // exactly as if fetch() itself had thrown, instead of surfacing its
+    // error body as a real failure.
+    if (isGatewayErrorStatus(response.status)) {
+      return queueOfflineWrite(request.method, url, body);
     }
     return response;
   } catch {
@@ -436,10 +577,19 @@ async function mirrorWriteResult(method, url, response) {
     await self.TrakkaDB.deleteList(Number(listMatch[1]));
   } else if (url.pathname === '/api/v1/items' && method === 'POST' && data) {
     await self.TrakkaDB.putItem(data);
+    await recomputeListTotalAmount(data.list_id);
   } else if (itemMatch && (method === 'PUT' || method === 'PATCH') && data) {
     await self.TrakkaDB.putItem(data);
+    await recomputeListTotalAmount(data.list_id);
   } else if (itemMatch && method === 'DELETE') {
-    await self.TrakkaDB.deleteItem(Number(itemMatch[1]));
+    const deletedId = Number(itemMatch[1]);
+    // Read the item BEFORE deleting it — its list_id is only ever known
+    // through this row (the DELETE response itself carries no body), and
+    // recomputeListTotalAmount needs it to know which list's cached total to
+    // refresh.
+    const existing = await self.TrakkaDB.getItem(deletedId);
+    await self.TrakkaDB.deleteItem(deletedId);
+    if (existing) await recomputeListTotalAmount(existing.list_id);
   } else if (url.pathname === '/api/v1/custom-categories' && method === 'POST' && data) {
     await self.TrakkaDB.putCustomCategory(data);
   } else if (categoryMatch && method === 'PUT' && data) {
@@ -553,7 +703,14 @@ async function queueOfflineWrite(method, url, body) {
     const listId = body?.list_id;
     // Still-pending list created earlier in this same offline session.
     const dependsOnListTempId = typeof listId === 'string' && listId.startsWith('temp-list') ? listId : null;
+    // ...body first so every optional field the create form can send (price,
+    // target_price/alert_on_price_drop, is_urgent, recurrence_rule, ...) is
+    // mirrored locally too, not just the handful this object used to name
+    // explicitly — a priced item created offline must count toward the
+    // list's total (see recomputeListTotalAmount below) the same as one
+    // created online.
     const item = {
+      ...body,
       id: tempId,
       list_id: listId,
       title: body?.title ?? '',
@@ -565,7 +722,9 @@ async function queueOfflineWrite(method, url, body) {
       updated_at: now,
     };
     await self.TrakkaDB.putItem(item);
+    await recomputeListTotalAmount(listId);
     await self.TrakkaDB.enqueueRequest({ method, path: pathname, body, tempId, dependsOnListTempId, listId, itemId: tempId, createdAt: now });
+    console.debug('[trakka-sync] queued offline item create', tempId, 'for list', listId, body);
     scheduleSync();
     await broadcastQueueState(false);
     return new Response(JSON.stringify(item), { status: 202, headers });
@@ -603,17 +762,59 @@ async function applyOptimisticEdit(pathname, method, body) {
   if (itemMatch) {
     const id = Number(itemMatch[1]);
     if (method === 'DELETE') {
+      const existing = await self.TrakkaDB.getItem(id);
       await self.TrakkaDB.deleteItem(id);
+      if (existing) await recomputeListTotalAmount(existing.list_id);
       return null;
     }
     const existing = (await self.TrakkaDB.getItem(id)) || { id };
+    // Step 1: persist the item's own new state (done/quantity/price/...)
+    // into the IndexedDB items store first — everything below (the list's
+    // cached total, the response handed back to the page) is derived from
+    // this row, so it must land before either of them.
     const updated = { ...existing, ...body, id, updated_at: now };
     applyRecurrenceCompletionOffline(updated, existing.done);
     await self.TrakkaDB.putItem(updated);
+    // Step 2: recompute the parent list's cached total_amount from every
+    // item now mirrored under it (including this one's new done/quantity/
+    // price) — see recomputeListTotalAmount's own doc comment for why this
+    // has to happen here rather than being left for the next online refetch.
+    await recomputeListTotalAmount(updated.list_id);
     return updated;
   }
 
   return null;
+}
+
+// Recomputes and persists a list's cached total_amount — the "reste à
+// dépenser" figure the dashboard/Espaces cards render via urlBadges'
+// list.total_amount in app.js, mirroring internal/db.listSelect's own SUM
+// (every priced, not-yet-done item's price * quantity; SQL NULL/JS null when
+// nothing qualifies) — directly from whatever items are currently mirrored
+// under `listId` in IndexedDB. The server only ever includes this figure on
+// a list-shaped response (GET /api/v1/lists, GET /api/v1/lists/{id}); an
+// item-shaped response (POST/PUT/PATCH/DELETE /api/v1/items/{id}) never
+// carries it, and the list detail view's own "Reste à dépenser" is instead
+// computed live from state.currentList.items on every render (see
+// updateFinanceSummary/lineTotal in list_view.js) — so without this, a
+// dashboard card's cached total would silently drift out of sync with the
+// list detail view the moment an item's done/price/quantity changes,
+// whether that change was applied while online (mirrorWriteResult) or
+// offline (applyOptimisticEdit/resolveAgainstPendingCreate below). Called
+// after every item mutation this file mirrors, in both cases, so the two
+// views can never show a different number for the same list again.
+async function recomputeListTotalAmount(listId) {
+  if (listId === undefined || listId === null) return;
+  const list = await self.TrakkaDB.getList(listId);
+  if (!list) return; // list itself isn't mirrored (e.g. never opened on this device)
+  const items = await self.TrakkaDB.getItemsByList(listId);
+  let total = null;
+  for (const item of items) {
+    if (item.done || typeof item.price !== 'number') continue;
+    const quantity = item.quantity > 0 ? item.quantity : 1;
+    total = (total ?? 0) + item.price * quantity;
+  }
+  await self.TrakkaDB.putList({ ...list, total_amount: total });
 }
 
 // Resolves which list (and, for an item write, which item) a queued
@@ -733,7 +934,9 @@ async function resolveAgainstPendingCreate(tempId, method, body, headers) {
       }
       await self.TrakkaDB.deleteList(tempId);
     } else {
+      const existing = await self.TrakkaDB.getItem(tempId);
       await self.TrakkaDB.deleteItem(tempId);
+      if (existing) await recomputeListTotalAmount(existing.list_id);
     }
     await broadcastQueueState(false);
     // headers carries X-Trakka-Queued — apiRequest (app.js) checks that on
@@ -747,6 +950,17 @@ async function resolveAgainstPendingCreate(tempId, method, body, headers) {
     entry.body = { ...entry.body, ...body };
     await self.TrakkaDB.updateQueueEntry(entry);
   }
+  // The DELETE branch above already broadcasts after cancelling the pending
+  // create; an edit merged into it must too, or the header's pending-count
+  // badge (driven by broadcastQueueState's postMessage, unlike the per-item
+  // dot, which apiRequest's own X-Trakka-Queued handling already refreshes
+  // synchronously — see app.js) would keep showing whatever it last knew
+  // until some unrelated queue mutation happened to fire it. The item/list
+  // itself is never actually removed from the queue by an edit — see the
+  // `entry` merge just above — so "pending" status is preserved either way;
+  // this only fixes the header widget lagging behind that already-correct
+  // state.
+  await broadcastQueueState(false);
 
   const now = new Date().toISOString();
   if (isList) {
@@ -760,6 +974,7 @@ async function resolveAgainstPendingCreate(tempId, method, body, headers) {
   const updated = { ...existing, ...body, id: tempId, updated_at: now };
   applyRecurrenceCompletionOffline(updated, existing.done);
   await self.TrakkaDB.putItem(updated);
+  await recomputeListTotalAmount(updated.list_id);
   return new Response(JSON.stringify(updated), { status: 200, headers });
 }
 
@@ -778,7 +993,28 @@ async function flushQueue() {
   let hadEntries = false;
 
   try {
-    const queue = await self.TrakkaDB.getQueue();
+    let queue = await self.TrakkaDB.getQueue();
+    console.debug('[trakka-sync] flushQueue start, entries:', queue.length);
+
+    if (queue.length > 0) {
+      // Confirm this queue still belongs to whoever is actually
+      // authenticated right now, before replaying a single entry against
+      // their session. Without this, a previous account's still-queued
+      // offline write could be replayed under a different, now-logged-in
+      // account's cookies: this function is also called opportunistically
+      // on *every* same-origin fetch while online (see the top-level
+      // 'fetch' listener), including the very first GET /api/v1/me a freshly
+      // logged-in session issues — so this can race
+      // reconcileMirrorOwnershipFromMeResponse above rather than reliably
+      // running after it. verifyMirrorOwnership re-derives the same
+      // ownership decision directly (its own request to /api/v1/me), and
+      // purges the queue along with everything else on a mismatch — so if
+      // it did purge, the re-read below simply comes back empty and there is
+      // nothing left to replay.
+      await verifyMirrorOwnership();
+      queue = await self.TrakkaDB.getQueue();
+    }
+
     hadEntries = queue.length > 0;
     // "syncing" only ever means "flushQueue is actively replaying entries
     // right now" — skipped entirely when there's nothing to replay, so
@@ -787,12 +1023,14 @@ async function flushQueue() {
     if (hadEntries) await broadcastQueueState(true, queue.length);
     for (const entry of queue) {
       try {
+        console.debug('[trakka-sync] replaying', entry.method, entry.path, entry.tempId ? `(pending id ${entry.tempId})` : '', entry.body);
         const response = await fetch(entry.path, {
           method: entry.method,
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
           body: entry.body != null ? JSON.stringify(entry.body) : undefined,
         });
+        console.debug('[trakka-sync] response', entry.method, entry.path, response.status);
 
         // A 401 means the session expired while this write sat queued —
         // unlike an ordinary 4xx rejection, retrying *will* fix this once
@@ -800,24 +1038,57 @@ async function flushQueue() {
         // it, to preserve ordering) must stay queued rather than being
         // discarded as if the server had permanently rejected it.
         if (response.status === 401) {
+          console.debug('[trakka-sync] session expired mid-queue, leaving entry (and the rest) queued', entry.id);
           break;
         }
 
-        if (entry.tempId && response.ok) {
-          const data = await response.json().catch(() => null);
-          if (data && data.id !== undefined) {
-            await remapTempId(queue, entry.tempId, data.id);
+        if (response.ok) {
+          if (entry.tempId) {
+            const data = await response.json().catch(() => null);
+            if (data && data.id !== undefined) {
+              console.debug('[trakka-sync] synced, remapping', entry.tempId, '->', data.id);
+              await remapTempId(queue, entry.tempId, data.id);
+            } else {
+              console.debug('[trakka-sync] synced but response carried no id to remap', entry.tempId, data);
+            }
           }
+          await self.TrakkaDB.dequeue(entry.id);
+          processedAny = true;
+          continue;
         }
 
-        // Any other response resolves the entry: a 2xx means it's synced,
-        // and any other 4xx means the server rejected it for a reason
-        // blindly retrying won't fix either.
-        await self.TrakkaDB.dequeue(entry.id);
-        processedAny = true;
-      } catch {
+        if (isDefinitiveClientError(response.status)) {
+          console.debug('[trakka-sync] definitive rejection, discarding entry', entry.id, response.status);
+          // The server has permanently rejected this exact mutation (a 403
+          // "not a member of this house" from an orphaned mirror-ownership
+          // mismatch, a 404 because its parent list/item no longer exists,
+          // a 400 validation error, ...) — retrying the identical request
+          // again later can never turn this into a success, so leaving it
+          // queued forever would just mean it's replayed, and fails, on
+          // every future flush. discardRejectedEntry both drops the entry
+          // and reconciles whatever local IndexedDB state it left behind,
+          // so a create the server never accepted (or an edit/delete of
+          // something that's since vanished server-side) can't linger
+          // forever as a "ghost" — present in the mirror, absent from the
+          // backend, with nothing left to ever retry or correct it once its
+          // one queue entry is gone.
+          await discardRejectedEntry(entry, response.status, queue);
+          processedAny = true;
+          continue;
+        }
+
+        // Anything else (a 5xx, or a status this app's own backend never
+        // actually returns) is treated as transient, exactly like fetch()
+        // throwing below: stop here and retry this and every entry queued
+        // after it on the next pass. Discarding real, not-yet-synced user
+        // data on what might just be a momentary server-side hiccup would
+        // be a worse outcome than leaving it queued a little longer.
+        console.debug('[trakka-sync] transient failure, will retry on next flush', entry.id, response.status);
+        break;
+      } catch (err) {
         // Still offline: stop here, leave this and later entries queued
         // for the next attempt so ordering (and dependent temp ids) holds.
+        console.debug('[trakka-sync] fetch threw (likely still offline), will retry on next flush', entry.id, err);
         break;
       }
     }
@@ -832,6 +1103,102 @@ async function flushQueue() {
   // success. Skipped when hadEntries is false — see its own comment above.
   if (hadEntries) await broadcastQueueState(false);
   if (processedAny) await notifyClients({ type: 'trakka-sync-complete' });
+}
+
+// Everything in 400-499 except 401 (session expired — handled separately in
+// flushQueue's loop, since logging back in *can* turn a retry into a
+// success), 408 (request timeout) and 429 (rate limited) is a rejection no
+// amount of retrying the exact same request will ever turn into a success —
+// the request itself is invalid, forbidden, or targets something that
+// doesn't exist. Used by flushQueue to decide when a queue entry must be
+// discarded (and its local mirror state reconciled, see
+// discardRejectedEntry) rather than left queued for another attempt.
+function isDefinitiveClientError(status) {
+  return status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429;
+}
+
+// A queued mutation the server has permanently rejected (see
+// isDefinitiveClientError). Drops the queue entry and cleans up whatever
+// local IndexedDB state it left behind, so a create the server never
+// actually accepted — or an edit/delete of something that no longer exists
+// there — can't linger forever as a "ghost": present in the mirror, absent
+// from the backend, and never retried again since the one queue entry that
+// would have retried it is gone. `queue` is the in-memory array flushQueue is
+// currently iterating, so a dependent entry cancelled here (see the tempId
+// branch below) is also skipped for the rest of this same pass, exactly like
+// remapTempId already does for a *successful* create.
+async function discardRejectedEntry(entry, status, queue) {
+  await self.TrakkaDB.dequeue(entry.id);
+
+  if (entry.tempId) {
+    // This was itself a still-pending "create" that the server refused
+    // outright (a 404 "liste introuvable" because its parent list was
+    // itself deleted before this could sync, a validation error, ...) —
+    // there is no server-side row to reconcile against, so the only correct
+    // outcome is to remove the local phantom and anything that depended on
+    // it, exactly like the user explicitly deleting it mid-queue already
+    // does (see resolveAgainstPendingCreate's DELETE branch above, which
+    // this mirrors).
+    if (entry.tempId.startsWith('temp-list')) {
+      for (const queued of queue) {
+        if (queued.dependsOnListTempId === entry.tempId) {
+          await self.TrakkaDB.dequeue(queued.id);
+        }
+      }
+      await self.TrakkaDB.deleteList(entry.tempId); // cascades to its items
+    } else {
+      const existing = await self.TrakkaDB.getItem(entry.tempId);
+      await self.TrakkaDB.deleteItem(entry.tempId);
+      if (existing) await recomputeListTotalAmount(existing.list_id);
+    }
+    return;
+  }
+
+  if (status === 404) {
+    // The edited/deleted resource itself no longer exists server-side —
+    // keeping it in the local mirror would show the user something the
+    // backend has no record of at all, with nothing left to ever correct it
+    // (its queue entry, the only thing that would have retried it, is gone).
+    if (entry.itemId != null) {
+      const existing = await self.TrakkaDB.getItem(entry.itemId);
+      await self.TrakkaDB.deleteItem(entry.itemId);
+      if (existing) await recomputeListTotalAmount(existing.list_id);
+    } else if (entry.listId != null) {
+      await self.TrakkaDB.deleteList(entry.listId);
+    }
+    return;
+  }
+
+  // Any other definitive rejection (400 validation, 403 forbidden, 409
+  // conflict, ...) of an edit to something that still exists server-side:
+  // the queued mutation itself is dropped, but the resource is still real,
+  // so re-fetch its parent list to pull the true, current server state back
+  // over whatever the optimistic edit locally guessed wrong — otherwise the
+  // mirror would keep showing a change the server never actually applied,
+  // with nothing left to ever correct it.
+  if (entry.listId != null && !String(entry.listId).startsWith('temp-list')) {
+    await reconcileListFromServer(entry.listId);
+  }
+}
+
+// Best-effort re-fetch of one list (with its items) straight from the
+// server, to pull the mirror back in line with reality after a queued edit
+// was rejected for a reason that leaves the underlying resource itself
+// untouched (see discardRejectedEntry). Deliberately swallows every
+// failure: if the server can't be reached right now there's nothing more
+// this pass can do about it, and the next successful GET
+// /api/v1/lists/{id} (whenever the user next opens that list) will correct
+// the mirror the ordinary way regardless.
+async function reconcileListFromServer(listId) {
+  try {
+    const path = `/api/v1/lists/${listId}`;
+    const response = await fetch(path, { credentials: 'same-origin' });
+    if (response.ok) {
+      await mirrorReadResponse(new URL(path, self.location.origin), response);
+    }
+  } catch {
+    // Offline, or the list is itself gone — leave the mirror as-is.
+  }
 }
 
 // Tells every open tab the offline sync queue's current size, and whether
