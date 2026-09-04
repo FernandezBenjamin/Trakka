@@ -32,8 +32,23 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 // SetEscapeHTML(true) behavior (left untouched here) escapes '<', '>' and
 // '&', so user-supplied text is safe even if this JSON is ever rendered
 // into an HTML context.
+//
+// Cache-Control: no-store is set on every response through this helper —
+// every /api/v1/... JSON response funnels through here — so neither the
+// browser's own HTTP disk cache nor any intermediary proxy can ever serve a
+// stale GET response for a list/item without an explicit network round trip.
+// This is deliberately independent of the service worker: sw.js's own
+// handleApiRead already never uses the Cache Storage API for API routes
+// (network-first, falling back to reading the IndexedDB mirror directly on
+// failure — see sw.js's own comments), but that guarantee only holds while a
+// service worker is actually installed and controlling the page. Without
+// this header, a GET to /api/v1/lists/{id} carries no explicit freshness
+// info at all, which is squarely in the range where different browsers'
+// heuristic HTTP caching can disagree — this closes that off unconditionally
+// rather than relying on it never mattering in practice.
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	if data != nil {
 		_ = json.NewEncoder(w).Encode(data)

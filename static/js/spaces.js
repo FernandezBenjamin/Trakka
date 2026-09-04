@@ -93,11 +93,24 @@ const CHEVRON_ICON_SVG =
 
 // Reads the IndexedDB custom-categories mirror, defaulting to [] whenever
 // the module isn't available or the read itself fails — same shape as
-// app.js's cachedHouses/cachedDashboardLists fallbacks.
+// app.js's cachedHouses/cachedDashboardLists fallbacks. Extra defense-in-
+// depth beyond the service worker's own mirror-wide isolation (see
+// enforceMirrorOwnership in sw.js): custom_categories is the one mirrored
+// entity that actually carries a user_id (houses/lists have no equivalent
+// field to filter on — a house's membership isn't embedded in its own JSON),
+// so whenever the current account is already known this filters out
+// anything that doesn't belong to it. Skipped when state.currentUser isn't
+// resolved yet (e.g. a fully offline reload where /me itself never
+// resolved) rather than hiding every category until it is — the mirror is
+// already correctly scoped by construction at that point.
 async function cachedCustomCategories() {
   if (!window.TrakkaDB) return [];
   try {
-    return await window.TrakkaDB.getCustomCategories();
+    const categories = await window.TrakkaDB.getCustomCategories();
+    if (state.currentUser) {
+      return categories.filter((category) => category.user_id === state.currentUser.id);
+    }
+    return categories;
   } catch {
     return [];
   }
@@ -126,12 +139,13 @@ async function loadCustomCategories() {
 
 // Fetches every Space shared directly with the caller (?shared_with_me=true
 // — see db.ListSpacesSharedWithUser), the Space-level equivalent of
-// shares.js's loadPinnedSharedLists/loadSharedView. No offline mirror for
-// this (same "requires connectivity" scoping the rest of the sharing
-// feature already uses), so a plain connectivity failure just means the
-// "Espaces partagés avec moi" section is temporarily empty rather than a
-// blocking error — swallowed rather than surfaced via the error banner,
-// same as loadCustomCategories' own background-fetch reasoning above.
+// shares.js's loadPinnedSharedLists/loadSharedView. This has a real offline
+// mirror now (see sw.js's mirrorReadResponse/offlineReadFallback and db.js's
+// STORE_SHARED_CATEGORIES), so a plain connectivity failure only leaves the
+// "Espaces partagés avec moi" section temporarily empty when there's no
+// service worker in play at all — swallowed rather than surfaced via the
+// error banner either way, same as loadCustomCategories' own
+// background-fetch reasoning above.
 async function loadSharedCustomCategories() {
   try {
     sharedCategories = await apiRequest('/custom-categories?shared_with_me=true');
@@ -242,8 +256,10 @@ async function loadSpacesView() {
 // other, unshared categories must not be grouped under a "shared space"
 // section here, since the caller has no access to that whole Space, only to
 // this one list (it already shows up in the "Partagé avec moi" tab
-// instead). Best-effort, same "requires connectivity, no offline mirror"
-// scoping as loadSharedCustomCategories above.
+// instead). Best-effort, same offline-mirror scoping as
+// loadSharedCustomCategories above — the stub collection now resolves from
+// STORE_SHARED_LISTS while offline (see sw.js), so this only actually falls
+// through to the empty catch when there's no service worker in play at all.
 async function loadSharedCategoryLists() {
   if (sharedCategories.length === 0) {
     sharedCategoryLists = [];
