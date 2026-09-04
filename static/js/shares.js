@@ -308,6 +308,6 @@ function renderSharedList() {
   sharesEls.sharedEmpty.hidden = sharedLists.length > 0;
   sharesEls.sharedList.replaceChildren();
   for (const list of sharedLists) {
-    sharesEls.sharedList.appendChild(buildListCard(list, badgeFnForType(list.type)(list.items || [])));
+    sharesEls.sharedList.appendChild(buildListCard(list, badgeFnForType(list.type)(list)));
   }
 }

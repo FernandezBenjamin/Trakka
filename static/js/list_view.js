@@ -1441,12 +1441,30 @@ function buildQuantityStepper(item) {
 function toggleDone(item) {
   hideError();
 
+  // Captured now, at call time, rather than re-read as state.currentList
+  // inside onUndo/onCommit below — toggleDone is only ever invoked from a
+  // row rendered for the currently open list (same reasoning removeItem's
+  // own doc comment already gives), whereas by the time onUndo fires (the
+  // toast persists across navigation) or onCommit fires (5s later), the
+  // user may have moved to a different list or away from any list entirely.
+  const list = state.currentList;
+  const listId = state.currentListId;
+
   const pending = pendingToggles.get(item);
   const committedDone = pending ? pending.committedDone : item.done;
   if (pending) pending.dismiss();
 
   item.done = !item.done;
   renderItems();
+  // notifyItemsChanged (app.js) is the "event bus" side of live dashboard
+  // reactivity: it snapshots this list's items (including this optimistic
+  // toggle, well before the real PATCH below ever goes out) so that if the
+  // user navigates back to the dashboard within the 5s undo window, the
+  // card there already reflects the new state — recalculating its
+  // remaining-items count and swapping in the "all done" badge immediately
+  // — instead of showing the stale pre-toggle state until the deferred
+  // commit finally lands and a real refetch corrects it.
+  notifyItemsChanged(listId, list.items);
   const newDone = item.done;
 
   if (newDone === committedDone) {
@@ -1463,6 +1481,7 @@ function toggleDone(item) {
       pendingToggles.delete(item);
       item.done = committedDone;
       renderItems();
+      notifyItemsChanged(listId, list.items);
     },
     onCommit: async () => {
       pendingToggles.delete(item);
@@ -1473,6 +1492,11 @@ function toggleDone(item) {
         item.done = committedDone;
         if (!isNetworkError(err)) showError(err.message);
       } finally {
+        // The real PATCH has now either landed or failed, so the server (or
+        // the reverted local state, on failure) is authoritative again —
+        // drop the optimistic snapshot above rather than let it keep
+        // shadowing whatever a fresh fetch/re-render is about to show.
+        clearItemsOverride(listId);
         // Still on this list (or some other one): a plain local re-render is
         // enough, and — critically — must not be replaced by a network
         // refetch here, since that could clobber a *different* item's still-
@@ -1529,6 +1553,11 @@ function removeItem(item) {
 
   item.pendingDelete = true;
   renderItems();
+  // See toggleDone's own notifyItemsChanged call above — same immediate
+  // dashboard-reactivity snapshot, minus whatever's mid-undo-grace-period
+  // (a deleted-but-not-yet-committed item shouldn't count toward the
+  // dashboard card's remaining-items total either).
+  notifyItemsChanged(list.id, list.items.filter((i) => !i.pendingDelete));
 
   TrakkaUndo.schedule({
     message: t('undo.itemDeleted', { title: item.title }),
@@ -1536,6 +1565,7 @@ function removeItem(item) {
     onUndo: () => {
       delete item.pendingDelete;
       renderItems();
+      notifyItemsChanged(list.id, list.items.filter((i) => !i.pendingDelete));
     },
     onCommit: async () => {
       const items = list.items;
@@ -1549,6 +1579,11 @@ function removeItem(item) {
         delete item.pendingDelete;
         if (!isNetworkError(err)) showError(err.message);
       }
+      // The real DELETE has now either landed or failed — see toggleDone's
+      // own onCommit for why the optimistic snapshot is dropped here rather
+      // than left to shadow the fresh state a re-render/refetch is about to
+      // show.
+      clearItemsOverride(list.id);
       // Same reasoning as toggleDone's onCommit above: only fall back to
       // refreshVisibleView() (a real refetch) when the list this item
       // belonged to isn't the one currently on screen any more — otherwise

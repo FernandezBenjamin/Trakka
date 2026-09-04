@@ -257,12 +257,14 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists?pinned_house_spaces=true
 
 ```json
 [
-  { "id": 1, "house_id": 1, "name": "Courses", "type": "shopping", "created_at": "...", "updated_at": "..." },
+  { "id": 1, "house_id": 1, "name": "Courses", "type": "shopping", "created_at": "...", "updated_at": "...", "total_amount": 42.5 },
   { "id": 2, "house_id": 1, "name": "Courses de vacances", "type": "shopping", "custom_category_id": 1,
     "custom_category": { "id": 1, "user_id": 1, "name": "Vacances", "icon": "🏖️", "color": "#3366ff", "position": 0, "created_at": "..." },
     "created_at": "...", "updated_at": "..." }
 ]
 ```
+
+`total_amount` is the sum of `price * quantity` across every **still-unchecked** item in the list that has a price set (`done = false`) — the list's "reste à dépenser", computed by a correlated subquery in `internal/db`'s shared `listSelect` (not by summing embedded `items`, which this endpoint doesn't even return). A done/purchased item never contributes, regardless of its price. It's omitted entirely when no unchecked item in the list has a price at all (list 2 above); present, including a genuine `0`, otherwise. This is deliberately the same figure a list's own detail view shows in its finance summary as "Reste à dépenser" (`GET /api/v1/lists/{id}`'s embedded `items`, summed client-side by `static/js/list_view.js`'s `updateFinanceSummary`/`lineTotal`) — just computed once in SQL here instead of re-derived per card.
 
 `custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission`/`is_pinned_to_dashboard` are only present in the `?shared_with_me=true`/`?pinned_house_spaces=true` modes above (never on this endpoint's own default, house-scoped listing) — see [Sharing](#sharing). `access_source` is `"list_share"`/`"space_share"` from `?shared_with_me=true`, or `"house_member"` from `?pinned_house_spaces=true`. For a list reached via `access_source: "space_share"` or `"house_member"`, `is_pinned_to_dashboard` reflects either that list's own individual pin ([`PATCH /api/v1/lists/{id}/share/pin`](#patch-apiv1listsidsharepin)) or the parent Space's own pin as a whole ([`PATCH /api/v1/custom-categories/{id}/share/pin`](#patch-apiv1custom-categoriesidsharepin)) — whichever says pinned wins; for `"house_member"` specifically every returned row is pinned by construction (`?pinned_house_spaces=true` never returns an unpinned one). The dashboard itself is a client-side merge of three calls, deduplicated by list id (a `house_member`-sourced list may already be present in the plain `?house_id=` listing if it happens to belong to the currently selected House): the plain `?house_id=` listing above, `?shared_with_me=true` filtered down to entries with `is_pinned_to_dashboard: true`, and `?pinned_house_spaces=true` in full (see `static/js/app.js`'s `loadDashboard` and `static/js/shares.js`'s `loadPinnedSharedLists`/`loadPinnedHouseSpaceLists`) — there's no server-side "give me my house's lists plus my pinned shares in one call" mode.
 
@@ -291,13 +293,14 @@ Returns the list **with its items embedded**, ordered by `position` then `id`.
   ```json
   {
     "id": 1, "house_id": 1, "name": "Courses", "type": "shopping",
-    "created_at": "...", "updated_at": "...",
+    "created_at": "...", "updated_at": "...", "total_amount": 3.7,
     "items": [
       { "id": 1, "list_id": 1, "title": "Lait", "url": "https://...", "quantity": 2, "price": 1.85, "price_auto": false, "image_url": "https://...", "done": false, "position": 0, "target_month": "2026-11", "due_date": null, "is_recurring": false, "recurrence_rule": null, "recurrence_end_date": null, "is_urgent": false, "target_price": null, "alert_on_price_drop": false, "created_at": "...", "updated_at": "..." }
     ]
   }
   ```
 - `404` if the list doesn't exist. `403` unless the caller has at least read [access](#sharing) to the list — house membership, a Space share, or a List share.
+- `total_amount` here is the same server-computed field `GET /api/v1/lists` documents above (the list's "reste à dépenser" — unchecked, priced items only) — included on this endpoint too even though `items` is already embedded, so a caller never has to re-derive it by summing `items` itself.
 
 ### `PUT /api/v1/lists/{id}`
 

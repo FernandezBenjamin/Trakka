@@ -17,10 +17,25 @@ import (
 // custom_category_id back to NULL via ON DELETE SET NULL, but scanListRow
 // handles it defensively regardless) so a single query can return a list
 // with its category embedded, matching the API's documented shape for
-// GET /api/v1/lists and GET /api/v1/lists/{id}.
+// GET /api/v1/lists and GET /api/v1/lists/{id}. The trailing correlated
+// subquery computes total_amount — the sum of price * quantity across every
+// still-unchecked item in the list that has a price set (items.done = 0) —
+// so the dashboard/Espaces cards can show a list's "reste à dépenser"
+// without a separate per-item fetch; see models.List.TotalAmount. A done
+// item is deliberately excluded here, the same as the list detail view's own
+// "Reste à dépenser" figure (updateFinanceSummary/lineTotal in
+// static/js/list_view.js) — this field is that same figure, just computed
+// once in SQL instead of re-derived per card from a full item fetch.
+// Quantity is defensively floored at 1 the same way lineTotal already does,
+// even though internal/handlers/items.go never actually persists a quantity
+// <= 0. SUM() over zero matching rows (no unchecked priced items at all)
+// returns SQL NULL, which is exactly the "nothing to show" signal
+// TotalAmount's nil case relies on — no COALESCE needed.
 const listSelect = `
 	SELECT lists.id, lists.house_id, lists.name, lists.type, lists.icon, lists.created_at, lists.updated_at, lists.custom_category_id,
-	       cc.id, cc.user_id, cc.name, cc.icon, cc.color, cc.position, cc.created_at
+	       cc.id, cc.user_id, cc.name, cc.icon, cc.color, cc.position, cc.created_at,
+	       (SELECT SUM(items.price * CASE WHEN items.quantity > 0 THEN items.quantity ELSE 1 END)
+	          FROM items WHERE items.list_id = lists.id AND items.price IS NOT NULL AND items.done = 0) AS total_amount
 	FROM lists LEFT JOIN custom_categories cc ON cc.id = lists.custom_category_id`
 
 func scanListRow(row rowScanner) (*models.List, error) {
@@ -30,8 +45,9 @@ func scanListRow(row rowScanner) (*models.List, error) {
 	var catUserID sql.NullInt64
 	var catName, catIcon, catColor, catCreatedAt sql.NullString
 	var catPosition sql.NullInt64
+	var totalAmount sql.NullFloat64
 	if err := row.Scan(&l.ID, &l.HouseID, &l.Name, &l.Type, &l.Icon, &l.CreatedAt, &l.UpdatedAt, &customCategoryID,
-		&catID, &catUserID, &catName, &catIcon, &catColor, &catPosition, &catCreatedAt); err != nil {
+		&catID, &catUserID, &catName, &catIcon, &catColor, &catPosition, &catCreatedAt, &totalAmount); err != nil {
 		return nil, err
 	}
 	if customCategoryID.Valid {
@@ -48,6 +64,10 @@ func scanListRow(row rowScanner) (*models.List, error) {
 			Position:  int(catPosition.Int64),
 			CreatedAt: catCreatedAt.String,
 		}
+	}
+	if totalAmount.Valid {
+		amount := totalAmount.Float64
+		l.TotalAmount = &amount
 	}
 	return l, nil
 }

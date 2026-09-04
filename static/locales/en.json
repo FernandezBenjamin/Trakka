@@ -49,6 +49,8 @@
     "listTypeTodo": "Tasks",
     "listTypeCustom": "Notes / Free",
     "todoProgress": "{done}/{total} completed",
+    "listAllDoneBadge": "🎉 All done",
+    "listEmptyBadge": "0 items",
     "emptyShopping": "No shopping lists yet.",
     "emptyTodo": "No task spaces yet.",
     "emptyCustom": "No free lists yet."
